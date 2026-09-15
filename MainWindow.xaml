@@ -100,7 +100,7 @@
                     <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
                 </Border>
                 <DockPanel Grid.Row="2" Background="#151B1C" LastChildFill="True" Margin="24,0">
-                    <TextBlock Text="3D VIEW / NATIVE COMMUNITY RENDER" FontFamily="Consolas" FontSize="10" Foreground="#738076" VerticalAlignment="Center"/>
+                    <TextBlock Text="3D VIEW / EDITABLE TERRAIN" FontFamily="Consolas" FontSize="10" Foreground="#738076" VerticalAlignment="Center"/>
                     <TextBlock Text="ORIGIN 0, 0" FontFamily="Consolas" FontSize="10" Foreground="#738076" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </DockPanel>
             </Grid>

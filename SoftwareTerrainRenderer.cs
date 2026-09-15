@@ -44,7 +44,7 @@ internal static class SoftwareTerrainRenderer
             {
                 var first = island.PolygonAt(cubeId, x, z);
                 var second = island.PolygonAt(cubeId, x + 64, z);
-                var firstCorners = ((first >> 16) & 1) == 0 ? new[] { 0, 1, 2 } : new[] { 3, 0, 1 };
+                var firstCorners = ((first >> 16) & 1) == 0 ? new[] { 0, 1, 2 } : new[] { 0, 1, 3 };
                 var secondCorners = ((second >> 16) & 1) == 0 ? new[] { 2, 3, 0 } : new[] { 1, 2, 3 };
                 RasterTriangle(island, pixels, depth, width, height, camera, right, up, forward, focal, cubeId, cubeX, cubeY, x, z, first, firstCorners);
                 RasterTriangle(island, pixels, depth, width, height, camera, right, up, forward, focal, cubeId, cubeX, cubeY, x, z, second, secondCorners);
@@ -60,7 +60,7 @@ internal static class SoftwareTerrainRenderer
     private static void RasterTriangle(IslandDocument island, byte[] pixels, float[] depth, int width, int height, Point3D camera, Vector3D right, Vector3D up, Vector3D forward, double focal, int cubeId, int cubeX, int cubeY, int cellX, int cellZ, uint polygon, int[] corners)
     {
         var texture = island.TextureAt(cubeId, (int)((polygon >> 19) & 0x1FFF));
-        if (texture is null) return;
+        var textured = ((polygon >> 4) & 3) != 0 && texture is not null;
         var local = new[] { new Point(0, 0), new Point(0, 1), new Point(1, 1), new Point(1, 0) };
         var projected = new ProjectedPoint[3];
         for (var index = 0; index < 3; index++)
@@ -74,7 +74,7 @@ internal static class SoftwareTerrainRenderer
             var viewY = Vector3D.DotProduct(relative, up);
             var viewZ = Vector3D.DotProduct(relative, forward);
             if (viewZ <= 1) return;
-            projected[index] = new ProjectedPoint((float)widthFor(focal, viewX, viewZ), (float)heightFor(focal, viewY, viewZ), viewZ, island.IntensityAt(cubeId, x, z), TextureCoordinate(texture, index * 2), TextureCoordinate(texture, index * 2 + 1));
+            projected[index] = new ProjectedPoint((float)widthFor(focal, viewX, viewZ), (float)heightFor(focal, viewY, viewZ), viewZ, island.IntensityAt(cubeId, x, z), textured ? TextureCoordinate(texture!, index * 2) : 0, textured ? TextureCoordinate(texture!, index * 2 + 1) : 0);
         }
         var minX = Math.Max(0, (int)Math.Floor(Math.Min(projected[0].X, Math.Min(projected[1].X, projected[2].X))));
         var maxX = Math.Min(width - 1, (int)Math.Ceiling(Math.Max(projected[0].X, Math.Max(projected[1].X, projected[2].X))));
@@ -96,7 +96,7 @@ internal static class SoftwareTerrainRenderer
             var u = projected[0].U * w0 + projected[1].U * w1 + projected[2].U * w2;
             var v = projected[0].V * w0 + projected[1].V * w1 + projected[2].V * w2;
             var light = (int)Math.Clamp(Math.Round(projected[0].Light * w0 + projected[1].Light * w1 + projected[2].Light * w2), 0, 15);
-            var color = island.ColorAt(u, v, light);
+            var color = textured ? island.ColorAt(u, v, light) : FlatColor((int)(polygon & 15), light);
             pixels[offset * 4] = color.B; pixels[offset * 4 + 1] = color.G; pixels[offset * 4 + 2] = color.R; pixels[offset * 4 + 3] = 255;
         }
 
@@ -105,6 +105,7 @@ internal static class SoftwareTerrainRenderer
     }
 
     private static double TextureCoordinate(ushort[] texture, int index) => texture[index] / 256.0;
+    private static Color FlatColor(int bank, int light) => Color.FromRgb((byte)Math.Clamp(70 + bank * 10 + light * 5, 0, 255), (byte)Math.Clamp(95 + bank * 7 + light * 6, 0, 255), (byte)Math.Clamp(55 + bank * 4 + light * 3, 0, 255));
     private static double Edge(ProjectedPoint a, ProjectedPoint b, double x, double y) => (x - a.X) * (b.Y - a.Y) - (y - a.Y) * (b.X - a.X);
     private readonly record struct ProjectedPoint(float X, float Y, double Z, byte Light, double U, double V);
 }

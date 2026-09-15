@@ -81,6 +81,7 @@ public partial class MainWindow : Window
             nativeViewActive = false;
             DocumentSummary.Text += " / editable island map";
             TerrainViewport.Source = currentIsland.CreatePreview();
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(RenderSoftwareTerrain));
         }
         catch (Exception error)
         {
@@ -134,13 +135,20 @@ public partial class MainWindow : Window
 
     private void RenderSoftwareTerrain()
     {
-        // The loaded island preview remains the stable viewport until the native
-        // renderer can provide a complete frame without destabilizing startup.
+        if (nativeViewActive || currentIsland is null || TerrainViewport.ActualWidth < 1 || TerrainViewport.ActualHeight < 1) return;
+        try
+        {
+            TerrainViewport.Source = SoftwareTerrainRenderer.Render(currentIsland, (int)TerrainViewport.ActualWidth, (int)TerrainViewport.ActualHeight, cameraYaw, 38, cameraDistance, targetX, targetZ);
+        }
+        catch
+        {
+            TerrainViewport.Source = currentIsland.CreatePreview();
+        }
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
-    private void ZoomIn_Click(object sender, RoutedEventArgs e) { nativeDistance = Math.Max(3000, nativeDistance - 1200); RenderNativeCamera(); }
-    private void ZoomOut_Click(object sender, RoutedEventArgs e) { nativeDistance = Math.Min(50000, nativeDistance + 1200); RenderNativeCamera(); }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); }
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); }
     private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; panning = e.ChangedButton is MouseButton.Middle or MouseButton.Right; pendingDx = 0; pendingDy = 0; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
     private void TerrainViewport_MouseMove(object sender, MouseEventArgs e) { if (!orbiting && !panning) return; var point = e.GetPosition(TerrainViewport); var dx = point.X - lastMousePosition.X; var dy = point.Y - lastMousePosition.Y; pendingDx += dx; pendingDy += dy; if (!nativeViewActive) { if (orbiting) cameraYaw += dx * .35; else { targetX -= dx * cameraDistance / 700; targetZ -= dy * cameraDistance / 700; } RenderSoftwareTerrain(); } else { nativeDragTransform.X += dx; nativeDragTransform.Y += dy; } lastMousePosition = point; }
     private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; panning = false; TerrainViewport.ReleaseMouseCapture(); if (nativeViewActive && (Math.Abs(pendingDx) > 1 || Math.Abs(pendingDy) > 1)) { nativeBeta += (int)Math.Clamp(pendingDx * 3, -900, 900); nativeAlpha += (int)Math.Clamp(pendingDy * 3, -900, 900); RenderNativeCamera(); } }
