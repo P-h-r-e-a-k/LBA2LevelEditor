@@ -1,0 +1,94 @@
+#include <SYSTEM/EVENTS.H>
+
+#include <SVGA/VIDEO.H>
+#include <SYSTEM/KEYBOARD.H>
+#include <SYSTEM/LOG.H>
+#include <SYSTEM/MOUSE.H>
+#include <SYSTEM/TIMER.H>
+#include <SYSTEM/WINDOW.H>
+
+#include <SDL3/SDL.h>
+#include <assert.h>
+
+// -----------------------------------------------------------------------------
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Implemented in SOURCES/JOYSTICK.CPP. Forward-declared here so LIB386 does
+// not pull in game-side headers; the symbol is resolved at final link time.
+// A weak no-op default lets ASM-equivalence test binaries link without
+// dragging in the full gamepad translation unit.
+void HandleEventsJoystick(const void *event);
+__attribute__((weak)) void HandleEventsJoystick(const void *event) {
+    (void)event;
+}
+
+// Touch / virtual gamepad handler — implemented in SOURCES/TOUCH_INPUT.CPP.
+// Weak no-op default so the engine links without the touch module.
+S32 HandleEventsTouch(const void *event);
+__attribute__((weak)) S32 HandleEventsTouch(const void *event) {
+    (void)event;
+    return 0;
+}
+
+// --- Private state -----------------------------------------------------------
+bool eventSystemInitialized = false;
+static EventFilterFn s_eventFilter = NULL;
+
+// --- Initialization ----------------------------------------------------------
+bool InitEvents() {
+    assert(eventSystemInitialized == false);
+
+    if (!SDL_InitSubSystem(SDL_INIT_EVENTS)) {
+        Log_Error("Event system init failed: %s", SDL_GetError());
+        eventSystemInitialized = false;
+        return false;
+    }
+
+    eventSystemInitialized = true;
+    return true;
+}
+
+void EndEvents() {
+    if (eventSystemInitialized) {
+        SDL_QuitSubSystem(SDL_INIT_EVENTS);
+        eventSystemInitialized = false;
+    }
+}
+
+// --- Interface ---------------------------------------------------------------
+void SetEventFilter(EventFilterFn fn) {
+    s_eventFilter = fn;
+}
+
+void ManageEvents() {
+    assert(eventSystemInitialized == true);
+
+    SDL_PumpEvents();
+    {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            const void *transparentEvent = (void *)(&event);
+
+            if (s_eventFilter && s_eventFilter(transparentEvent))
+                continue;
+
+            HandleEventsTimer(transparentEvent);
+            HandleEventsMouse(transparentEvent);
+            HandleEventsKeyboard(transparentEvent);
+            HandleEventsJoystick(transparentEvent);
+            if (!HandleEventsTouch(transparentEvent)) {
+                HandleEventsVideo(transparentEvent);
+            }
+            HandleEventsWindow(transparentEvent);
+        }
+    }
+
+    // TODO: Pump audio events (refer to WINSYS.CPP)
+}
+
+// =============================================================================
+#ifdef __cplusplus
+}
+#endif

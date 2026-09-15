@@ -1,0 +1,198 @@
+name: Release latest (rolling)
+
+# Rolling pre-release for community testers who want bleeding-edge main builds
+# without cloning + building. Triggers on every push to main; force-overwrites
+# a `latest` GitHub Release with the just-built artifacts.
+#
+# Distinct from the tag-triggered release-{linux-appimage,linux-tarball,windows,macos}.yml
+# workflows in trigger only — same reusable build workflows, same packaging
+# scripts, same artifact shape. So `latest` is functionally a tag-release at
+# HEAD-of-main with a rolling tag instead of a versioned one.
+#
+# Marked prerelease: true and make_latest: false so the v0.x.y stable tag
+# stays as the GitHub-promoted "Latest" on the Releases page; this workflow's
+# release sits below it labeled as a rolling pre-release.
+#
+# See docs/RELEASING.md "Rolling latest pre-release" for the full rationale
+# and how this fits with the cross-platform release standard.
+
+on:
+  push:
+    branches: [main]
+    # See linux.yml for paths-ignore rationale. Docs-only commits to main
+    # don't change build output, so skip the rolling pre-release rebuild.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.vscode/**'
+      - '.editorconfig'
+      - '.git-blame-ignore-revs'
+      - 'cliff.toml'
+
+# Two pushes back-to-back shouldn't queue — cancel any in-flight rolling
+# build, the newest commit wins. Tag-triggered release workflows don't
+# share this concurrency group (different lifecycle).
+concurrency:
+  group: release-latest
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    uses: ./.github/workflows/reusable-build-linux-appimage.yml
+    with:
+      artifact-prefix: latest-linux
+      # Keep a rolling AppImage on the rolling channel. On the default
+      # channel it self-updates onto the newest stable tag on first run,
+      # under its own rolling filename. See docs/RELEASING.md.
+      update-channel: latest-pre
+
+  build-linux-tarball:
+    uses: ./.github/workflows/reusable-build-linux-tarball.yml
+    with:
+      artifact-prefix: latest-linux-tarball
+
+  build-windows:
+    uses: ./.github/workflows/reusable-build-windows.yml
+    with:
+      artifact-prefix: latest-windows
+
+  build-macos:
+    uses: ./.github/workflows/reusable-build-macos.yml
+    with:
+      artifact-prefix: latest-macos
+
+  build-android:
+    uses: ./.github/workflows/reusable-build-android.yml
+    with:
+      artifact-prefix: latest-android
+    # For the Android release key, so the rolling build updates in place too.
+    secrets: inherit
+
+  release:
+    name: Update rolling latest release
+    needs: [build-linux, build-linux-tarball, build-windows, build-macos, build-android]
+    # Run even if a build leg failed — partial release with whatever
+    # platforms succeeded is more useful for community testers than
+    # blocking the whole rolling release on one flaky leg. Don't run if
+    # the workflow itself was cancelled.
+    if: always() && !cancelled()
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: latest-*
+          merge-multiple: true
+
+      - name: Compose release body
+        id: meta
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          # A release's published_at doesn't advance when the release is
+          # updated in place, so the Releases page would keep showing the
+          # date this rolling release was first published. The commit and
+          # date go in the release name, which does update.
+          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +"%Y-%m-%d")" >> "$GITHUB_OUTPUT"
+          cat > release-body.md <<EOF
+          **Rolling pre-release.** Built from \`main\` on every push. For stable releases see [the Releases page](https://github.com/${{ github.repository }}/releases).
+
+          - Commit: [\`${SHA_SHORT}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+          - Built: ${TIMESTAMP}
+
+            Same artifact shape as tagged releases — Linux AppImage and portable tarball (x86_64, aarch64), Windows portable ZIP (x64), macOS DMG (arm64), Android APK (arm64-v8a, armeabi-v7a). May contain in-progress changes that haven't been play-tested. If you're chasing a specific bug or sharing with others, prefer a tagged release.
+
+          If a particular platform's artifact is missing below, that platform's build leg failed for this commit; the other platforms still updated. Earlier rolling builds remain accessible via the [commit history](https://github.com/${{ github.repository }}/commits/main).
+          EOF
+
+      - name: Update rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest (rolling pre-release) - ${{ steps.meta.outputs.sha_short }}, ${{ steps.meta.outputs.date }}"
+          body_path: release-body.md
+          files: |
+            *.AppImage
+            *.AppImage.zsync
+            lba2cc-*-linux-*.tar.gz
+            lba2cc-*-windows-x64.zip
+            lba2cc-*-macos-arm64.dmg
+            lba2cc-*-android-*.apk
+          # Keep the most recent stable v0.x.y tag as GitHub's "Latest"
+          # badge. This rolling release sits below it as a clearly-labeled
+          # pre-release.
+          prerelease: true
+          make_latest: false
+          # This action creates the `latest` tag only when it's absent; an
+          # existing one is left pointing wherever it already pointed. The
+          # step below moves it. Body and assets do update in place.
+          fail_on_unmatched_files: false
+
+      # Asset names embed the version, so an upload never collides with the
+      # previous build's files and they accumulate on the release forever.
+      # Delete whatever this run did not produce.
+      #
+      # The keep list is every file the artifact download put here rather than
+      # a copy of the upload globs above, so adding a platform cannot silently
+      # prune its own new asset.
+      #
+      # A build leg that failed therefore drops its platform's download
+      # instead of leaving an older version in its place, which is what the
+      # release body already tells readers to expect.
+      #
+      # Janitorial only: the release is correct without it, just cluttered.
+      # Never let a prune failure stop the tag from moving.
+      - name: Prune assets from earlier builds
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # This job never checks out the repo, so `gh release` subcommands
+          # have no remote to infer the repository from and fail before they
+          # reach the API. The `gh api` calls below name it in the path.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          keep="$RUNNER_TEMP/keep.txt"
+          find . -maxdepth 1 -type f ! -name 'release-body.md' \
+            -printf '%f\n' | sort -u > "$keep"
+
+          # Guard the all-legs-failed case: the release job runs even when
+          # every build failed, and pruning against an empty set would wipe
+          # the release. Match on extension so a new platform still counts.
+          if ! grep -qE '\.(AppImage|zsync|tar\.gz|zip|dmg|apk)$' "$keep"; then
+            echo "No release artifacts downloaded this run; leaving assets alone."
+            exit 0
+          fi
+
+          rid=$(gh api "repos/${{ github.repository }}/releases/tags/latest" --jq .id)
+          mapfile -t have < <(gh api --paginate \
+            "repos/${{ github.repository }}/releases/$rid/assets" --jq '.[].name')
+
+          for asset in "${have[@]}"; do
+            if ! grep -qxF -- "$asset" "$keep"; then
+              echo "pruning $asset"
+              gh release delete-asset latest "$asset" --yes
+            fi
+          done
+
+      # Runs after the upload so the tag only ever advertises a commit whose
+      # artifacts finished uploading. Two pushes back-to-back cancel the older
+      # run mid-job, and a tag left behind the assets is recoverable where a
+      # tag ahead of them is not.
+      #
+      # Force-moves the tag, so a local `git fetch` needs --force to follow
+      # it. Nothing rebuilds in response: the tag-triggered release workflows
+      # filter `v*`, and ref updates authored by GITHUB_TOKEN don't trigger
+      # workflows at all.
+      - name: Point the latest tag at this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/latest" \
+            -f sha='${{ github.sha }}' -F force=true

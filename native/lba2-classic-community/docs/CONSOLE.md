@@ -1,0 +1,131 @@
+# Debug console
+
+Quake-style drop-down debug console for LBA2. The console is always compiled and works everywhere: in-game, menu, inventory, credits, and during video playback. DEBUG_TOOLS remains a separate optional layer for additional legacy hotkeys/features.
+
+## Build
+
+The console is part of normal builds (no dedicated CMake flag required).
+
+```bash
+cmake -B build
+cmake --build build
+```
+
+The console is supported with the SDL backend (default in this project).
+
+## Toggle and input
+
+- **F12** by default: open/close the console.
+- Optional override in `lba2.cfg`: set `ConsoleToggleKey=<SDL scancode int>` (for example `41` for `K_CARRE` on AZERTY layouts).
+- When the console is open, all keyboard input is consumed by the console (no game/menu input).
+- Type a line and press **Enter** (or numpad Enter) to run a command or cheat.
+- **Esc**: clear the input line; pressing Esc on an already-empty line closes the console.
+- **Up/Down**: recall previous commands (input history).
+- **Page Up / Page Down** and the **mouse wheel**: scroll console output; the input line stays fixed at the bottom. When you are not at the newest lines, the last visible scrollback line shows `...`.
+- **Left/Right/Home/End**: move the edit cursor within the input line. **Backspace** deletes the character before the cursor; **Delete** the one at it.
+- **Shift+Left/Right/Home/End**: select text in the input line (shown as an inverted block). **Ctrl+A** selects the whole line. Typing, paste, or Backspace/Delete replaces the selection.
+- **Mouse**: while the console is open the OS cursor is shown. Drag with the left button to select text across the scrollback (and the input line); double-click selects a word; a click on the input line places the edit cursor. The selection is read-only; copy it with **Ctrl+C**, or right-click to copy and clear it. A left-click below the panel (in the game area) closes the console. (The engine normally hides the OS cursor and draws its own software pointer, which would sit under the overlay, so the console shows the real OS cursor while open.)
+- **Tab**: complete the command at the prompt against the known commands, cvars and built-ins. A unique prefix completes in full (and adds a trailing space); an ambiguous prefix extends to the longest common prefix and lists the candidates.
+- **Casing and symbols**: typing goes through the OS text-input layer, so **Shift**/**Caps Lock** give capitals and shifted symbols, and non-US keyboard layouts type the right characters. The numpad types digits and `.` `/` `*` `+` `-` when **Num Lock** is on.
+- **Clipboard**: **Ctrl+C** copies the selection (or the whole line if nothing is selected), **Ctrl+X** cuts it, **Ctrl+V** (or **Shift+Insert**) pastes, **Ctrl+L** clears the line.
+
+## Discovery
+
+- **help** – list all commands with short descriptions. With an argument, **help &lt;name&gt;** prints usage and context for that command or cvar (e.g. `help cube`, `help fps`, `help status`).
+- **cmdlist** – list command names only.
+- **varlist** – list cvars (variables) with descriptions.
+- **buildinfo** – print build timestamp and CMake options (SOUND_BACKEND, MVIDEO_BACKEND, ENABLE_ASM). The same string is written to the log at startup.
+
+Unknown commands print a hint to use **cmdlist**. Commands that need an in-game scene (**give**, **savebug**) print a short reason if used while a video is playing, before a scene exists, or in the phantom-cube state.
+
+## Cheats (by name)
+
+These mirror the classic key-sequence cheats; you can type their name directly at the prompt and press Enter:
+
+- **life** – max life
+- **magic** – max magic
+- **full** – full points
+- **gold** – add gold/kashes
+- **speed** – toggle frame rate display
+- **clover** – clover
+- **box** – clover box
+- **pingouin** – MecaPingouin
+
+## Commands
+
+| Command       | Description |
+|---------------|-------------|
+| **cube** &lt;n&gt; | Request change to cube number &lt;n&gt; (applied next frame in game; cube changes no longer trigger autosave). |
+| **load**      | Load save by player name as printed by `listsaves`, or by file name (with optional `.lba`). |
+| **loadbug**   | Load bug save by name or file (optional `.lba`), default `bug`. |
+| **listsaves** | List save games (player names from .lba files). |
+| **listbugs**  | List bug saves in the bugs directory (same path as savebug). |
+| **savebug** [name] | Save current game to bugs directory; optional name (default `bug`). |
+| **timer** [ms] | Advance in-game timer by N ms (default 200). |
+| **status** | Print island, cube, chapter, object/zone counts, FPS, timer, position. |
+| **screenshot** | Save the next frame as PNG in the shoot directory without the console visible (uses SavePNG). |
+| **give** &lt;item&gt; [count] | Grant an inventory item by name — run `give` with no args to list item names; a numeric index still works as a fallback. Writes possession, refreshes the inventory, and plays the “found object” cinematic for real inventory slots. `count` applies to countable items (darts, money, gem, penguin, clover). |
+| **teleport** &lt;x&gt; &lt;y&gt; &lt;z&gt; [beta] \| **teleport actor** &lt;n&gt; | Reposition the hero in the current cube (sets `Obj` coords directly; the next simulated frame re-runs zone detection and collision from the new spot). `actor <n>` jumps onto actor n, the quick way to reach a zone-gated interaction without walking. Within-cube only (cross-cube needs `ChangeCube`). |
+| **input** &lt;flags&gt; [ticks] \| **input seq** &lt;t:flags:dur[/…]&gt; \| **input fseq** &lt;f:flags:dur[/…]&gt; \| **input trace** &lt;0\|1&gt; \| **input off** | Drive the hero without a keyboard, metered in **sim ticks** so a hold means the same amount of gameplay at any `--fixed-timestep` (a throttle-skipped frame consumes no tick): `input up 120` floats/walks forward, `input up+throw 30` holds a combo. Flags: `up down left right action search throw esquive inventory holomap`, combined with `+` or `,` (or a raw `0xNNN` mask). `seq` schedules a sim-tick timeline (`0:up:60/60:up+throw:30`); `fseq` schedules it in **rendered frames**, so a press can be placed on a throttle-skipped frame to reproduce the input-edge drop. `trace 1` logs the injected mask + hero anim/pos each sim tick. See docs/plan/INPUT_SIM_PLAN.md. |
+| **key** &lt;name\|scancode&gt; [polls] [delay] \| **key off** | Hold a key down at the keyboard layer, which is what `input` cannot do: `input` ORs its mask into `Input` from `MainLoop`, so a menu or dialogue spinning in its own `MyGetInput` loop never sees it. This writes the scancode into `TabKeys` from the `ApplyHarnessKeys` hook every `ManageKeyboard` runs, so **modals** see it too. Names: `esc menus enter space action up down left right pad-start pad-a pad-b pad-x pad-y` (or a raw scancode); `menus` is F10 and `pad-start` is the pad's Menus binding. Metered in **input polls**, one per `ManageKeyboard`, not sim ticks, because a modal advances no ticks. A poll is not the same as a `MyGetInput` call: `InitWaitNoInput(x)` is `GetInput(x)`, which runs `ManageKeyboard` too, so a path that latches on entry burns extra polls. In `MainLoop`, where nothing else polls, one poll is one rendered frame. `delay` is usually needed rather than optional: a menu masks whatever is already held when it opens (`InitWaitNoInput`), so arm the press to land a few polls *after* the modal starts. |
+| **varcube** &lt;n&gt; [value] | Read (no value) or set a scene (cube) Life variable, `n` in `0..79`. Drives quest state, e.g. arm the flag an NPC's script waits on. |
+| **vargame** &lt;n&gt; [value] | Read (no value) or set a game Life variable, `n` in `0..255`. Drives quest / inventory state. A read names the index when the game names it, from the same table `give` resolves against: `vargame[30] = 1 (diploma)`. The name is **appended**, never placed between the index and the value, because the line is parsed: harness scripts match `vargame[<n>] = <v>`, and splicing a name into that prefix breaks them silently, the parse yielding nothing and the caller reading a set flag as unset. `Console_FormatVarGameLine` owns the format and a host test pins it. |
+| **flags** [all] | Dump the named game Life variables with their values: the chapter, then every `ListVarGame` index that has a name, in index order. The quest state a save carries is spread across that array, and the indices that decide progression are named in `SOURCES/COMMON.H` (`FLAG_DIPLOME`, the four `FLAG_DMKEY_*`, `FLAG_CHAPTER`), so "what has this save done" was previously a matter of reading `--dump-state`'s bare integers against the header by hand. Covers the `give` inventory names plus the named non-inventory vars (`divingsuit`, `celebration`, `dinovoyage`, the three `acf` cutscene bitmasks, `scenarsignal`, `vehicletaken`, `esmerplanet`); the only two named flags left out are `FLAG_CHAPTER`, which gets its own line, and `FLAG_DONT_USE`, which the header marks as not a flag. Nonzero rows only, since that is the set that says what has happened; `flags all` includes the zeros, for confirming something is genuinely unset rather than merely absent from the listing. |
+| **lifetrace** &lt;objN&gt; \| off | Trace object N's Life script: its comportement/track/zone state each frame, every `LF_` condition it evaluates (with the branch `Value`), and the **actions** it takes (`SET`/`ADD`/`SUB` on cube/game vars, `MESSAGE` dialogs, `FOUND_OBJECT` gives). An NPC-script debugger showing both what a script checks and what it does to game state, e.g. `SET cube_var[16] = 0`. |
+| **objtrace** &lt;objN&gt; \| off | Trace object N's world state each simulated frame, led by the managed clock `t`: `X/Y/Z`, `Alpha/Beta/Gamma`, the animation and frame it is on, its `LastAnimStep` translation, track offset and label, comportement, `Move` mode and work flags. The companion to `lifetrace`: that says what an object's script decided, this says where the object ended up, which is what turns "its path is offset" into numbers that diff against a known-good run. Objects driven by their animation rather than a `Move` mode (flying actors, most notably) are where the two disagree. One line per simulated frame, `t` strictly increasing. **Capture it from `adeline.log` or from stderr alone, never through `2>&1`:** a trace line reaches both the stderr sink and, while the console is driving the run, the console's stdout mirror. Merging the two duplicates every line and interleaves two differently-buffered streams, so the capture gains repeated timestamps and out-of-order lines that read convincingly as the clock running backwards. |
+| **useitem** &lt;n&gt; [frames] [delay] \| **useitem trace** &lt;0\|1&gt; | Inject a one-frame inventory item-use of var-game item `n` (as opening the inventory and using it would), so an NPC's give-item check (`LF_USE_INVENTORY`) can be driven headlessly. `frames` injects over N frames; `delay` waits N frames first (to land past a load's clock jump on a throttle-skip frame). `trace 1` logs each `LF_USE_INVENTORY` result. |
+| **cubetrace** &lt;0\|1&gt; | Log every cube transition (`island N: A -> B`) on each `ChangeCube`. Run a playthrough or the demo reel with it on to trace out the game's cube-to-cube flow map. |
+| **zonelist** [type] | List the current cube's scene zones (`ListZone`): each box `(X0,Y0,Z0)-(X1,Y1,Z1)`, its `Type` (`cube`/`camera`/`scenaric`/`giver`/`message`/`ladder`/etc.), `Num` and `Info` fields, marking the zone the hero currently stands in. Zones are what a walkthrough actually turns on: a `scenaric` box sets the hero's `ZoneSce` (read by his Life script via `LF_ZONE_OBJ` to award a pickup or fire an event), a `giver` box hands an item on action inside it, a `cube` box changes scene. Yet they are invisible to `--dump-state` (which only reports the count). Printing the boxes turns "walk to the drawer" into a concrete `teleport <x> <y> <z>` the harness can drive. Optional `type` filters to one zone type. All seven `Info` slots are printed, since which of them carry meaning depends on the type; [ZONES.md](ZONES.md) has the per-type map. |
+| **camnudge** &lt;dBeta&gt; [dAlpha] [frames] | Drive the Auto camera's analog orbit without a mouse or a gamepad: feeds the same per-frame nudge the mouse drag and the right stick feed, at the same point in the frame, for `frames` frames (default 1, a single-frame stick touch). `dBeta` orbits horizontally, `dAlpha` tilts elevation. Exterior Auto camera only, like the devices it stands in for. |
+| **camtrace** &lt;0\|1&gt; | Log where the camera is and who is deciding that, once per frame: hero `Beta`, `AddBetaCam`, `BetaCam` and the target the Auto camera is lerping toward, how far `BetaCam` moved that frame, the re-engage countdown, whether a manual orbit is driving, whether the hero is translating, and then `zone` / `forced` / `cine` / `follow` / `ext` / `vue` / `alpha` / `dist` for which camera holds the view. Emitted from the main loop, so it reports camera zones, cutscenes, interiors and the classic camera, none of which run the Auto camera's own update. `step` counts whoever moved `BetaCam`, not only the Auto camera's lerp. `target` is maintained by the Auto camera alone and is stale when `follow` is 0. Paired with `camnudge` it turns "the camera snaps when I touch the stick" into numbers. |
+| **mouse** &lt;dx&gt; &lt;dy&gt; [polls] [buttons] \| **mouse off** | Move the mouse, as a device does: `dx`/`dy` pixels per poll into the accumulator `ManageMouse` drains, with the `Click` mask held over the same span (1 left, 2 right, 4 middle; default 2, because `FlagMouseCameraDrag` ships on and the drag orbit only runs while the right button is down). Metered in **input polls**, like `key`. Everything downstream sees an ordinary mouse: the 2px dead zone, the sensitivity, the drag gate and the session recorder. `camnudge` is the shortcut past all of that, straight to the nudge, so it drives the camera and leaves no trace in a recording; this drives the device. Exterior Auto camera only, like the device it stands in for. |
+| **stick** &lt;x&gt; &lt;y&gt; [polls] \| **stick off** | Hold the gamepad right stick at (`x`, `y`) in SDL axis units (-32767..32767, dead zone in `JoystickDeadzone`), reporting a pad present for as long as it runs, which is what the analog camera checks before it reads the axes. Metered in **input polls**. Right stick only: the left one reaches the game as scancodes, so `key` covers it. |
+| **inputflow** [reset] | The input signal counted on both sides of every layer it crosses, and the gap between them. `b1` is SDL key events against rising edges in the polled `TabKeys` state: a press and release that both land between two polls never reach the level sample, and the gap is how many did that. `b2` is `TabKeys` rises against `Input` rises, so a key no binding names shows as a gap, with what `NoRepeatInput` deliberately withheld reported apart. `b3` is rendered frames carrying an `Input` edge against the ones the fixed-timestep throttle actually stepped, split so a skipped movement edge (which the throttle is designed to skip) is not confused with a skipped action edge (which is #407's class, and should stay at zero). `reset` zeroes them, which is what makes one `--listen` session measure many scenarios instead of paying a boot each. Also in `--dump-state` as `input_flow`. |
+| **skipmodals** &lt;0\|1&gt; | Abort dialogue modals immediately (as if pressing Esc) so a headless run does not hang on a give/talk dialog: the dialogue box spins waiting for a keypress while the main tick loop is stalled. The script continues past the dialog with no quest-state change, so a give still registers. |
+| **playvideo** &lt;name&gt; | Play ACF video by name. |
+| **listvideos** | List available ACF video names. |
+| **playjingle** &lt;1-26&gt; | Play jingle by number. |
+| **playmusic** &lt;num&gt; [loop 0\|1] | Play music track by number (optional loop flag, default 1). |
+| **playsample** &lt;num&gt; [freq] [decal] [repeat] [volume] [pan] | Play sample by index with optional params: pitchbend (`freq`, default `0x1000`), random pitch range (`decal`), repeat count (`repeat`, 0=loop, default 1), volume (0–127, default 127), pan (0–127, default 64). |
+| **audio** ... | Audio commands: `audio sample play/stop_all`, `audio music play/stop`, `audio global pause/resume/stop_all/reset/reverse_stereo/log`. Calls HQ/AIL functions directly (see [AUDIO.md](AUDIO.md)). |
+| **video** ... | Video commands: `video log <0|1>`. Toggle PlayAcf diagnostic logging (video name, path, language for INTRO). |
+| **loglevel** [debug\|info\|warn\|error] | Show or set the master log level. It gates every sink at once (this console, `adeline.log`, and the terminal), so lowering it to `debug` reveals `Log_Debug` detail everywhere. No args prints the current level. Default `info`; also set at launch with `--log-level` or the `LBA2_LOG_LEVEL` env var. |
+| **resolution** [&lt;n&gt; \| WxH \| native \| --all] | Runtime render-resolution switch (see [RUNTIME_RESOLUTION.md](RUNTIME_RESOLUTION.md)). No args = list recommended modes + current. Numeric picks by index from that list; `WxH` is arbitrary (W%8==0, range 320x200..1920x1080); `native` snaps to the current display; `--all` expands to the advanced catalog. After a successful switch, a 15 s keep/revert dialog appears: Keep persists to `lba2.cfg` ResolutionX/Y; Revert / timeout restores the previous mode. |
+| **dumpstate** [path] | Write the engine state as JSON, the same snapshot `--dump-state` takes. The flag captures once as a bounded run ends; this takes one whenever asked, so two moments in a single session can be diffed against each other instead of two whole runs. Without a path, writes `state_<time>.json` under `shoot/`. |
+| **polyrec** [path] | Record the next frame's polygon draw calls, the same one-shot request `Alt+F9` and `--polyrec` make. `ENABLE_POLY_RECORDING` builds only. Without a path, writes `polyrec_<time>.lba2polyrec` under `shoot/`. |
+| **rec** start [path] [verbose] \| stop \| play [path] \| info [path] | Record the session's input, the console commands driving it, the binding tables and a per-tick digest of simulation state, then replay it and report the first tick where the two stop matching. `start` snapshots and reloads first, so the recording begins from a state a replay can reach the same way; `info` with no path reports the running session, and with one compares that file's mode lines against this run. Without a path, `start` names the session after the time of day and `play` takes the last one recorded. `verbose` stores every value the digest mixes, every tick, so a divergence names the field and not only the tick, at a few kilobytes a tick. A mid-session `start` pins the simulation step itself; from boot, use `--fixed-dt`, because on the host-sampled clock a replay is not exact. See [RECORDING.md](RECORDING.md). |
+| **exit**      | Exit the game immediately (clean shutdown). |
+
+## CVars
+
+Get/set with `varname` (print value) or `varname value` (set).
+
+| Cvar | Type | Description |
+|------|------|-------------|
+| **fps** | bool | Frame rate display. |
+| **horizon** | bool | Draw horizon / cubes around. |
+| **zv** | bool | Draw ZV boxes. |
+
+## Layout
+
+- Console is a panel at the top of the screen.
+- Scrollback shows recent lines; the last line is the input with a `]> ` prompt and a blinking underline cursor at the edit position. When scrolled up, an ellipsis `...` appears on the last visible scrollback line to indicate older messages above.
+- Output from commands and cheats appears in the scrollback.
+
+## Implementation notes
+
+- **Independent of game buffer**: The console uses its own 8-bit overlay buffer. It is drawn via `AffStringToBuffer` (LIB386/SVGA) and composited in the video layer’s pre-present callback (`Console_PrePresent`), so it never touches the game’s `Log` or dirty-box pipeline.
+- **Event-driven input**: Keys are fed from the event loop via `Console_FeedEvent` (registered with `SetEventFilter`). When the console is open, key events are queued and processed each frame by `Console_Update()` (no arguments). The configured toggle key is reserved from gameplay input to avoid double-handling. Character entry uses SDL text input (enabled on open, disabled on close) so casing, shifted symbols and non-US layouts resolve through the OS keyboard layout; physical keys (Enter, arrows, Backspace/Delete, Tab, Esc, Home/End, Page Up/Down, the Ctrl combos) are handled by scancode. The mouse wheel scrolls the scrollback.
+- **Hooks**: `SetEventFilter(Console_FeedEvent)` and `SetPrePresentCallback(Console_PrePresent)` are registered in `main()` after `InitAdeline()`. `MyGetInput()` reserves the configured toggle key, and when the console is open calls `Console_Update()` and returns.
+- **Module**: `SOURCES/CONSOLE/` – `CONSOLE.H`, `CONSOLE.CPP` (core), `CONSOLE_CMD.CPP` (commands/cvars). Core links only LIB386 (AFFSTR for text) and SDL for events; no dependency on game `Log` or dirty-box.
+- **Gameplay integration**: Commands call existing engine functions (`LoadGameNumCube`, `PlayAcf`, `DoFoundObj`, etc.) rather than introducing console-only code paths. Cube changes no longer trigger autosave to keep debug teleports tidy; other save behavior is unchanged.
+- **External call sites** (outside `SOURCES/CONSOLE/`): `INPUT.CPP` (input path when open), `PLAYACF.CPP` (stall ACF while open), `PERSO.CPP` (event filter, pre-present, screenshot handoff), `GAMEMENU.CPP` (slide-show gate). Cheat names live in `CHEATCOD.CPP`. Build wiring: `SOURCES/CMakeLists.txt`, `SOURCES/CONSOLE/CMakeLists.txt`, `tests/console/`. A one-line map also lives in `CONSOLE.H` above the public API.
+- **Second front-end**: `Console_Execute` is also what the `--listen` command socket feeds, so every verb here answers a driver outside the process on a debug build (see [CONTROL.md](CONTROL.md#driving-a-running-engine---listen)). The socket installs the line sink around one command to capture its output, which is why `Console_SetLineSinkForTests` returns the sink it displaced instead of overwriting it.
+
+### Extending commands and cheats
+
+- **Commands**: Add new handlers in `SOURCES/CONSOLE/CONSOLE_CMD.CPP` and register them via `Console_RegisterCommandEx("name", handler, "short description", "usage line", "context line")` (or `Console_RegisterCommand` if usage/context are omitted) inside `Console_RegisterAll()`.
+- **CVars**: a tunable that a module owns is declared once in that module's settings table and registered from there (`Settings_RegisterCvars`, see [CONFIG.md](CONFIG.md#how-a-key-is-declared)), which routes an assignment back to the setting's own rule, so the console cannot set a value the config file would reject and the two agree on what an odd one means. `Console_RegisterCvar` in [CONSOLE.H](../SOURCES/CONSOLE/CONSOLE.H) remains for a global with no owning module and writes the parsed value straight through, unchecked; `Console_RegisterCvarCoerced` in [CONSOLE.H](../SOURCES/CONSOLE/CONSOLE.H) takes the owner's setter for anything that has a rule. Wire cvars to existing globals rather than duplicating state.
+- **Persisting a setting**: use `WriteConfigValue` (`PERSO.H`), never `DefFileBufferWriteValue` directly. The config a run reads is the file it owns with the one beside the game data stacked underneath, and a bare write is refused while that layer is attached, which is every install that ships an `lba2.cfg`. Report a failed write: a verb that applies a setting and says nothing about failing to store it reads as persistent and is not. Covered by `tests/automation/test_console_config_write.sh`, which builds an install that ships a config so the layer is guaranteed attached.
+- **Cheats**: To add a cheat that works both from key sequences and the console, extend `CheatNames[]` and `ApplyCheat` in `SOURCES/CHEATCOD.CPP`; the console will automatically route matching command names through `TryExecuteCheatByName`.
+- **Safety**: Prefer read-only inspection commands or one-shot state changes that leave the game in a consistent, save/load-safe state. If a command is inherently risky (e.g. heavy state mutation), call it out explicitly in its help text.

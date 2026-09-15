@@ -1,0 +1,370 @@
+#include "C_EXTERN.H"
+#include "FOLLOWCAM_CFG.H"
+
+/*══════════════════════════════════════════════════════════════════════════*
+			 █▀▀▀█ █▀▀▀▀ █▀▀▀█ ██▀▀▀ █▀▀▀█
+			 ██▀▀▀ ██▀▀  ██▀█▀ ▀▀▀▀█ ██  █
+			 ▀▀    ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+/*--------- divers ---------------------------*/
+#ifdef ONE_GAME_DIRECTORY
+S32 DebugFps = FALSE;
+#else
+S32 DebugFps = TRUE;
+#endif
+
+S32 GodMode = FALSE;  // GOD cheat: Twinsen ignores combat damage (runtime-only)
+S32 OnePunch = FALSE; // SENDELL cheat: Twinsen one-shots anything he hits
+
+S32 DistribVersion = ACTIVISION_VERSION;
+
+char MessageNoCD[50];
+
+S32 DemoSlide = FALSE; // Mode démo non jouable
+S32 RestartMusic = FALSE;
+
+U8 FlagRain = FALSE;
+U8 FlagDrawHorizon = TRUE;
+U8 SavingEnable = TRUE;
+U8 FlagPlayAcf = FALSE;
+U8 RainEnable = FALSE;
+
+#ifdef DEMO
+U8 FlagSlideShow = FALSE;
+#endif
+
+U8 *BufSpeak;
+//U8	*BufTempo ;
+
+U8 *LbaFont;
+U8 PalettePcx[768 + RECOVER_AREA]; // Load_HQR of a compressed palette writes up to 768 + RECOVER_AREA
+S32 MyKey = 0;
+// LastInputWasKeyboard is defined in LIB386/SYSTEM/KEYBOARD.CPP so libsys.a
+// carries the symbol (test binaries link only LIB386 archives, not the
+// SOURCES objects). Declared extern in C_EXTERN.H.
+U8 *PtrPal;
+U8 *PtrPalNormal;
+U8 *PtrPalCurrent;
+U8 *PtrPalEclair;
+U8 *PtrPalBlack;
+U8 *PtrTransPal;
+U8 *PtrXplPalette;
+XPL_HEADER *PtrXplHeader;
+
+S32 IdxPalette = 0;     // numéro de palette dans le HQR
+S32 LastIdxPalette = 0; // numéro de la palette précédente dans le HQR
+
+char String[256];
+S32 Value;
+
+//------------ Mode Cinema = 2 bandes noires de 40 pixels en haut et en bas de
+//			     l'ecran
+
+U8 CinemaMode = FALSE;
+S32 TimerCinema = 0;
+S32 LastYCinema = 0;
+S32 DebCycleCinema = 0;     // en pixels Y
+S32 DureeCycleCinema = 500; // en TimerRefHR
+
+//---------------------------------------------------------------------------
+
+S32 TimerProto;
+
+U32 ParmSampleVolume = 127; // a sauver dans les sauvegardes
+U32 ParmSampleDecalage = 0;
+U32 ParmSampleFrequence = 0;
+
+S32 DetailLevel = MAX_DETAIL_LEVEL;
+
+S32 VideoFullScreen = TRUE;
+S32 DisplayFullScreen = TRUE;
+S32 DisplayVSync = TRUE;
+
+// #358: min ms of game-time between simulation steps (0 = off, per-frame sim as before).
+// When > 0 the main loop runs the simulation at most once per this many ms of game clock,
+// so movement/animation stops speeding up or freezing above ~60 fps (vsync off, high-refresh
+// displays). Default 16 (~60 Hz sim). Persisted to lba2.cfg (FixedTimestep key) and toggleable
+// live via the `fixedtimestep` console verb. See docs/MOVEMENT_FRAMERATE.md.
+S32 FixedTimestep = 16;
+
+S32 FlagMenuMouse = TRUE;
+
+//S32	FlagPalettePcx = FALSE ;
+S32 FlagFade = FALSE;
+S32 FlagPal = FALSE;
+S32 FadeMenu = FALSE;
+S32 FlagBlackPal = FALSE;
+
+S32 FlagShadeMenu = FALSE;
+
+S32 DrawZVObjets = FALSE;
+
+char PathFla[ADELINE_MAX_PATH];
+
+S32 Version_US = TRUE;
+
+/*-------------------------- memoire ---------------------------*/
+
+U32 SpriteMem = MIN_SPRITES_MEM;
+U32 SpriteRawMem = MIN_SPRITES_RAW_MEM;
+U32 Anim3DSMem = MIN_ANIM_3DS_MEM;
+U32 SampleMem = MIN_SAMPLES_MEM;
+U32 AnimMem = MIN_ANIMS_MEM;
+U32 BodyMem = MIN_BODYS_MEM;
+U32 ObjFixMem = MIN_OBJFIX_MEM;
+U32 IsleObjMem = MIN_ISLE_OBJ_MEM;
+U32 CubeInfosMem = MIN_CUBE_INFOS_MEM;
+U32 ListDecorsMem = MIN_LIST_DECORS_MEM;
+U32 MapPGroundMem = MIN_MAP_PGROUND_MEM;
+U32 ListTexDefMem = MIN_LIST_TEXDEF_MEM;
+U32 MapSommetYMem = MIN_MAP_SOMMETY_MEM;
+U32 MapIntensityMem = MIN_MAP_INTENSITY_MEM;
+U32 SCCMem = 0; // Calculé dynamiquement (contient le scenar)
+
+/*--------- ressources ---------------------------*/
+
+T_HQR_HEADER *HQR_Samples;
+
+U8 *BufferTexture;
+U8 AnimateTexture = FALSE;
+
+/*--------- Ardoise ---------------------------*/
+S8 ListArdoise[MAX_ARDOISE] = {-1, -1, -1, -1, -1};
+
+U8 CurrentArdoise = 0;
+U8 NbArdoise = 0;
+
+/*-------------------- Animations 3DS  ---------------------------*/
+
+T_ANIM_3DS *ListAnim3DS;
+
+/*--------- disk ---------------------------*/
+
+char PleaseWait[MULTI_TEXT_MAX];
+
+//char	ProgDrive[_MAX_DRIVE] ;
+//char	ProgDir[_MAX_DIR] ;
+
+//unsigned	OrgDrive ;
+//char	OrgDir[_MAX_DIR] ;
+
+//char	Name[_MAX_FNAME] ;
+//char	Ext[_MAX_EXT] ;
+
+T_TRACK *ListBrickTrack;
+S32 NbBrickTrack = 0;
+
+/*--------- menus -----------------------------*/
+U16 GameChoice;
+U16 GameNbChoices;
+S16 GameListChoice[10]; // max 7 (normally)
+
+/*--------- perso ----------------------------*/
+S32 FlagTheEnd = FALSE;
+
+/*
+S32	AnimRienNormal, AnimRienSportif, AnimRienAgressif, AnimRienDiscret, AnimRienProtopack ;
+
+U8	*PtrFile3dNormal ;
+U8	*PtrFile3dSportif ;
+U8	*PtrFile3dAgressif ;
+U8	*PtrFile3dDiscret ;
+U8	*PtrFile3dProtopack ;
+*/
+
+extern T_COMPORTEMENT ListComportement[MAX_COMPORTEMENTS];
+
+T_COMPORTEMENT *PtrComportement = ListComportement; // Normal
+
+S32 Shadow = 3; // full
+S32 ShadowX, ShadowY, ShadowZ;
+U8 ShadowCol;
+U32 ShadowLevel = SHADOW_LEVEL;
+
+/*S32	ValidePosX, ValidePosY, ValidePosZ ;
+S32	ValideCube ;
+S32	ValideBeta ;
+S16	ValideOffsetLife, ValideOffsetTrack ;
+*/
+
+S32 NumCube = 0; // num cube en cours
+S32 FlagChgCube = 0;
+S32 FlagReajustPosTwinsen = TRUE; // Reajustement de twinsen lors d'un
+                                  // changement de cube
+
+S32 PhantomX = 0; // offset du cube ext pour aller mourir
+S32 PhantomY = 0; // offset du cube ext pour aller mourir
+S32 PhantomIsland;
+
+S32 FlagLoadGame = 0;
+S32 NewPosX, NewPosY, NewPosZ;
+S32 CubeStartX, CubeStartY, CubeStartZ;
+
+S32 ExtraConque = -1; // Numero extra visant Twinsen (avec Conque)
+
+S32 AllCameras = TRUE;
+S32 FlagMouseCamera = TRUE;
+S32 FlagMouseCameraDrag = TRUE; /* 0=free orbit on move, 1=require right-drag */
+S32 MouseCameraSensX = MOUSE_CAM_SENS_DEFAULT;
+S32 MouseCameraSensY = MOUSE_CAM_SENS_DEFAULT;
+S32 MouseCameraInvertY = FALSE;
+S32 MouseCameraDivisor = MOUSE_CAM_DIVISOR_DEFAULT;
+S32 ManualCameraSmoothing = MOUSE_CAM_SMOOTHING_DEFAULT;
+S32 FollowCamOrbitGlide = FOLLOW_CAM_ORBIT_GLIDE_DEFAULT;
+S32 ManualCameraOrbitActive = FALSE;
+S32 GamepadCameraAnalog = TRUE;
+S32 GamepadCameraSensX = GAMEPAD_CAM_SENS_DEFAULT;
+S32 GamepadCameraSensY = GAMEPAD_CAM_SENS_DEFAULT;
+S32 GamepadCameraInvertY = FALSE;
+S32 GamepadCamMaxBeta = GAMEPAD_CAM_BETA_MAX_DEFAULT;
+S32 GamepadCamMaxAlpha = GAMEPAD_CAM_ALPHA_MAX_DEFAULT;
+S32 Island = 0;
+S32 Planet = 0;
+
+S32 FlagWater = FALSE;
+
+S32 ScaleFactorSprite = DEF_SCALE_FACTOR;
+
+S32 SpriteX = 0; // Coordonnees d'affichage des sprites
+S32 SpriteY = 0;
+
+U8 SaveComportement = C_NORMAL;
+
+/*--------- Extra objs ----------------------------*/
+T_HQR_HEADER *HQRPtrSprite;
+T_HQR_HEADER *HQRPtrSpriteRaw;
+T_HQR_HEADER *HQRPtrAnim3DS;
+S16 *PtrZvExtra;
+S16 *PtrZvExtraRaw;
+S16 *PtrZvAnim3DS;
+
+/*--------- moteur 3D ----------------------------*/
+U8 *BufferAnim;
+
+T_HQR_HEADER *HQR_Anims;
+T_HQR_HEADER *HQR_Bodys;
+T_HQR_HEADER *HQR_ObjFix;
+
+U8 *BufferPof;
+U8 *BufferFile3D;
+
+T_SORT ListTri[MAX_TRI];
+
+/*--------- ambiance ----------------------------*/
+S32 CubeJingle = 255;
+
+/*--------- brick iso ----------------------------*/
+S32 FirstTime = AFF_ALL_FLIP;
+S32 FirstLoop = FALSE;
+S32 FirstSave = FALSE;
+
+/*══════════════════════════════════════════════════════════════════════════*
+	Liste des Globales sauvées dans les fichiers de sauvegarde .LBA
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+S32 NewCube = -1; // change cube demandé
+U8 ListVarCube[MAX_VARS_CUBE];
+S16 ListVarGame[MAX_VARS_GAME];
+U8 Comportement = C_NORMAL;
+U8 SaveComportementHero = C_NORMAL;
+S32 NbGoldPieces = 0;
+S32 NbZlitosPieces = 0;
+U8 NumVersion = NUM_VERSION | SAVE_COMPRESS;
+U8 MagicLevel = 0;
+U8 MagicPoint = 0;
+U8 NbLittleKeys = 0;
+S16 NbCloverBox = NB_CLOVER_BOX_DEFAULT;
+S32 SceneStartX, SceneStartY, SceneStartZ;
+U8 Weapon = FLAG_BALLE_MAGIQUE; // magicball
+                                // TimerRef en extern sauvé ici
+//S32		LastFire = 0 ;
+U8 Bulle = TRUE;
+U8 ActionNormal = FALSE;
+S32 InventoryAction = -1;
+// Console `lifetrace <objN>`: object index whose Life script to trace (comportement/track/zone state
+// each frame + every condition it evaluates), or -1 for off. Headless-debug aid, no gameplay effect.
+S32 DbgLifeTraceObj = -1;
+// Console `objtrace <objN>`: object index whose world position to log each simulated frame, or -1
+// for off. A Life script says what an object decided; this says where it ended up, which is what a
+// "the path is offset" report needs to be turned into numbers. Headless-debug aid, no gameplay
+// effect.
+S32 DbgObjTraceObj = -1;
+// Console `useitem`: inject a one-frame inventory item-use headlessly (mimics what MenuInventory
+// sets), so the give-item path (LF_USE_INVENTORY) can be driven and tested without menu input.
+// Inject = item number, InjectN = frames to inject over, InjectDelay = frames to wait first (settle
+// past the load large-jump onto a throttle-skip frame). Trace logs each LF_USE_INVENTORY result.
+S32 DbgUseItemInject = -1;
+S32 DbgUseItemInjectN = 0;
+S32 DbgUseItemInjectDelay = 0;
+S32 DbgUseItemTrace = 0;
+// Console `cubetrace <0|1>`: log every cube transition (island + from -> to cube) as it happens,
+// so a playthrough or the demo reel traces out the game's cube-to-cube flow. No gameplay effect.
+S32 DbgCubeTrace = 0;
+// Console `camnudge <dBeta> [dAlpha] [frames]`: inject a manual camera nudge for the next N frames
+// through the same path the mouse drag and the gamepad right stick use, so the analog camera can be
+// driven without a device. Counts down to 0 and stops. No gameplay effect.
+S32 DbgCamNudgeBeta = 0;
+S32 DbgCamNudgeAlpha = 0;
+S32 DbgCamNudgeFrames = 0;
+// Console `skipmodals <0|1>`: abort dialogue modals immediately (as if Esc) so a headless run does
+// not hang on a give/talk dialog. The script continues past the dialog; no quest-state change.
+S32 DbgSkipModals = 0;
+// Harness re-fire observability: incremented once per hero projectile spawn (ThrowMagicBall and
+// ThrowExtra with owner == NUM_PERSO), surfaced in --dump-state as "throws". A held throw over one
+// animation cycle must spawn exactly one at every frame rate; a value that climbs with sub-step
+// count is the #456 re-fire regression. No gameplay effect.
+S32 DbgHeroThrows = 0;
+// Harness observability for the #456 input/frame-rate tests: counts the times the hero's
+// in-progress action animation (throw/attack) is reset to idle by a momentary-action release/idle
+// path in OBJECT.CPP MOVE_MANUAL. During a HELD action with no real release this must stay 0; a
+// value that climbs at low frame rates is the sub-step phantom-release regression. Surfaced in
+// --dump-state as "action_resets". No gameplay effect.
+S32 DbgHeroActionResets = 0;
+S32 MagicBall = -1;
+U8 MagicBallType = 1;
+U8 MagicBallCount = 3;
+S32 MagicBallFlags = 0;
+T_ZONE *PtrZoneClimb; // Zone echelle dans laquelle se trouve Twinsen
+U8 FlagClimbing = FALSE;
+S32 StartYFalling = 0;
+MOVE RealFalling;
+S32 StepFalling = 1;
+MOVE RealShifting;
+S32 StepShifting = 1;
+U8 NumObjFollow = NUM_PERSO;
+U8 CameraZone = FALSE;
+S32 StartXCube = 0;
+S32 StartYCube = 0;
+S32 StartZCube = 0;
+T_DART ListDart[MAX_DARTS];
+S32 NbObjets = 0;
+#ifdef ENABLE_POLY_RECORDING
+S32 SnapshotRequested = 0;
+const char *SnapshotName = NULL;
+#endif
+T_OBJET ListObjet[MAX_OBJETS];
+T_EXTRA ListExtra[MAX_EXTRAS];
+S32 NbZones = 0;
+T_ZONE *ListZone;
+T_INCRUST_DISP ListIncrustDisp[MAX_INCRUST_DISP];
+// ListPartFlow en extern sauvé ici
+
+MOVE SampleAlwaysMove; // pour repaner les samples always de tps en tps
+
+S32 FlagCameraForcee = FALSE;
+S32 ModeLabyrinthe = FALSE;
+
+S32 VueCamera = 0;
+
+S32 DefVueDistance[NB_VUE_CAMERA] = {10500, 17000};
+S32 DefAlphaCam[NB_VUE_CAMERA] = {300, 530};
+
+T_TABALLCUBE TabAllCube[256]; //	A mettre en define
+/*──────────────────────────────────────────────────────────────────────────*/
+
+U8 NumObjDial = 0;
+U8 SaveBodyHero = GEN_BODY_NORMAL;
+
+U32 Checksum = 0;

@@ -1,0 +1,82 @@
+name: macOS
+
+# See linux.yml for paths-ignore rationale.
+on:
+  push:
+    paths-ignore: &doc-paths
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.vscode/**'
+      - '.editorconfig'
+      - '.git-blame-ignore-revs'
+      - 'cliff.toml'
+  pull_request:
+    paths-ignore: *doc-paths
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install SDL3
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      # See linux.yml: the macos-latest runner image already ships CMake and
+      # Ninja well past the 3.23 floor, so there is no toolchain fetch here.
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}" \
+            -DLBA2_BUILD_TESTS=ON \
+            -DLBA2_BUILD_ASM_EQUIV_TESTS=OFF \
+            --preset macos_arm64
+
+      - name: Build
+        run: |
+          cmake --build build --target lba2cc
+          cmake --build build --target host_tests
+
+      - name: Host tests
+        run: cd build && ctest -L host_quick --output-on-failure
+
+      # tests/numeric_contract measures rather than asserts where long double is
+      # not 80-bit, which is every Apple target. That measurement is the reason
+      # it runs here at all: it says how far this host's projection, rotation and
+      # distance rounding sits from the x86-64 numbers a recording is replayed
+      # against, and nobody needs a Mac to read it.
+      #
+      # A second, verbose run because `--output-on-failure` shows nothing for a
+      # test that passes, and this one passes on purpose. Costs a hundredth of a
+      # second and is the only place the ARM figures appear.
+      - name: Report the ARM numeric measurement
+        run: cd build && ctest -R test_numeric_contract -V
+
+      - name: Verify Binary
+        # CMake's MACOSX_BUNDLE wiring (in SOURCES/CMakeLists.txt) puts the
+        # binary inside an .app bundle. The bundle dir is named after
+        # LBA2_PRODUCT_NAME (Finder display name); the inner Mach-O keeps
+        # the terse LBA2_EXECUTABLE_NAME. The bare build/SOURCES/lba2cc
+        # path only exists for non-Apple builds.
+        run: |
+          test -d "build/SOURCES/LBA2 Classic Community.app"
+          test -x "build/SOURCES/LBA2 Classic Community.app/Contents/MacOS/lba2cc"
+          echo "Build successful"

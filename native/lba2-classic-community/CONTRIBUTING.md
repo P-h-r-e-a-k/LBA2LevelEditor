@@ -1,0 +1,118 @@
+# How to contribute
+
+This is a community project. Maintainers and contributors come and go as life allows — that's fine and expected. The goal is a sustainable, friendly place to work on an old game we love. Pick something that interests you, move at your own pace, and ship it when it's ready.
+
+A few notes that keep it sustainable:
+
+- **Keep PRs focused.** One topic per PR. Sweeping rewrites or whole-subsystem changes (e.g. "port everything to Rust", reorganizing a whole subdirectory) deserve a heads-up on [Discord](https://discord.gg/jsTPWYXHsh) or an issue *before* you start — reviewer time is the scarce resource, not code.
+- **AI assistants are welcome** (Cursor, Copilot, Claude, etc.). The bar is the same as for any contributor: the code has to be correct, the scope has to match what the PR title claims, and ASM equivalence still has to hold. Point your assistant at [AGENTS.md](AGENTS.md) for project context, principles, and the "never" list.
+- **Ask early when in doubt.** A short question on [Discord](https://discord.gg/jsTPWYXHsh) beats a week of work in the wrong direction.
+
+## Doing good work here
+
+A few principles. The *why* matters more than the rule — once you understand the why, you can apply judgment in cases the rule doesn't cover. None of this is unique to this project; it's how good engineering works generally. It's written down because this is a community project where reviewer time is scarce, and these habits are what keep quality high *without* anyone having to police it.
+
+- **Own what you ship.** If you used an AI assistant, you are still the author. Read the diff yourself before opening the PR; you should be able to explain every line and defend every decision under review. *Why:* outsourcing typing is fine — outsourcing *understanding* is how subtle bugs land in old code. Your name on the PR is a commitment.
+
+- **Actually test your change.** Build it. Run the game (or the relevant test). Walk through the path your change touches. Then try one path it doesn't touch, in case you broke something next door. *Why:* "the automated tests pass" is necessary, not sufficient. This codebase is 25 years old and full of failure modes nothing has ever automated. You are the last pair of eyes before review.
+
+- **Write tests when you reasonably can.** Especially for new logic, regressions you just fixed, and anything in `LIB386/` where ASM equivalence is the bar. *Why:* a test you write today catches the bug your future self introduces in six months, on a platform you don't own, for a contributor you've never met. That's a great trade.
+
+- **CI is on your side.** When it fails, read the log and fix the cause. Don't disable a check, skip a hook (`--no-verify`), or work around the failure to "unblock" yourself. *Why:* CI catches what you forgot to check on your machine — that's its whole job, and it's free. Fighting it just defers the same problem to whoever merges after you, often on a platform you didn't test.
+
+- **Explain *why*, not *what*.** In PR descriptions, commit messages, and code comments alike. *Why:* the diff already shows what changed. What it can't show is why this approach over the obvious alternative, what constraint you hit, or what you considered and rejected. That's the part future contributors (and your future self) will need.
+
+- **Smaller is better.** The smallest change that solves the problem is easier to review, easier to revert if it turns out to be wrong, and easier to come back to after a break. *Why:* every line is a maintenance cost. Resist "while I'm here" cleanups; open a separate PR instead.
+
+- **Ship a test, or ship a repro hook.** Bugs in pure-data code paths (parsing, serialization, math, projection, sort) are almost always cheap to test once you extract the affected logic into a pure function — that small refactor is usually worth doing as part of the fix, with a host test pinning it. See `tests/3D/test_sintab.cpp` and the savegame corpus harness as patterns. When automation genuinely isn't realistic (state machines, input timing, UI flow), at least ship a manual repro hook alongside the fix: a console command, a debug menu entry, or a build flag that re-triggers the affected path. PR #66's `credits [0|1]` console command is the canonical example. *Why:* future you (or someone else) will debug this same area again. A test pins it forever; a repro hook saves an hour of figuring out how to re-trigger the bug.
+
+- **Editing docs.** Match the project's tone (lean, direct, no AI tells) and the formatting standard in [AGENTS.md "Editing docs"](AGENTS.md#editing-docs) — sentence-case headings, bold for structure not emphasis, smart quotes / `--` dashes hands-off, and from `docs/` link to source with `../` (`../../` from `docs/plan/`). A doc describing what the engine does today goes in [docs/](docs/); a plan or research writeup for work not yet done goes in [docs/plan/](docs/plan/). Either way, add it to [docs/README.md](docs/README.md) in the same commit.
+
+## Reporting crashes and bugs
+
+If you observe a bug you can report it [here](https://github.com/LBALab/lba2-classic-community/issues/new). When possible include a save (*.lba) — it makes reproducing the issue much faster.
+
+## Proposing features
+
+If you have an idea, you can [create a feature request](https://github.com/LBALab/lba2-classic-community/issues/new) to suggest a new feature.
+
+## Contributing code
+
+1. Fork the repository
+2. Create a feature branch from `main`
+3. Make your changes
+4. Run `make test` before submitting for a quick host pass (or N/A if docs-only), then run `./run_tests_docker.sh` before merge when code changes affect behavior. CI will catch failures, but local runs save round-trips. PRs also run host tests on Linux, macOS, and Windows plus format; full ASM equivalence is the Docker workflow on Linux.
+5. Submit a pull request
+
+PRs and pushes run build checks on Linux, Windows (MSYS2 UCRT64), and macOS (arm64); see `.github/workflows/`. Equivalence tests still run in Docker on Linux only (`test.yml`).
+
+### PR titles
+
+Your PR title becomes the changelog entry for the PR. Format it as `<type>(<scope>): <summary>` — for example `fix(credits): preserve gameplay state across console-invoked credits`. A CI check verifies the format. The full type list and rationale live in [AGENTS.md](AGENTS.md#commit--pr-conventions); `chore:` is the explicit "skip this from the public changelog" prefix for housekeeping PRs. Individual commits inside your PR can be free-form — only the PR title is enforced. You do not need to edit `CHANGELOG.md`; it's regenerated at release time.
+
+### Setting up a development environment
+
+See the [README](README.md) for prerequisites and build instructions. In short:
+
+```bash
+cmake -B build
+cmake --build build
+```
+
+To find out what your machine is missing before you hit it, run
+`./scripts/dev/check-tooling.sh` (or `make check-tooling`). It probes every
+external tool the repo uses and exits non-zero only when the clone genuinely
+cannot build; the full tiered index is in [docs/TOOLING.md](docs/TOOLING.md).
+
+The default build includes SDL3-based audio and Smacker FMV playback. Override with `-DSOUND_BACKEND=null -DMVIDEO_BACKEND=null` for a minimal build; see the build options table in the README.
+
+To run the game you need retail data (not in the repo); see [docs/GAME_DATA.md](docs/GAME_DATA.md).
+
+### Code style
+
+The style rules and the reasoning behind them — language dialect (C-in-`.cpp` by zone), indentation, types, the C++98 standard, and preservation of original code — live in [CODESTYLE.md](CODESTYLE.md). Read it before writing code, and keep changes consistent with the style of the file you are modifying. The rest of this section covers the *mechanics* of running the formatter.
+
+For C and C++ files, the repository now uses `clang-format` with a checked-in style file. In VS Code, workspace settings enable format-on-save for C and C++ when the recommended `ms-vscode.cpptools` extension is installed.
+
+For local formatting work, use the repo scripts:
+
+```bash
+bash ./scripts/ci/check-format.sh
+bash ./scripts/ci/apply-format.sh
+```
+
+`check-format.sh` verifies the tracked C/C++ files that are enforced in CI. `apply-format.sh` applies that same formatter policy to tracked clean files in your worktree.
+
+To catch format issues before they reach CI, enable the optional pre-commit hook once per clone:
+
+```bash
+git config core.hooksPath scripts/git-hooks
+```
+
+The hook runs `clang-format --dry-run` against staged C/C++ files only (it checks the staged blob, so unrelated unstaged edits and partial-stage workflows still work) and reuses `.clang-format-ignore`, so it stays in sync with CI. When it blocks a commit, run `bash ./scripts/ci/apply-format.sh && git add -u` and try again. Bypass with `git commit --no-verify`, or `SKIP_FORMAT=1` for a session, when you genuinely need to.
+
+If you use VS Code, install the workspace recommendations from `.vscode/extensions.json`. The current recommended set is `ms-vscode.cpptools`, `ms-vscode.cmake-tools`, and `EditorConfig.EditorConfig`.
+
+`EditorConfig.EditorConfig` is recommended because this repository also has files that are not auto-formatted by `clang-format`. It makes VS Code honor the checked-in `.editorconfig` for baseline indentation rules, which keeps C/C++ files on 4 spaces and preserves tab-based indentation in ASM and related files.
+
+ASM files are intentionally excluded from automatic formatting, and `LIB386/libsmacker/` is kept out of formatting because it is third-party code.
+
+A small set of preservation-sensitive or macro-heavy files is also excluded from automatic formatting where `clang-format` does not produce stable results yet. Keep those files manual until they are split up or annotated for safer tooling.
+
+The enforced exclusion list lives in `.clang-format-ignore`, and the CI/local scripts under `scripts/ci/` read that file directly.
+
+If you are doing the one-time whitespace migration or reviewing it locally, keep it as a dedicated formatting-only commit and then configure git blame to ignore that commit:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+After the bootstrap formatting commit exists, add its SHA to `.git-blame-ignore-revs`. Do not mix semantic changes into that commit.
+
+### Preservation of original code
+
+This project values preservation: original French comments and ASCII art banners stay, clarifying comments go alongside the originals rather than replacing them, and history/culture content is attributed to the original codebase (lba2-classic). The full rules are in [CODESTYLE.md "Preservation of original code"](CODESTYLE.md#preservation-of-original-code).
+
+## Contributing to the documentation
+
+You can also help build the official documentation here: https://github.com/LBALab/lba-classic-doc

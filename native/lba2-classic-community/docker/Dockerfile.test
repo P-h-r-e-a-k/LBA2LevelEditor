@@ -1,0 +1,86 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── Core toolchain ────────────────────────────────────────────────────────────
+RUN dpkg --add-architecture i386 \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build git ca-certificates curl unzip \
+        pkg-config \
+        # 32-bit support for ASM equivalence tests
+        gcc-multilib g++-multilib \
+        # SDL3 build deps (64-bit)
+        libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+        libxss-dev libxtst-dev libgl1-mesa-dev libwayland-dev libxkbcommon-dev \
+        libasound2-dev libpulse-dev libdbus-1-dev libudev-dev \
+        # SDL3 minimal 32-bit deps (X11 and friends)
+        libx11-dev:i386 libxext-dev:i386 libxcursor-dev:i386 \
+        libxi-dev:i386 libxrandr-dev:i386 libxss-dev:i386 \
+        libxtst-dev:i386 libxfixes-dev:i386 libxkbcommon-dev:i386 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── SDL3 from source ──────────────────────────────────────────────────────────
+# 64-bit: full build with all backends for CPP tests / game build
+# 32-bit: minimal build (no graphics/audio backends) just to satisfy the linker
+#         for ASM equivalence tests that pull in SDL3 transitively
+#
+# Pin to a release tag, not main: the image rebuilds on every CI run, so an
+# unpinned clone rides the tip of SDL's dev branch and breaks the build the
+# moment upstream regresses (e.g. SDL_UDEV=OFF no longer dropping the -ludev
+# link dep on the 32-bit build).
+#
+# The tag comes from .github/sdl3-version.txt, the one pin every SDL3 path in
+# the repo reads, so it cannot drift from what CI and the release builds link
+# against. No default: both callers (run_tests_docker.sh and test.yml) pass it,
+# and a hand-run `docker build` that forgets should say so rather than bake a
+# stale version into the image.
+ARG SDL3_VERSION
+RUN : "${SDL3_VERSION:?build-arg SDL3_VERSION is required (see .github/sdl3-version.txt)}" \
+    && git clone --depth 1 --branch "${SDL3_VERSION}" https://github.com/libsdl-org/SDL.git /tmp/SDL \
+    && cmake -S /tmp/SDL -B /tmp/SDL/build64 -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local \
+        -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+    && cmake --build /tmp/SDL/build64 \
+    && cmake --install /tmp/SDL/build64 \
+    && cmake -S /tmp/SDL -B /tmp/SDL/build32 -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr/local/sdl3-32 \
+        -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" \
+        -DCMAKE_SYSTEM_LIBRARY_PATH="/usr/lib/i386-linux-gnu" \
+        -DCMAKE_LIBRARY_PATH="/usr/lib/i386-linux-gnu" \
+        -DPKG_CONFIG_PATH="/usr/lib/i386-linux-gnu/pkgconfig" \
+        -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
+        -DSDL_WAYLAND=OFF -DSDL_OPENGL=OFF \
+        -DSDL_OPENGLES=OFF -DSDL_VULKAN=OFF -DSDL_RENDER_GPU=OFF \
+        -DSDL_PULSEAUDIO=OFF -DSDL_ALSA=OFF -DSDL_JACK=OFF \
+        -DSDL_PIPEWIRE=OFF -DSDL_SNDIO=OFF -DSDL_DBUS=OFF \
+        -DSDL_UDEV=OFF -DSDL_KMSDRM=OFF -DSDL_LIBDECOR=OFF \
+    && cmake --build /tmp/SDL/build32 \
+    && cmake --install /tmp/SDL/build32 \
+    && rm -rf /tmp/SDL
+
+# ── UASM assembler ────────────────────────────────────────────────────────────
+# Fetched here rather than at container runtime so a test run never depends on
+# GitHub's release CDN being reachable. A 503 from that download has failed the
+# whole suite before a single test compiled.
+#
+# Unpacking a binary does not execute it, so this still works during
+# `docker build --platform linux/amd64` on macOS ARM64. The earlier
+# runtime-install note was about *running* uasm, which the build never does;
+# the version check in run_tests_docker.sh runs under QEMU at `docker run`
+# time, where emulation handles it.
+ARG UASM_VERSION=2.57r
+ARG UASM_ARCHIVE=uasm257_linux64.zip
+RUN curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+        --retry-max-time 300 --connect-timeout 15 --max-time 300 \
+        -o /tmp/uasm.zip \
+        "https://github.com/Terraspace/UASM/releases/download/v${UASM_VERSION}/${UASM_ARCHIVE}" \
+    && unzip -oq /tmp/uasm.zip -d /usr/local/bin \
+    && chmod +x /usr/local/bin/uasm \
+    && rm -f /tmp/uasm.zip
+
+# ── Verify base tools ────────────────────────────────────────────────────────
+RUN cmake --version | head -1 && objcopy --version | head -1
+
+WORKDIR /src

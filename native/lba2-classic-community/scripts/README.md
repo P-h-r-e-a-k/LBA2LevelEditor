@@ -1,0 +1,155 @@
+# Scripts
+
+Catalogue of the repository's developer, CI, and packaging scripts. Kept current
+the same way [docs/README.md](../docs/README.md) is: when you add, move, or remove
+a script under `scripts/`, update its row here in the same commit.
+
+The **Invoked by** column tells you whether a script is load-bearing or a one-off:
+`CI` / `Makefile` / `pre-commit` scripts are wired into the project and must keep
+working; `manual` scripts are run by hand (usually documented in `docs/`); `spike`
+scripts are one-shot investigations kept as reproducible evidence for a plan doc,
+not maintained tooling.
+
+## Formatting & lint (`ci/`)
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [ci/clang-format-select.sh](ci/clang-format-select.sh) | Single source of truth for the pinned clang-format major version (`CLANG_FORMAT_MAJOR`). Sourced, not executed. | the three format scripts + pre-commit |
+| [ci/check-format.sh](ci/check-format.sh) | Verify tracked C/C++ files already match the clang-format policy; non-zero on drift. | CI (`format.yml`), `make format-check` |
+| [ci/check-arch.py](ci/check-arch.py) | Check the architecture boundaries CODESTYLE.md and AGENTS.md already state: the engine never includes the game, no STL in shipped code, platform conditionals stay in the platform layer, and the two god-header figures only fall. Every rule prints the sentence it comes from, and where the cheapest way to turn it green is the wrong one, the fix to make instead. | CI (`format.yml`), `make arch-check` |
+| [ci/check-docs-links.sh](ci/check-docs-links.sh) | Verify doc references resolve: markdown links and `#anchors` via lychee, plus `docs/<name>.md` paths named by bare path in source comments, tests and CMake (invisible to a link checker). `--external` checks URLs. lychee's settings live in [lychee.toml](../lychee.toml), shared with local runs. | CI (`docs-links.yml`), `make docs-links` |
+| [ci/check-docs-symbols.py](ci/check-docs-symbols.py) | Verify a doc's claim about where code lives: for `` `Foo()` in [FILE] `` the symbol must be defined there, and the report names the file it is actually in. Paths resolving is not the same as the prose being right. | CI (`docs-links.yml`), `make docs-symbols` |
+| [ci/check-knowledge.py](ci/check-knowledge.py) | Lint [docs/knowledge/](../docs/knowledge/) against the fourteen rules in its [SCHEMA.md](../docs/knowledge/SCHEMA.md): frontmatter and types, relations and body links that resolve, one owner per concept, evidence fields that agree, generated pages that reproduce. `--drift [REF]` reports concepts whose cited files changed since their `as_of`, a report rather than a failure. | CI (`docs-links.yml`), `make knowledge-check`, `make knowledge-drift` |
+| [ci/check-action-shell.py](ci/check-action-shell.py) | Run shellcheck over the `run:` blocks of composite actions. actionlint only walks `.github/workflows/` and the shellcheck job only sees `*.sh`, so the shell in `.github/actions/` was checked by nothing. Errors rather than skips on anything it cannot parse. | CI (`lint.yml`), `make action-shell-check` |
+| [ci/check-action-shell-selftest.py](ci/check-action-shell-selftest.py) | Self-test for the above: fixtures for a clean block, a warning-level finding, GitHub expressions, and the four shapes that must fail loudly rather than pass quietly. | CI (`lint.yml`), `make action-shell-selftest` |
+| [ci/check-build-graph.py](ci/check-build-graph.py) | Architecture rules only a compiled tree can answer: the engine reaching the game through a header it does not name, and how many translation units still get `DEFINES.H` in front of them. Complements [check-arch.py](ci/check-arch.py), which reads the sources with no toolchain. `--report` prints the per-TU header fan-out. | CI (`linux.yml` build job), `make build-graph-check` |
+| [ci/check-build-graph-selftest.py](ci/check-build-graph-selftest.py) | Self-test for the above: both its rules pass on the tree as it stands, so the suite is what shows they can fire at all. | CI (`linux.yml`), `make build-graph-selftest` |
+| [ci/gen-automation-index.py](ci/gen-automation-index.py) | Generate [tests/automation/README.md](../tests/automation/README.md) from the fixtures' own headers. The suite cannot run in CI (retail data, and skips exit 0), so the index being honest is the part that can be checked. `--check` fails when it has drifted. | CI (`format.yml`), `make automation-index` |
+| [ci/apply-format.sh](ci/apply-format.sh) | Apply the clang-format policy to tracked C/C++ files (respects `.clang-format-ignore`). | manual, pre-commit fix step |
+| [ci/filter-format-files.py](ci/filter-format-files.py) | Filter a NUL-delimited git file list through `.clang-format-ignore` (one shared exclusion list). | the format shell scripts |
+| [ci/run-clang-tidy.sh](ci/run-clang-tidy.sh) | Run clang-tidy for memory-safety / UB checks over the project's own sources (needs `compile_commands.json`). | manual (see `.clang-tidy`) |
+
+## Build & run (`dev/`)
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/build-and-run.sh](dev/build-and-run.sh) | Build and run `lba2cc` from any working directory; resolves repo root and game data. | `make run` |
+| [dev/repo_root.sh](dev/repo_root.sh) | Print the absolute repository root (directory with the top-level `CMakeLists.txt`). | `Makefile` |
+| [dev/check-tooling.sh](dev/check-tooling.sh) | Probe the external tools the repo expects, tier by tier; non-zero only when the clone cannot build. Reads every version floor from the file that pins it. | `make check-tooling`, [TOOLING.md](../docs/TOOLING.md) |
+| [dev/build-android.sh](dev/build-android.sh) | Build the engine for Android (arm64-v8a default, armeabi-v7a via `--abi`). | manual ([ANDROID.md](../docs/ANDROID.md)) |
+| [dev/build-sdl3-android.sh](dev/build-sdl3-android.sh) | Cross-build SDL3 for Android and install it to a known prefix (prerequisite for `build-android.sh`). | manual ([ANDROID.md](../docs/ANDROID.md)) |
+| [dev/check-16k-align.sh](dev/check-16k-align.sh) | Verify an Android APK is safe on 16 KB memory-page devices (segment alignment + uncompressed `.so`). | CI (android), [ANDROID.md](../docs/ANDROID.md) |
+
+## Driving a running engine (`dev/`)
+
+Clients and sweeps for the `--listen` command socket, which needs a
+`-DLBA2_CONTROL_SERVER=ON` build; see
+[CONTROL.md](../docs/CONTROL.md#driving-a-running-engine---listen). The sweeps import
+`lba2ctl` and are restart-tolerant where they need to be, because walking many cubes in
+one process faults and a sweep that stops at the first fault covers almost nothing.
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/lba2ctl.py](dev/lba2ctl.py) | Speak the line protocol: a REPL for looking around, a `Control` class for scripting a probe loop. Its docstring carries the traps that cost the most to rediscover. | manual, and imported by the sweeps below |
+| [dev/probe_bench.py](dev/probe_bench.py) | Measure one probe over the socket against the process-per-probe it replaces. | manual |
+| [dev/probe_zones.py](dev/probe_zones.py) | Parse `zonelist` into structured zones, including which cube gates wait on a door collision. Imported by the two sweeps below. | manual |
+| [dev/probe_gate_scan.py](dev/probe_gate_scan.py) | Sweep every cube for transition gates that are enabled, separating ones switched off from ones waiting on a door collision: `zonelist` reports the two identically and they want opposite fixes. | manual |
+| [dev/probe_cube_overlap.py](dev/probe_cube_overlap.py) | Sweep every cube for camera zones overlapping in all three axes, where list order alone decides which shot wins. | manual |
+| [dev/probe_input_matrix.py](dev/probe_input_matrix.py) | A/B whether injected input moves the hero, across several saves. | manual |
+
+## Release dry-runs (`dev/`)
+
+Local wrappers that build a release binary and then delegate to the matching
+`packaging/` bundler, so the local artifact layout can't drift from CI's.
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/build-linux-tarball.sh](dev/build-linux-tarball.sh) | Dry-run the Linux static-binary tarball: build, then call `bundle-linux-tarball.sh`. | manual |
+| [dev/build-macos-release.sh](dev/build-macos-release.sh) | Dry-run the macOS DMG: build (host arch by default), then call `bundle-macos.sh`. | manual |
+| [dev/build-windows-release.sh](dev/build-windows-release.sh) | Dry-run the Windows ZIP: build (MSYS2 native or Linux cross), then call `bundle-windows.sh`. | manual |
+| [dev/symbolize_crash.py](dev/symbolize_crash.py) | Turn the `CRASH` block in `adeline.log` into functions, files and lines: match each module to a symbol archive by build ID, UUID or PE timestamp and size, fetching the release's or the CI run's with `--fetch`. | manual ([CRASH_INVESTIGATION.md](../docs/CRASH_INVESTIGATION.md#starting-from-a-crash-report)) |
+| [dev/verify-release.sh](dev/verify-release.sh) | Post-release smoke test: download the published Linux artifacts, run each in a clean container, and check the version, AppImage self-update channel and AppStream metainfo they carry. | manual ([RELEASING.md](../docs/RELEASING.md)) |
+
+## Packaging (`packaging/`)
+
+One bundler per platform; the CI release workflows are glue around them. The
+`*-readme.txt.in` files are the user-facing README templates the bundlers expand
+into each artifact.
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [packaging/bundle-linux-tarball.sh](packaging/bundle-linux-tarball.sh) | Bundle a built Linux binary into a portable `.tar.gz`. | CI, `build-linux-tarball.sh` |
+| [packaging/bundle-macos.sh](packaging/bundle-macos.sh) | Bundle a built `.app` into a macOS DMG. | CI, `build-macos-release.sh` |
+| [packaging/bundle-windows.sh](packaging/bundle-windows.sh) | Bundle a built `lba2cc.exe` into a portable ZIP. | CI, `build-windows-release.sh` |
+| [packaging/bundle-android.sh](packaging/bundle-android.sh) | Bundle a built native `.so` into a debug-signed APK. | CI (android) |
+| [packaging/make-appimage.sh](packaging/make-appimage.sh) | Build a Linux AppImage (installs deps, packs the SDL3 runtime). | CI (linux appimage) |
+| [packaging/split-symbols.sh](packaging/split-symbols.sh) | Move a release binary's debug info into a `-symbols.tar.xz` (`.debug` files or a dSYM), checking the symbol file keeps the binary's identity. | the bundlers' `--split-symbols`, `make-appimage.sh` |
+
+## Regression baselines & savegame corpus
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/regen_projrec_baselines.sh](dev/regen_projrec_baselines.sh) | Regenerate projrec baseline hashes for the save corpus and attract-mode demo (tagged by render width). | manual ([CONTROL.md](../docs/CONTROL.md)) |
+| [dev/run-savegame-corpus.sh](dev/run-savegame-corpus.sh) | Build and run the savegame corpus harness from any working directory. | `make` (savegame corpus target) |
+| [save_probe.py](save_probe.py) | Offline probe of `.lba` save headers, LZSS bodies, fixed-offset fields, and a 32-vs-64 ABI forward-simulator. | `run-savegame-corpus.sh`, [SAVEGAME.md](../docs/SAVEGAME.md) |
+| [save_probe_lz_selftest.py](save_probe_lz_selftest.py) | Golden `ExpandLZ` vectors mirroring `tests/SYSTEM/test_lz.cpp`. | `make save-probe-lz-selftest` |
+| [dev/dist_check.sh](dev/dist_check.sh) | Sweep every retail distribution: one row per install, five assertions, non-zero exit if any fails. Needs real installs, so local only. | manual ([TESTING.md](../docs/TESTING.md)) |
+| [dev/png_hash.py](dev/png_hash.py) | Plain pixel hash of a PNG capture, which is enough because `--fixed-dt` makes UI captures exactly reproducible. | `dist_check.sh`, the control-harness UI tests |
+
+## Data-format & asset tools (`dev/`)
+
+Decoders and inspectors for the Adeline on-disk formats. Mostly one-off tools kept
+for reproducibility; cited from the format and effects docs.
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/hqr_inspect.py](dev/hqr_inspect.py) | List / extract / decompress HQR archive entries (LZSS + LZMIT). Also a **shared library** imported by the art and LBA1 tools below. | [ENGINE_FILE_FORMATS.md](../docs/ENGINE_FILE_FORMATS.md), imported |
+| [dev/impact_disasm.py](dev/impact_disasm.py) | Disassemble and round-trip IMPACT effect bytecode (`RESS_IMPACT=47`). | [IMPACT_SCRIPTS.md](../docs/IMPACT_SCRIPTS.md) |
+| [dev/flow_dump.py](dev/flow_dump.py) | Decode FLOW particle-emitter definitions (`RESS_FLOW=45`). | [IMPACT_SCRIPTS.md](../docs/IMPACT_SCRIPTS.md) |
+| [dev/pof_dump.py](dev/pof_dump.py) | Decode POF 2D wireframe shapes (`RESS_POF=46`). | [IMPACT_SCRIPTS.md](../docs/IMPACT_SCRIPTS.md) |
+| [dev/iso_bin.py](dev/iso_bin.py) | Read the ISO9660 filesystem out of a raw Mode1/2352 (or cooked 2048) CD image on the fly. | [DISC_IMAGE_SOURCE.md](../docs/DISC_IMAGE_SOURCE.md) |
+| [dev/disc_extract.py](dev/disc_extract.py) | Extract a playable game-data folder from a rip, a CD drive (`--from-drive`) or a ripped soundtrack, naming the CD tracks the way the engine asks for them (`--selftest` for the cue and TOC rules). | [GAME_DATA.md](../docs/GAME_DATA.md) |
+| [dev/acf_decode.py](dev/acf_decode.py) | Decode Adeline ACF/XCF cinematic frames (Time Commando tile codec). | spike |
+| [dev/acf_inspect.py](dev/acf_inspect.py) | Parse the ACF/XCF cinematic container chunk layout. | spike |
+| [dev/extract_lba2_gog_media.py](dev/extract_lba2_gog_media.py) | Extract FMV / VOX / music from a GOG `LBA2.GOG` BIN image into the install dir. | [GAME_DATA.md](../docs/GAME_DATA.md) |
+| [dev/fingerprint_distro.py](dev/fingerprint_distro.py) | Identify which release a game directory or disc image holds, from the payload rather than the config: `RESS.HQR` names the master, `SCENE`/`TEXT` the pressing. | [VERSIONS.md](../docs/VERSIONS.md) |
+| [dev/art_catalog_screen.py](dev/art_catalog_screen.py) | Dump every `SCREEN.HQR` bitmap to PNG (widescreen art inventory; output local-only). | manual (widescreen) |
+| [dev/art_treatment_preview.py](dev/art_treatment_preview.py) | Preview widescreen art treatments (letterbox / palette-fill / edge-clone / mirror-tile) as PNGs. | manual (widescreen) |
+
+## LBA1 feasibility spikes (`dev/`)
+
+Read-only investigations backing [LBA1_PORT_PLAN.md](../docs/plan/LBA1_PORT_PLAN.md); each
+confirms one axis of hosting LBA1 content on this engine.
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/lba1_body_probe.py](dev/lba1_body_probe.py) | Transcode an LBA1 body to the lba2cc body format. | spike (LBA1_PORT_PLAN §6) |
+| [dev/lba1_body_render.py](dev/lba1_body_render.py) | Render a decoded LBA1 body to PNG with a stdlib software rasteriser. | spike (LBA1_PORT_PLAN §6) |
+| [dev/lba1_script_remap.py](dev/lba1_script_remap.py) | Remap LBA1 Life-script opcodes onto the LBA2 VM; flag-width divergence report. | spike (LBA1_PORT_PLAN §6) |
+| [dev/lba1_bkg_repack.py](dev/lba1_bkg_repack.py) | Re-index LBA1's three background HQRs into LBA2's single merged container. | spike (LBA1_PORT_PLAN §6.5) |
+| [dev/lba1_voc_probe.py](dev/lba1_voc_probe.py) | Confirm LBA1 VOC audio plays through lba2cc's existing sample path. | spike (LBA1_PORT_PLAN §6.6) |
+
+## Documentation (`dev/`)
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [dev/knowledge_graph.py](dev/knowledge_graph.py) | Add the knowledge bundle's edges to `graphify-out/graph.json` in place after a `graphify update`: every typed relation in a concept's frontmatter by its own name, and a `cites` edge from each concept to the source files and routines its footnotes link. graphify reads the bundle as documents and resolves links only to other documents, so without this the bundle is an island with no edge into the code. Idempotent; `--dry-run` counts. | manual, after `graphify update` |
+| [dev/knowledge_porting.py](dev/knowledge_porting.py) | Project a table section of [docs/ASM_VALIDATION_PROGRESS.md](../docs/ASM_VALIDATION_PROGRESS.md) into a generated Porting Status concept under [docs/knowledge/porting/](../docs/knowledge/porting/), one routine per section with the progress doc's own status word. `--check` fails when the file on disk has drifted from its source. | manual ([docs/knowledge/SCHEMA.md](../docs/knowledge/SCHEMA.md)) |
+
+## Git hooks (`git-hooks/`)
+
+| Script | What it does | Invoked by |
+|--------|--------------|------------|
+| [git-hooks/pre-commit](git-hooks/pre-commit) | Opt-in clang-format check on staged C/C++ files. Enable with `git config core.hooksPath scripts/git-hooks`. | git (opt-in) |
+
+## Related entrypoints (outside `scripts/`)
+
+The test and packaging drivers that these scripts feed into, or that stand
+alongside them, live next to the code they exercise:
+
+| Path | What it does | See |
+|------|--------------|-----|
+| [../run_tests_docker.sh](../run_tests_docker.sh) | Build and run the full ASM↔C++ equivalence suite inside a Linux x86_64 Docker container. | [TESTING.md](../docs/TESTING.md) |
+| [../tests/automation/run.sh](../tests/automation/run.sh) | Run the CLI control-harness / headless behaviour suite (`test_*.sh` + `lib.sh`). | [CONTROL.md](../docs/CONTROL.md) |
+| [../tests/savegame/corpus/](../tests/savegame/corpus/) | Savegame corpus harness (Python): manifest build, native-fallback check, baseline harness. | corpus `README.md` |
+| [../tests/SNAPSHOT/](../tests/SNAPSHOT/) | Polyrec render / compare / bisect helpers. | [POLYREC.md](../docs/POLYREC.md) |

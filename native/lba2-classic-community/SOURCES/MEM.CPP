@@ -1,0 +1,331 @@
+/*
+
+			Gestion de la mémoire LBA2
+
+
+*/
+
+#include "C_EXTERN.H" // include LBA2
+#include "IMAGE_LOAD.H"
+
+#include <SVGA/SCREEN.H>
+#include <SYSTEM/RESOLUTION.H>
+#include "DIRECTORIES.H"
+#include "BOOT_EXIT.H"
+
+extern U8 *BufferSmack; // tempo ?
+
+S32 PtrSceneMem;
+S32 BufferFile3DMem;
+S32 TabPartFlowMem;
+S32 BufferPofMem;
+S32 BufferImpactMem;
+
+struct SizeInfo {
+    S32 MaxSizeListDecors;
+    S32 MaxSizeBodyDecors;
+    S32 MaxSizeTexDef;
+    S32 MaxTotalBodyDecors;
+};
+
+// penser à réaligner les pointeurs (par une macro ?)
+
+T_MEM ListMem[] = {
+    {(void **)&PtrZBuffer, 0},      // Plancher patché par Mem_ConfigureScreenBuffers() (taille du Z-buffer);
+                                    // InitBufferCube() agrandit pour les cubes intérieurs si nécessaire
+    {(void **)&ScreenAux, 0},       // Patché par Mem_ConfigureScreenBuffers() avant InitMemory()
+    {(void **)&BufSpeak, 0},        // idem
+    {(void **)&Screen, 0},          // idem
+    {(void **)&BufferMaskBrick, 0}, // Calculé dynamiquement (GRILLE.CPP -> InitBufferCube())
+    {(void **)&BufMap, 0},          // Calculé dynamiquement (GRILLE.CPP -> InitBufferCube())
+    {(void **)&TabBlock, 0},        // Calculé dynamiquement (GRILLE.CPP -> InitBufferCube())
+    {(void **)&ListFlowDots, sizeof(S_ONE_DOT) * MAX_FLOW_DOTS *MAX_FLOWS},
+    {(void **)&PtrXplPalette, SIZE_XPL},
+    {(void **)&BufferSmack, 100000L},                                  // tempo ?
+    {(void **)&ImageStaging, (S32)IMAGE_STAGING_BYTES + RECOVER_AREA}, // 640x480 image staging
+};
+
+// Fills in the framebuffer-sized entries of ListMem before InitMainBuffer() runs the
+// single-shot allocation. Includes PtrZBuffer (the Z-buffer + shared interior-cube
+// staging buffer) — `SIZE_Z_BUFFER` in 3DEXT/EXTERN.H evaluates `ModeDesiredX *
+// ModeDesiredY * 2`, but ModeDesiredX isn't set yet at InitBufferCube time (which
+// runs inside InitMainBuffer, before InitAdeline → InitGraphics sets the screen
+// mode), so the macro would evaluate to 0 and the Z-buffer would never get
+// allocated — visible as a segv inside the holomap's LongInverseRotatePointF
+// when ObjTwinsen's body data lands on top of whatever bytes follow the un-sized
+// buffer. Setting the floor here (pre-InitMainBuffer) lets InitBufferCube's
+// `ade_max` still grow it for interior cubes whose `intmem` is larger.
+void Mem_ConfigureScreenBuffers(U32 resX, U32 resY) {
+    const S32 pixels = (S32)resX * (S32)resY;
+    ListMem[MEM_PTR_ZBUFFER].Size = pixels * 2; // Z-buffer: 2 bytes per pixel
+    /* The holomap bump-allocates its globe, mapping and text resources out of
+       ScreenAux (InitHoloMalloc points PtHoloMalloc straight at it) against a
+       budget of the historical 640x480 framebuffer. That budget does not shrink
+       with the render resolution, so hold a floor under ScreenAux or opening
+       the holomap at one of the catalog's smaller modes walks off the end of it
+       and into the buffer that follows. */
+    ListMem[MEM_SCREEN_AUX].Size = pixels + RECOVER_AREA;
+    if (ListMem[MEM_SCREEN_AUX].Size < (S32)(640L * 480L + RECOVER_AREA))
+        ListMem[MEM_SCREEN_AUX].Size = (S32)(640L * 480L + RECOVER_AREA);
+    ListMem[MEM_BUFSPEAK].Size = pixels + RECOVER_AREA;
+    ListMem[MEM_SCREEN].Size = pixels + RECOVER_AREA;
+}
+
+S32 SizeOfMemAllocated; // calculée dynamiquement
+U8 *MainBuffer;
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+// Spécifique à LBA2: redistribue la mémoire disponible aux différents buffers
+void AdjustLba2Mem(void) {
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    InitBufferCube(); // Calcule taille nécessaire à l'interieur
+
+    // Load size plus grosse Scene
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, SCENE_HQR_NAME);
+    Load_HQR(tmpFilePath, &PtrSceneMem, 0);
+
+    PtrSceneMem += RECOVER_AREA;
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    BufferFile3DMem = HQF_ResSize(tmpFilePath, RESS_FILE3D) + RECOVER_AREA;
+    TabPartFlowMem = HQF_ResSize(tmpFilePath, RESS_FLOW) + RECOVER_AREA;
+    BufferPofMem = HQF_ResSize(tmpFilePath, RESS_POF) + RECOVER_AREA;
+    BufferImpactMem = HQF_ResSize(tmpFilePath, RESS_IMPACT) + RECOVER_AREA;
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void AdjustHQRMem(void) {
+    U32 memory;
+    U32 islemem;
+    struct SizeInfo sizeinfo;
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    /* Each budget below is a byte fraction of RAM, then clamped to a MAX_*_MEM
+       ceiling. AvailableMem() is bytes; cap the base at 1 GB so memory/16 etc.
+       stay inside these U32 fields on large-RAM machines. The fractions still
+       exceed every ceiling there, so this cap never shrinks a cache: any machine
+       with more than ~1 GB lands on the MAX_*_MEM values regardless. */
+    {
+        U64 totalMem = AvailableMem();
+        memory = (totalMem > 0x40000000ULL) ? 0x40000000U : (U32)totalMem;
+    }
+
+    SpriteMem = (memory / 32);
+    Anim3DSMem = (memory / 16);
+    SampleMem = (memory / 16) + (memory / 32); // *4
+    AnimMem = (memory / 16);
+    BodyMem = (memory / 16);
+    ObjFixMem = (memory / 32);
+    IsleObjMem = (memory / 16) + (memory / 32);
+
+    // a repartir dans les hqr exterieurs
+    islemem = (memory / 16) * 2 /*+(memory/32)*/;
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    Load_HQR(tmpFilePath, &sizeinfo, RESS_EXT_SIZE_INFO);
+
+    CubeInfosMem = (islemem / 5) / 10;
+    ListDecorsMem = islemem / 10;
+    MapPGroundMem = 2 * islemem / 5; // lui en donner un peu plus
+    ListTexDefMem = ((islemem / 5) / 10) * 9;
+    MapSommetYMem = islemem / 5;
+    MapIntensityMem = islemem / 10;
+
+    if (SpriteMem < MIN_SPRITES_MEM)
+        SpriteMem = MIN_SPRITES_MEM;
+    if (Anim3DSMem < MIN_ANIM_3DS_MEM)
+        Anim3DSMem = MIN_ANIM_3DS_MEM;
+    if (SampleMem < MIN_SAMPLES_MEM)
+        SampleMem = MIN_SAMPLES_MEM;
+    if (AnimMem < MIN_ANIMS_MEM)
+        AnimMem = MIN_ANIMS_MEM;
+    if (BodyMem < MIN_BODYS_MEM)
+        BodyMem = MIN_BODYS_MEM;
+    if (ObjFixMem < MIN_OBJFIX_MEM)
+        ObjFixMem = MIN_OBJFIX_MEM;
+    if (IsleObjMem < sizeinfo.MaxSizeBodyDecors)
+        IsleObjMem = sizeinfo.MaxSizeBodyDecors;
+    if (CubeInfosMem < MIN_CUBE_INFOS_MEM)
+        CubeInfosMem = MIN_CUBE_INFOS_MEM;
+    if (ListDecorsMem < sizeinfo.MaxSizeListDecors)
+        ListDecorsMem = sizeinfo.MaxSizeListDecors;
+    if (MapPGroundMem < MIN_MAP_PGROUND_MEM)
+        MapPGroundMem = MIN_MAP_PGROUND_MEM;
+    if (ListTexDefMem < sizeinfo.MaxSizeTexDef)
+        ListTexDefMem = sizeinfo.MaxSizeTexDef;
+    if (MapSommetYMem < MIN_MAP_SOMMETY_MEM)
+        MapSommetYMem = MIN_MAP_SOMMETY_MEM;
+    if (MapIntensityMem < MIN_MAP_INTENSITY_MEM)
+        MapIntensityMem = MIN_MAP_INTENSITY_MEM;
+
+    // mettre les max
+    if (SpriteMem > MAX_SPRITES_MEM)
+        SpriteMem = MAX_SPRITES_MEM;
+    if (Anim3DSMem > MAX_ANIM_3DS_MEM)
+        Anim3DSMem = MAX_ANIM_3DS_MEM;
+    if (SampleMem > MAX_SAMPLES_MEM)
+        SampleMem = MAX_SAMPLES_MEM;
+    if (AnimMem > MAX_ANIMS_MEM)
+        AnimMem = MAX_ANIMS_MEM;
+    if (BodyMem > MAX_BODYS_MEM)
+        BodyMem = MAX_BODYS_MEM;
+    if (ObjFixMem > MAX_OBJFIX_MEM)
+        ObjFixMem = MAX_OBJFIX_MEM;
+    if (IsleObjMem > MAX_ISLE_OBJ_MEM)
+        IsleObjMem = MAX_ISLE_OBJ_MEM;
+    if (CubeInfosMem > MAX_CUBE_INFOS_MEM)
+        CubeInfosMem = MAX_CUBE_INFOS_MEM;
+    if (ListDecorsMem > MAX_LIST_DECORS_MEM)
+        ListDecorsMem = MAX_LIST_DECORS_MEM;
+    if (MapPGroundMem > MAX_MAP_PGROUND_MEM)
+        MapPGroundMem = MAX_MAP_PGROUND_MEM;
+    if (ListTexDefMem > MAX_LIST_TEXDEF_MEM)
+        ListTexDefMem = MAX_LIST_TEXDEF_MEM;
+    if (MapSommetYMem > MAX_MAP_SOMMETY_MEM)
+        MapSommetYMem = MAX_MAP_SOMMETY_MEM;
+    if (MapIntensityMem > MAX_MAP_INTENSITY_MEM)
+        MapIntensityMem = MAX_MAP_INTENSITY_MEM;
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void InitMainBuffer(void) {
+    T_MEM *ptrm = ListMem;
+    U8 *ptr;
+    S32 t;
+
+    AdjustLba2Mem();
+
+    // Calcule mémoire nécessaire pour tous les buffers
+
+    SizeOfMemAllocated = 0;
+
+    for (t = 0; t < NB_MEM_ELTS; t++, ptrm++) {
+        ptrm->Size = (ptrm->Size + 15) & (~15); // aligne à 16
+
+        SizeOfMemAllocated += ptrm->Size;
+    }
+
+    /* LBA2_DBG_ISOLATE: hand every region its own allocation instead of slicing
+       them out of one block.
+
+       The single-allocation layout below is what ships, and it hides a whole
+       class of bug: a write that runs off the end of one region lands in its
+       neighbour without leaving the allocation, so no sanitizer ever reports
+       it, and the damage surfaces later as garbage data somewhere unrelated.
+       Under this flag the gaps between regions become real redzones and ASan
+       names the code that wrote past.
+
+       Off unless the environment variable is set, so shipping behaviour and
+       memory layout are unchanged. The deliberate aliases are preserved
+       (BufCube and BufferBrick live inside PtrZBuffer), and each region gets a
+       little slack because the original ASM touches one element past a box
+       edge on purpose, which would otherwise mask the spill being hunted.
+       See docs/BUG_HUNTING.md. */
+    if (getenv("LBA2_DBG_ISOLATE")) {
+        /*	NB_MEM_ELTS is sizeof/sizeof, so it is unsigned; a S32 counter here
+            compares signed against unsigned. Its own counter, rather than
+            retyping the shared t, so the loops that came before keep the shape
+            they have. */
+        size_t i;
+
+        ptrm = ListMem;
+        for (i = 0; i < NB_MEM_ELTS; i++, ptrm++) {
+            *ptrm->AdrPtr = (U8 *)Malloc(ptrm->Size + 256);
+            if (!*ptrm->AdrPtr)
+                TheEnd(NOT_ENOUGH_MEM, "MainBuffer");
+        }
+        MainBuffer = (U8 *)*ListMem[0].AdrPtr;
+        BufCube = (U8 *)*ListMem[MEM_PTR_ZBUFFER].AdrPtr;
+        BufferBrick = BufCube + (SIZE_CUBE_X * SIZE_CUBE_Y * SIZE_CUBE_Z * 2L);
+        fprintf(stderr, "[dbg] regions isolated for ASan\n");
+        return;
+    }
+
+    // Alloue gros buffer
+
+    MainBuffer = (U8 *)Malloc(SizeOfMemAllocated);
+    if (!MainBuffer)
+        TheEnd(NOT_ENOUGH_MEM, "MainBuffer");
+
+    // Initialise tous les pointeurs
+
+    ptrm = ListMem;
+    ptr = MainBuffer;
+
+    for (t = 0; t < NB_MEM_ELTS; t++, ptrm++) {
+        *ptrm->AdrPtr = ptr;
+        ptr += ptrm->Size;
+    }
+
+    // Fixe Pointeurs partageant les même buffer
+    BufCube = (U8 *)*ListMem[MEM_PTR_ZBUFFER].AdrPtr;
+    BufferBrick = BufCube + (SIZE_CUBE_X * SIZE_CUBE_Y * SIZE_CUBE_Z * 2L);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void Mem_TeardownMainBuffer(void) {
+    if (MainBuffer) {
+        Free(MainBuffer);
+        MainBuffer = NULL;
+    }
+    SizeOfMemAllocated = 0;
+
+    /* Null every published pointer so a stale read after teardown traps fast
+       instead of silently reading freed memory. */
+    for (S32 t = 0; t < NB_MEM_ELTS; t++) {
+        if (ListMem[t].AdrPtr) {
+            *ListMem[t].AdrPtr = NULL;
+        }
+    }
+
+    /* The two convenience aliases set up at the end of InitMainBuffer. */
+    BufCube = NULL;
+    BufferBrick = NULL;
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void InitMemory(void) {
+    // Alloue Memoire DOS si possible
+    SkySeaTexture = (U8 *)SmartMalloc(256 * 256L + RECOVER_AREA);
+    if (!SkySeaTexture)
+        TheEnd(NOT_ENOUGH_MEM, "SkySeaTexture");
+
+    ObjTexture = (U8 *)SmartMalloc(256 * 256 + RECOVER_AREA);
+    if (!ObjTexture)
+        TheEnd(NOT_ENOUGH_MEM, "ObjTexture");
+
+    GroundTexture = (U8 *)SmartMalloc(256 * 256 + RECOVER_AREA);
+    if (!GroundTexture)
+        TheEnd(NOT_ENOUGH_MEM, "GroundTexture");
+
+    PtrScene = (U8 *)SmartMalloc(PtrSceneMem);
+    if (!PtrScene)
+        TheEnd(NOT_ENOUGH_MEM, "PtrScene");
+
+    TabPartFlow = (T_FLOW *)SmartMalloc(TabPartFlowMem);
+    if (!TabPartFlow)
+        TheEnd(NOT_ENOUGH_MEM, "TabPartFlow");
+
+    BufferPof = (U8 *)SmartMalloc(BufferPofMem);
+    if (!BufferPof)
+        TheEnd(NOT_ENOUGH_MEM, "BufferPof");
+
+    BufferImpact = (U8 *)SmartMalloc(BufferImpactMem);
+    if (!BufferImpact)
+        TheEnd(NOT_ENOUGH_MEM, "BufferImpact");
+
+    BufferFile3D = (U8 *)SmartMalloc(BufferFile3DMem);
+    if (!BufferFile3D)
+        TheEnd(NOT_ENOUGH_MEM, "BufferFile3D");
+
+    BufferValidePos = (U8 *)SmartMalloc(SIZE_BUFFER_VALIDE_POS);
+    if (!BufferValidePos)
+        TheEnd(NOT_ENOUGH_MEM, "BufferValidePos");
+
+    IsleMapIndex = (U8 *)SmartMalloc(256);
+    if (!IsleMapIndex)
+        TheEnd(NOT_ENOUGH_MEM, "IsleMapIndex");
+
+    AdjustHQRMem();
+}

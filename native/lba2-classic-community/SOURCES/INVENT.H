@@ -1,0 +1,153 @@
+#ifndef INVENT_H
+#define INVENT_H
+
+#include "UI_LAYOUT.H" /* UI_VCENTER_OFS */
+
+/*#ifdef	LBA_EDITOR
+#define	BODY_SORT_PROTECT    "F:\\projet\\lba2\\graph\\3D\\throw\\protect1.O4D"
+#else
+#define	BODY_SORT_PROTECT    62	// f:\projet\lba2\graph\3d\objfix.lst
+#endif
+*/
+//--------------------------	Can change
+
+#define INV_START_X_MARGIN 8 //	Margin inventory screen X (from the 4:3 inner box's left edge)
+#define INV_START_Y_MARGIN 8 //	Margin inventory screen Y (from the 4:3 inner box's top edge)
+#define INV_NAME_Y0_RAW 429  //	Name-box top on the authored 480 canvas (size math; floated below)
+
+#define INV_NBOBJ_X 7 //	Nb Object X ex 8
+#define INV_NBOBJ_Y 5 //	Nb Object Y
+
+#define INV_INTER_X 8 //	Distance between 2 objects in X
+#define INV_INTER_Y 8 //	Distance between 2 objects in Y
+
+//--------------------------	Auto change
+
+/* At framebuffers wider than 640 the inventory layout is rendered as a
+   centred 4:3 region rather than stretched: the icons are fixed-size sprites
+   so stretching would just add awkward whitespace between them. INV_LEFT_OFFSET
+   shifts every X coord below so the whole inventory + name box + slate art
+   moves as a unit; INV_DELTA_X stays fixed at the authored inner width (623).
+   At 640 INV_LEFT_OFFSET is 0 and every macro resolves to the historical
+   literal (10/8/0/...). The iso-relative INV_ZOOM box centres on
+   ModeDesiredX/2 - 3 (matches the historical 317 anchor at 640).
+
+   Below 640 the offset clamps to 0 rather than going negative (UI_LAYOUT.H,
+   same rule as the vertical twin). The authored 623-wide block cannot fit, so
+   the choice is where to clip it: anchored at the left edge the first column
+   and the selection stay on screen, and the X coordinates stay inside the
+   framebuffer. A negative origin put the block's left edge off-screen and is
+   how the frame corner copies came to index outside Log. */
+#define INV_LEFT_OFFSET UI_HCANVAS_OFS
+#define INV_TOP_OFFSET UI_VCENTER_OFS // vertical twin of INV_LEFT_OFFSET; shared with the other UI surfaces (UI_LAYOUT.H, clamped >= 0)
+#define INV_START_X (INV_START_X_MARGIN + INV_LEFT_OFFSET)
+#define INV_START_Y (INV_START_Y_MARGIN + INV_TOP_OFFSET)
+
+#define INV_DELTA_X (640 - INV_START_X_MARGIN * 2 - 1)           //	Size Inventory in X (623, fixed inner width)
+#define INV_DELTA_Y (INV_NAME_Y0_RAW - (INV_START_Y_MARGIN * 2)) //	in Y (413, fixed inner height; offset-free)
+
+#define INV_END_X (INV_START_X + INV_DELTA_X)
+#define INV_END_Y (INV_START_Y + INV_DELTA_Y)
+
+#define INV_SIZEO_X ((INV_DELTA_X - (INV_INTER_X * (INV_NBOBJ_X + 1))) / INV_NBOBJ_X)
+#define INV_SIZEO_Y ((INV_DELTA_Y - (INV_INTER_Y * (INV_NBOBJ_Y + 1))) / INV_NBOBJ_Y)
+
+//	Before : 317-120, 218-140, 317+120, 218+140
+
+#define INV_ZOOM_X0 ((S32)ModeDesiredX / 2 - 3 - 120)
+#define INV_ZOOM_Y0 (210 - 120 + INV_TOP_OFFSET)
+#define INV_ZOOM_X1 ((S32)ModeDesiredX / 2 - 3 + 120)
+#define INV_ZOOM_Y1 (210 + 120 + INV_TOP_OFFSET)
+
+#define INV_NAME_X0 INV_START_X                        //	Name Object X0
+#define INV_NAME_Y0 (INV_NAME_Y0_RAW + INV_TOP_OFFSET) //	Name Object Y0
+#define INV_NAME_X1 INV_END_X                          //	Name Object X1
+#define INV_NAME_Y1 (471 + INV_TOP_OFFSET)             //	Name Object Y1
+
+extern S32 ProtectActif;
+extern S32 FlagZoomed;
+extern S32 InvSelect;
+
+/*--------------------------------------------------------------------------*/
+extern void InitInventory(void);
+/*--------------------------------------------------------------------------*/
+extern void InitTabIndir(void);
+/*--------------------------------------------------------------------------*/
+extern S32 TricheInventory(S32 ret);
+/*--------------------------------------------------------------------------*/
+extern void DrawObjInventory(S32 x, S32 y, S16 *ptrobj, S32 beta, S32 lfactor, S32 zoom);
+/*--------------------------------------------------------------------------*/
+extern void AffValueBar(S32 x0, S32 y0, S32 x1, S32 y1, S32 value);
+/*--------------------------------------------------------------------------*/
+extern void SaveBackground(S32 x0, S32 y0, S32 x1, S32 y1);
+/*--------------------------------------------------------------------------*/
+extern void RestoreBackground(void);
+/*--------------------------------------------------------------------------*/
+extern U32 DrawOneInventory(S32 numbox);
+/*--------------------------------------------------------------------------*/
+extern void OpenInventory(void);
+/*--------------------------------------------------------------------------*/
+extern void DrawListInventory(void);
+/*--------------------------------------------------------------------------*/
+extern void SaveBlockInventory(void);
+/*--------------------------------------------------------------------------*/
+extern void AffObjName(S32 num);
+/*--------------------------------------------------------------------------*/
+extern void CheckProtoPack(void);
+/*--------------------------------------------------------------------------*/
+extern void MenuInventory(U32 tempo);
+/*--------------------------------------------------------------------------*/
+/* Harness hook: arm a one-shot screenshot inside the next MenuInventory call.
+   At a settled frame inside the wheel's modal loop, SavePNG is called with the
+   supplied path and the request is cleared. Pass NULL or "" to disarm.  Used by
+   the console "ui inventory <path>" verb to drive UI-state regression fixtures
+   without a tick budget for the modal. */
+extern void Inv_RequestCapture(const char *path);
+/*--------------------------------------------------------------------------*/
+extern void DoFoundObj(S32 numobj);
+/* Harness hook: arm a one-shot screenshot inside the next DoFoundObj call.
+   The found-object cinematic shows a 3D rotation of the discovered item
+   alongside a typewriter-text dialogue.  After a countdown of iterations
+   (long enough for the rotation to settle into a steady frame and the text
+   to draw), SavePNG is called with the supplied path and flag=2 is set so
+   the modal loop exits cleanly without waiting for input.  Pass NULL or ""
+   to disarm.  Used by the console "ui found-object <numvar> <path>" verb. */
+extern void DoFoundObj_RequestCapture(const char *path);
+/*--------------------------------------------------------------------------*/
+extern void DrawArdoiseArrows(void);
+/*--------------------------------------------------------------------------*/
+extern void RouleauRight(void);
+/*--------------------------------------------------------------------------*/
+extern void RouleauLeft(void);
+/*--------------------------------------------------------------------------*/
+extern void ChangeArdoise(S32 left);
+/*--------------------------------------------------------------------------*/
+extern void DrawArdoise(void);
+/*--------------------------------------------------------------------------*/
+extern void ResetArdoise(void);
+/*--------------------------------------------------------------------------*/
+extern void GereArdoise(void);
+/*--------------------------------------------------------------------------*/
+extern void BackupAngles(S32 x0, S32 y0, S32 x1, S32 y1);
+/*--------------------------------------------------------------------------*/
+extern void RestoreAngles(S32 x0, S32 y0, S32 x1, S32 y1);
+/*--------------------------------------------------------------------------*/
+extern void DrawAngles(S32 x0, S32 y0, S32 x1, S32 y1, U32 type);
+/*--------------------------------------------------------------------------*/
+extern void DrawCadre(S32 x0, S32 y0, S32 x1, S32 y1, U32 type);
+/*--------------------------------------------------------------------------*/
+extern void DrawCadreBox(S32 x0, S32 y0, S32 x1, S32 y1, S32 color);
+/*--------------------------------------------------------------------------*/
+extern void DrawCadreShade(S32 x0, S32 y0, S32 x1, S32 y1, S32 color);
+/*--------------------------------------------------------------------------*/
+extern void BackupScreen(S32 flagscreen);
+/*--------------------------------------------------------------------------*/
+extern void RestoreScreen(void);
+/*--------------------------------------------------------------------------*/
+extern void ToggleSortProtection(void);
+/*--------------------------------------------------------------------------*/
+extern void PlayProtectSamples(T_EXTRA *ptrextra);
+/*--------------------------------------------------------------------------*/
+extern void StopProtectSamples(void);
+/*--------------------------------------------------------------------------*/
+#endif // INVENT_H

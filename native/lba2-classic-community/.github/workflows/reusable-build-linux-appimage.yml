@@ -1,0 +1,91 @@
+name: Build Linux AppImage (reusable)
+
+# Reusable build steps for the Linux AppImage target. Called by
+# release-linux-appimage.yml (tag-triggered) and release-latest.yml (rolling
+# pre-release). Produces a `dist/` directory with the AppImage + .zsync
+# files and uploads it as a workflow artifact named
+# `<artifact-prefix>-<arch>`.
+#
+# See docs/RELEASING.md "Adding a new release target" for the recipe this
+# file follows.
+
+on:
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: >-
+          Prefix for the upload-artifact name. Caller appends -<arch>.
+          Tag releases pass "AppImage" (default); release-latest passes
+          "latest-linux" so its download-artifact pattern picks them up.
+        type: string
+        required: false
+        default: AppImage
+      update-channel:
+        description: >-
+          gh-releases-zsync tag keyword the bundled self-updater follows.
+          Tag releases pass "latest" (default, newest stable); release-latest
+          passes "latest-pre" so a rolling build tracks the rolling channel
+          instead of replacing itself with the newest stable release.
+        type: string
+        required: false
+        default: latest
+
+jobs:
+  build:
+    name: "Build ${{ matrix.arch }}"
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: ubuntu-latest
+            arch: x86_64
+          - runs-on: ubuntu-24.04-arm
+            arch: aarch64
+    container: ghcr.io/pkgforge-dev/archlinux:latest
+    timeout-minutes: 45
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v6
+      - name: Preparing Container
+        uses: pkgforge-dev/anylinux-setup-action@v2
+      # The script pulls from Arch mirrors and downloads appimagetool from a
+      # GitHub release; both have failed a leg outright when upstream returned
+      # 5xx. Retry the whole script rather than any one fetch: pacman and the
+      # CMake build are both incremental, so a second attempt costs seconds,
+      # and appimagetool's own internal retries are already exhausted by then.
+      - name: Make AppImage
+        env:
+          LBA2_UPDATE_CHANNEL: ${{ inputs.update-channel }}
+        run: |
+          for attempt in 1 2 3; do
+            # Start each attempt from a clean AppDir: a run that died inside
+            # quick-sharun leaves a half-populated tree behind, and the next
+            # attempt would then fail on that rather than on the real cause.
+            rm -rf ./AppDir ./dist
+            if /bin/sh ./scripts/packaging/make-appimage.sh; then
+              exit 0
+            fi
+            echo "AppImage build attempt ${attempt} failed; retrying in 15s"
+            sleep 15
+          done
+          echo "AppImage build failed after 3 attempts" >&2
+          exit 1
+      - name: Upload temporary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}
+          path: |
+            dist
+            !dist/*-symbols.tar.xz
+
+      # Its own artifact, so it outlives the rolling release, which replaces its
+      # assets on every push: scripts/dev/symbolize_crash.py --fetch finds it by the
+      # commit in a crash block. A tag release also attaches it to the release.
+      - name: Upload symbols
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}-symbols
+          path: dist/*-symbols.tar.xz
+          if-no-files-found: error
+          retention-days: 90

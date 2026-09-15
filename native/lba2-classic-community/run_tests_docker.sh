@@ -1,0 +1,287 @@
+#!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────────────────────
+# run_tests_docker.sh — Build & run all LBA2 ASM-vs-CPP equivalence tests
+#                       inside a Linux x86_64 Docker container.
+#
+# Usage:
+#   ./run_tests_docker.sh              # Build & run all tests
+#   ./run_tests_docker.sh --build-only # Build the Docker image without running
+#   ./run_tests_docker.sh --rebuild    # Force rebuild the Docker image
+#   ./run_tests_docker.sh --render --render-individually --polyrec polyrec_0002 \
+#       --start-after 123 --stop-after 126
+#   ./run_tests_docker.sh test_getang2d test_lirot3df   # Run only named tests
+# ──────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE_NAME="lba2-test"
+CONTAINER_SRC="/src"
+LOG_DIR="${SCRIPT_DIR}/build_logs"
+mkdir -p "${LOG_DIR}"
+
+PRESET="linux_test"
+BUILD_ONLY=false
+FORCE_REBUILD=false
+RENDER_MODE=false
+BISECT_MODE=false
+RENDER_INDIVIDUALLY=false
+POLYREC_NAME=""
+REPLAY_ARGS=()
+TEST_NAMES=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --build-only)
+            BUILD_ONLY=true
+            shift
+            ;;
+        --rebuild)
+            FORCE_REBUILD=true
+            shift
+            ;;
+        --render)
+            RENDER_MODE=true
+            shift
+            ;;
+        --render-individually)
+            RENDER_INDIVIDUALLY=true
+            REPLAY_ARGS+=("$1")
+            shift
+            ;;
+        --bisect)
+            BISECT_MODE=true
+            shift
+            ;;
+        --polyrec)
+            POLYREC_NAME="${2:?--polyrec requires a recording name or path}"
+            shift 2
+            ;;
+        --start-after|--stop-after)
+            REPLAY_ARGS+=("$1" "${2:?$1 requires a numeric argument}")
+            shift 2
+            ;;
+        *)
+            TEST_NAMES+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ "${RENDER_INDIVIDUALLY}" = "true" ] && [ "${RENDER_MODE}" != "true" ]; then
+    echo "ERROR: --render-individually requires --render"
+    exit 1
+fi
+
+# Resolving on PATH is not enough to know docker works. On WSL the CLI is a
+# symlink into Docker Desktop's mounted cli-tools, so it resolves and even
+# prints client info while integration is switched off for the distro and no
+# /var/run/docker.sock exists at all. Without this check that surfaces as a
+# confusing failure from the first real docker call, which reads as a problem
+# with the test suite rather than with the setup.
+if ! command -v docker >/dev/null 2>&1; then
+    echo "ERROR: docker is not on PATH. See docs/TOOLING.md." >&2
+    exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: docker is installed but not usable ('docker info' failed)." >&2
+    echo "  On WSL, check that Docker Desktop's WSL integration is enabled for" >&2
+    echo "  this distro (Settings > Resources > WSL Integration); the CLI" >&2
+    echo "  resolves even when it is off. Otherwise start the daemon." >&2
+    echo "  Diagnose with: docker info" >&2
+    exit 1
+fi
+
+# ── Build Docker image (skip if already cached) ──────────────────────────────
+IMAGE_EXISTS=$(docker images -q "${IMAGE_NAME}" 2>/dev/null)
+if [ "$FORCE_REBUILD" = true ] || [ -z "$IMAGE_EXISTS" ]; then
+    DOCKER_BUILD_LOG="${LOG_DIR}/docker_build_$(date +%Y%m%d_%H%M%S).log"
+    # One pin for every SDL3 path in the repo. Read rather than repeated, for
+    # the same reason UASM_VERSION is read out of the Dockerfile below: a
+    # second copy is a second thing to forget when bumping.
+    # Read and check in one step. A bare assignment would abort under `set -e`
+    # the moment the file is missing, so the named message below would only
+    # ever be reached for a file that exists and is blank.
+    if ! SDL3_VERSION=$(tr -d '[:space:]' < "${SCRIPT_DIR}/.github/sdl3-version.txt" 2>/dev/null) \
+       || [ -z "$SDL3_VERSION" ]; then
+        echo "ERROR: could not read the SDL3 pin from .github/sdl3-version.txt" >&2
+        exit 1
+    fi
+    echo "==> Building Docker image '${IMAGE_NAME}' (linux/amd64, SDL3 ${SDL3_VERSION}) …"
+    echo "    Build log: ${DOCKER_BUILD_LOG}"
+    if ! docker build --platform linux/amd64 \
+            -t "${IMAGE_NAME}" \
+            --build-arg "SDL3_VERSION=${SDL3_VERSION}" \
+            -f "${SCRIPT_DIR}/docker/Dockerfile.test" \
+            "${SCRIPT_DIR}" \
+            2>&1 | tee "${DOCKER_BUILD_LOG}"; then
+        echo "==> Docker build FAILED. See log: ${DOCKER_BUILD_LOG}"
+        exit 1
+    fi
+    echo "==> Docker image built successfully."
+else
+    echo "==> Docker image '${IMAGE_NAME}' already exists (use --rebuild to force)."
+fi
+
+if [ "$BUILD_ONLY" = true ]; then
+    echo "==> Exiting (--build-only)."
+    exit 0
+fi
+
+# ── Build ctest filter from test names ────────────────────────────────────────
+CTEST_REGEX=""
+if [ ${#TEST_NAMES[@]} -gt 0 ]; then
+    # Join test names with | for ctest -R regex
+    CTEST_REGEX=$(IFS='|'; echo "${TEST_NAMES[*]}")
+    echo "==> Running only: ${TEST_NAMES[*]}"
+fi
+
+# ── Run tests ─────────────────────────────────────────────────────────────────
+# The runtime fallback below needs the UASM release to fetch, but the version
+# belongs to the image. Read it out of the Dockerfile rather than repeating it:
+# two copies drift, and the failure is a stale image quietly assembling with a
+# different UASM than the one the Dockerfile declares.
+UASM_VERSION=$(sed -n 's/^ARG UASM_VERSION=//p' "${SCRIPT_DIR}/docker/Dockerfile.test")
+UASM_ARCHIVE=$(sed -n 's/^ARG UASM_ARCHIVE=//p' "${SCRIPT_DIR}/docker/Dockerfile.test")
+if [ -z "${UASM_VERSION}" ] || [ -z "${UASM_ARCHIVE}" ]; then
+    echo "ERROR: could not read ARG UASM_VERSION/UASM_ARCHIVE from docker/Dockerfile.test" >&2
+    exit 1
+fi
+
+TEST_LOG="${LOG_DIR}/test_run_$(date +%Y%m%d_%H%M%S).log"
+echo "==> Running tests (preset: ${PRESET}) …"
+# For render mode, we need read-write access to copy output files back
+if [ "${RENDER_MODE}" = "true" ]; then
+    MOUNT_OPTS="${SCRIPT_DIR}:${CONTAINER_SRC}"
+else
+    MOUNT_OPTS="${SCRIPT_DIR}:${CONTAINER_SRC}:ro"
+fi
+
+echo "    Test log: ${TEST_LOG}"
+docker run --rm \
+    --platform linux/amd64 \
+    -v "${MOUNT_OPTS}" \
+    -w "${CONTAINER_SRC}" \
+    -e "CTEST_REGEX=${CTEST_REGEX}" \
+    -e "CONTAINER_SRC=${CONTAINER_SRC}" \
+    -e "PRESET=${PRESET}" \
+    -e "RENDER_MODE=${RENDER_MODE}" \
+    -e "BISECT_MODE=${BISECT_MODE}" \
+    -e "POLYREC_NAME=${POLYREC_NAME}" \
+    -e "REPLAY_ARGS_STR=${REPLAY_ARGS[*]+"${REPLAY_ARGS[*]}"}" \
+    -e "POLYREC_DEBUG_SLOPES=${POLYREC_DEBUG_SLOPES:-}" \
+    -e "UASM_VERSION=${UASM_VERSION}" \
+    -e "UASM_ARCHIVE=${UASM_ARCHIVE}" \
+    "${IMAGE_NAME}" \
+    bash -c '
+        set -e
+
+        if [ -x /usr/local/bin/uasm ]; then
+            echo "--- UASM (baked into the image) ---"
+        else
+            # Only reached with an image built before UASM moved into the
+            # Dockerfile. Retries so a flaky CDN costs seconds, not the run.
+            echo "--- Installing UASM ${UASM_VERSION} (stale image; rebuild with --rebuild) ---"
+            curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+                "https://github.com/Terraspace/UASM/releases/download/v${UASM_VERSION}/${UASM_ARCHIVE}" \
+                -o /tmp/uasm.zip
+            unzip -oq /tmp/uasm.zip -d /usr/local/bin
+            chmod +x /usr/local/bin/uasm
+        fi
+        uasm -? </dev/null 2>&1 | head -1 || true
+
+        # Copy the source in, minus any build tree the host happens to have.
+        # A host build/ carries a CMakeCache.txt naming its host path, and cmake
+        # refuses to reuse a cache from a different directory -- so copying one
+        # in makes the configure below fail before a single test compiles. CI
+        # never hits this because it checks out fresh; a contributor who has
+        # ever run `make build` hits it every time.
+        mkdir -p /tmp/lba2
+        tar -C ${CONTAINER_SRC} --exclude=./build --exclude='./build-*' -cf - . \
+            | tar -C /tmp/lba2 -xf -
+        cd /tmp/lba2
+
+        AVAILABLE_PRESETS="$(cmake --list-presets 2>/dev/null || true)"
+        CONFIGURE_PRESET="${PRESET}"
+
+        if ! printf "%s\n" "${AVAILABLE_PRESETS}" | grep -Eq "^[[:space:]]*\"${PRESET}\"([[:space:]]|$)"; then
+            echo "--- preset ${PRESET} not found; falling back to linux with explicit test flags ---"
+            CONFIGURE_PRESET="linux"
+        fi
+
+        echo "--- cmake configure (${CONFIGURE_PRESET}) ---"
+        if [ "${CONFIGURE_PRESET}" = "${PRESET}" ]; then
+            cmake -S . -B build \
+                -DLBA2_BUILD_TESTS=ON \
+                -DLBA2_BUILD_ASM_EQUIV_TESTS=ON \
+                --preset ${CONFIGURE_PRESET}
+        else
+            cmake -S . -B build \
+                --preset ${CONFIGURE_PRESET} \
+                -DLBA2_BUILD_TESTS=ON \
+                -DLBA2_BUILD_ASM_EQUIV_TESTS=ON \
+                -DENABLE_ASM=ON \
+                -DCMAKE_BUILD_TYPE=Debug \
+                -DCMAKE_C_FLAGS=-m32 \
+                -DCMAKE_CXX_FLAGS=-m32 \
+                -DSDL3_DIR=/usr/local/sdl3-32/lib/cmake/SDL3
+        fi
+
+        echo "--- cmake build ---"
+        cmake --build build -j$(nproc)
+
+        if [ "${RENDER_MODE}" = "true" ]; then
+            echo "--- building polyrec replay programs ---"
+            cmake --build build -j$(nproc) --target replay_polyrec_asm --target replay_polyrec_cpp
+            echo "--- rendering polygon recordings ---"
+            cd build/tests/SNAPSHOT
+            if [ -n "${POLYREC_NAME}" ]; then
+                case "${POLYREC_NAME}" in
+                    /*) REC_LIST="${POLYREC_NAME}" ;;
+                    *.lba2polyrec) REC_LIST="/tmp/lba2/tests/SNAPSHOT/fixtures/${POLYREC_NAME}" ;;
+                    *) REC_LIST="/tmp/lba2/tests/SNAPSHOT/fixtures/${POLYREC_NAME}.lba2polyrec" ;;
+                esac
+            else
+                REC_LIST="/tmp/lba2/tests/SNAPSHOT/fixtures/*.lba2polyrec"
+            fi
+            for rec in ${REC_LIST}; do
+                [ -f "$rec" ] || continue
+                echo "Rendering: $(basename "$rec")"
+                bash /tmp/lba2/tests/SNAPSHOT/render_polyrec.sh "$rec" \
+                    /tmp/lba2/tests/SNAPSHOT/fixtures \
+                    ./replay_polyrec_asm ./replay_polyrec_cpp ${REPLAY_ARGS_STR} || true
+            done
+            echo "--- copying rendered files to host ---"
+            cp -f /tmp/lba2/tests/SNAPSHOT/fixtures/*.raw ${CONTAINER_SRC}/tests/SNAPSHOT/fixtures/ 2>/dev/null || true
+            cp -f /tmp/lba2/tests/SNAPSHOT/fixtures/*.ppm ${CONTAINER_SRC}/tests/SNAPSHOT/fixtures/ 2>/dev/null || true
+        elif [ "${BISECT_MODE}" = "true" ]; then
+            echo "--- building polyrec replay programs ---"
+            cmake --build build -j$(nproc) --target replay_polyrec_asm --target replay_polyrec_cpp
+            echo "--- bisecting polygon calls ---"
+            cd build/tests/SNAPSHOT
+            for rec in /tmp/lba2/tests/SNAPSHOT/fixtures/*.lba2polyrec; do
+                [ -f "$rec" ] || continue
+                echo "Bisecting: $(basename "$rec")"
+                if bash /tmp/lba2/tests/SNAPSHOT/bisect_polyrec.sh "$rec" \
+                    ./replay_polyrec_asm ./replay_polyrec_cpp; then
+                    continue
+                else
+                    status=$?
+                fi
+                if [ "$status" -eq 1 ]; then
+                    echo "--- stopping bisect on first mismatch: $(basename "$rec") ---"
+                    exit 0
+                fi
+
+                exit "$status"
+            done
+        else
+            echo "--- ctest ---"
+            if [ -n "${CTEST_REGEX}" ]; then
+                ctest --test-dir build -V -R "${CTEST_REGEX}"
+            else
+                ctest --test-dir build --output-on-failure
+            fi
+        fi
+    ' 2>&1 | tee "${TEST_LOG}"
+
+echo "==> Test log saved: ${TEST_LOG}"

@@ -1,0 +1,54 @@
+/cmake-build-*
+/.idea/
+CMakeUserPresets.json
+out/
+build/
+# Demo SKU: a separate configure, so a second tree beside build/ (GAME_DATA.md)
+build-demo/
+# AddressSanitizer host tests: linux_sanitize is a different build type again
+build-asan/
+# Second front end: linux_clang, kept beside build/ so both stay warm
+build-clang/
+# Control socket and recorder prototype trees (docs/plan/RECORDING_RESEARCH.md)
+build-ctl/
+build-play/
+# Throwaway tree for scripts/ci/warning-baseline.sh (always a clean rebuild)
+build-warnings/
+# Control socket: LBA2_CONTROL_SERVER is off in any binary a player might run, so
+# the socket needs a tree of its own. docs/CONTROL.md names this one.
+build-ctl/
+dist/
+
+# Local retail drop (symlink or copy classic data here; never commit assets)
+/data/
+# Scratch dir for CD-image / HQR / ACF exploration (extracted assets — never commit)
+/.tc-scratch/
+/build_test
+/build_logs/
+.tmp/
+
+# lychee --cache writes this; useful locally, never worth committing
+.lycheecache
+
+# Python (e.g. scripts/save_probe.py)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Polyrec rendered outputs (keep .lba2polyrec fixtures, ignore generated images)
+tests/SNAPSHOT/fixtures/*.png
+tests/SNAPSHOT/fixtures/*.ppm
+tests/SNAPSHOT/fixtures/*.raw
+
+# Android build outputs
+android/build/
+android/apk/
+android/local.properties
+
+# Signing keys. Nothing here is ever committed: a keystore is the app's identity
+# for its whole life and cannot be reissued, and a .b64 of one is the same bytes
+# in a form that looks harmless.
+*.jks
+*.jks.b64
+*.keystore
+*.p12

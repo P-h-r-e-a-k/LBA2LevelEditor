@@ -1,0 +1,2679 @@
+/*-------------------------------------------------------------------------*/
+#ifdef TITRE
+/*-------------------------------------------------------------------------*/
+
+// MESSAGE
+
+/*-------------------------------------------------------------------------*/
+#endif
+
+//#define LORAN 1
+//#define LBA_EDITOR 1
+/*-------------------------------------------------------------------------*/
+
+#include "C_EXTERN.H"
+#include "IMAGE_LOAD.H"
+
+#include "CONSOLE/CONSOLE.H"
+#include "CONTROL.H"
+#include "INPUT.H"
+
+#include <FILEIO/SAVEPNG.H>
+#include <SVGA/SCREEN.H>
+#include <SVGA/VIDEO.H>
+#include "DIRECTORIES.H"
+#include "UI_LAYOUT.H" /* UI_VCENTER_OFS, UI_VBOTTOM_OFS */
+#include <SYSTEM/KEYBOARD_KEYS.H>
+#include <SYSTEM/LOG.H>
+#include <SYSTEM/STRING.H>
+
+#include <dirent.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include "AMBIANCE.H"
+#include "BOOT_EXIT.H"
+
+S32 FlagRestoreCD = 0;
+
+/*-------------------------------------------------------------------------*/
+//======================== Issus de Dial
+/* DIAL_DEF…DIAL_SAY (Texte normal, BigMessage, etc.): voir COMMON.H */
+//#define       DIAL_INT        (1<<4)  // Resonnance de la voix en interieur
+//#define       DIAL_EXT        (1<<5)  // Resonnance de la voix en exterieur
+//#define       DIAL_CAV        (1<<6)  // Resonnance de la voix en cave
+//#define       DIAL_HOL        (1<<4)  // Text affiche en 1 ligne (HOLOMAP)
+#define DIAL_RAD (1 << 5) // Message Radio
+#define DIAL_EXP (1 << 6) // Texte affiche Explain Inventory
+#define DIAL_DEM (1 << 7) // Texte affiche sur PCX pour Demo
+
+S32 FlagDial = DIAL_DEF;
+
+S32 FlagSpeedMessage = FALSE; // cf MyDial() and NextDialCar()
+
+S32 DialNbLine; // pour la version demo le 02/08/96
+
+#ifdef LBA_EDITOR
+#define PATH_TXT "f:\\projet\\lba2\\text\\"
+#endif
+
+//extern        Struc_Point Tab_Points[] ;
+
+#ifdef LORAN
+//================================================================= L O R A N
+#define PathConfigFile "c:\\adeline.def"
+//#define       CDROM   1
+
+S32 Island;
+
+/*-------------------------------------------------------------------------*/
+void DrawCadre(S32 x0, S32 y0, S32 x1, S32 y1) {
+    Rect(x0, y0, x1, y1, LBAWHITE);
+}
+/*-------------------------------------------------------------------------*/
+void *LoadTestMalloc(char *name) {
+    return (LoadMalloc(name));
+}
+/*-------------------------------------------------------------------------*/
+S32 GetMusicCD() {
+    return (GetMusicCDR());
+}
+/*-------------------------------------------------------------------------*/
+void StopMusicCD() {
+    StopCDR();
+}
+/*-------------------------------------------------------------------------*/
+U8 *Screen;
+U8 *LbaFont;
+U8 *PalOrg;
+//===========================================================================
+#endif
+
+//--------------------------------------------------------------
+/* NB_LANGUAGES now lives in MESSAGE.H, so the per-language tables outside this
+   file can bind their own width to it at compile time instead of restating 6. */
+#define MAX_TEXT_LANG 15                              // Attention, pour 1 langue seulement!
+#define MAX_FILE_VOICE (MAX_TEXT_LANG * NB_LANGUAGES) // ( SYS CRE GAM 0 ... 11 ) * MaxLang
+#define EXT_VOX ".VOX"
+#define FROM_HD 0
+#define FROM_CD 1
+#define CDBLOCK (256L * 256L)
+//-------------------------------------------------------------- #endif
+
+#define INTER_LINE 38
+#define INTER_SPACE 7 //  16/08/94  de 5 a 7 !
+#define INTER_LEAVE 2
+#define CODE_HARD_SPACE 42 // Space with unchangable size (7)
+
+#define TIME_DELTA_CAR 20
+
+#define MAX_STACK 100 // ex 32!!!
+#define MAX_SHADE 14  // ex 32!!!
+#define SPEAK_SAMPLE 0x1234
+/*-------------------------------------------------------------------------*/
+S32 Dial_X0 = 16;
+S32 Dial_Y0 = 334;
+/* File-scope defaults match the historical 4:3 layout (W=640, H=480); they are
+   only used transiently before NormalWinDial / BigWinDial / etc. reset them
+   from ClipWindowYMax + width-aware bounds (see the Dial_X1 = ModeDesiredX - 1
+   - N substitutions in those functions below). */
+S32 Dial_X1 = 639 - 16;
+S32 Dial_Y1 = 479 - 16;
+static S32 DialMaxSize = ((623 - 8) - (16 + 8));
+
+/* See MESSAGE.H. Set by SlideShow / EffectPcx for the duration of a
+   centred-PCX cinematic so the *WinDial configurators inset the dialog box
+   to stay inside the picture's 4:3 region instead of stretching into the
+   black sidebars. Zero during normal gameplay → dialog uses the full width. */
+S32 Dial_Letterbox = 0;
+
+/* See MESSAGE.H. Test-only override for GereFlagDial. */
+S32 Dial_ForceFlag = 0;
+
+/* Horizontal inset to apply when Dial_Letterbox is set: half the gap between
+   the framebuffer's width and the authored 640 px PCX width. Zero at 640. */
+static S32 DialLetterboxInset(void) {
+    return Dial_Letterbox ? UI_HCANVAS_OFS : 0;
+}
+
+/* Vertical twin of DialLetterboxInset (== UI_VCENTER_OFS when letterboxed):
+   half the gap between the framebuffer height and the authored 480 px PCX
+   height. Matches Image_LoadCentered's yOffset so the dialog box stays inside
+   the centred picture instead of spilling into the black letterbox bars on a
+   taller framebuffer (e.g. the end-game story text over its backdrop). Zero at
+   480 and during normal (non-letterboxed) gameplay, so the bottom-anchored
+   play dialogue is unchanged. */
+static S32 DialLetterboxInsetY(void) {
+    return Dial_Letterbox ? UI_VCENTER_OFS : 0;
+}
+
+static char BufLine[256];
+static char *PtLine;
+static S32 SizeLine;
+static S32 NbSpace;
+static S32 NbBigSpace;
+static S32 SizeSpace;
+static S32 LenLine;
+static S32 SizeWord;
+
+/*-------------------------------------------------------------------------*/
+
+static char BufferMultiText[MULTI_TEXT_MAX];
+static S32 FileMultiText = -1;
+static S32 NumMultiText = -1;
+
+S32 FlecheForcee = FALSE;
+/*-------------------------------------------------------------------------*/
+
+U16 MaxText;
+
+static char FileText[ADELINE_MAX_PATH];
+
+S32 Language = 0; // English, i.e. TabLanguage[0]
+S32 LastFileInit = -1;
+
+const char *TabLanguage[] = {
+    //      Ne pas toucher l'ordre cause HQR
+    "English",
+    "Français",
+    "Deutsch",
+    "Español",
+    "Italiano",
+    "Portugues"};
+
+const char *ListLanguage[] = {"EN_", "FR_", "DE_", "SP_", "IT_", "PO_"};
+
+const char *ListFileText[] = {"sys",
+                              "cre",
+                              "gam",
+                              "000",
+                              "001",
+                              "002",
+                              "003",
+                              "004",
+                              "005",
+                              "006",
+                              "007",
+                              "008",
+                              "009",
+                              "010",
+                              "011"};
+// flag de cadre shade
+
+S32 FlagMessageShade = TRUE;
+
+#pragma pack(push, 4)
+
+typedef struct
+{
+    S32 x;
+    S32 y;
+    char c;
+
+} T_STACKCAR;
+
+#pragma pack(pop)
+
+static T_STACKCAR StackCar[MAX_STACK];
+
+static S32 NbCar;
+
+#define NB_DEGRADE 14
+static S32 MinDegrade;
+static S32 MaxDegrade;
+U8 *BufText = 0L;
+static U8 *PtText = 0L;
+static S32 SizeText;
+
+U16 *BufOrder = 0L;
+
+S32 FlagSpeak = FALSE;   //     cf InitLanguage
+S32 FlagDisplayText = 1; //     ON par default
+
+//----------------------------------------------------------------------------
+#if defined(CDROM) || defined(LBA_EDITOR)
+U32 *BufMemoSeek = 0;
+#endif
+
+#ifdef CDROM
+S32 NumObjSpeak = -1;
+S32 FlagVoiceCD = FALSE; //     cf InitLanguage
+
+static S32 FlagKeepVoice = 0;
+static S32 FlagNextVoc = FALSE;
+static U32 FdNar = 0;
+//static        U32     FdCd=0                  ;
+
+typedef struct
+{
+    char NameHD[13 + ADELINE_MAX_PATH];
+    U32 SaveTimer;
+    U32 SizeFileHD;
+
+} T_FILEONHD;
+
+T_FILEONHD TabFileOnHD[MAX_FILE_VOICE];
+
+U32 TotalSizeFileHD = 0;
+S32 LanguageCD = 0; // English, i.e. TabLanguage[0]
+S32 NbFileOnHD = 0; // No File for the moment
+S32 MaxVoice = 0;
+
+#endif
+//-----------------------------------------------------------------------------
+
+char *PtDial;       //     Use by Holomap
+S32 X_Dial, Y_Dial; //     Use by Holomap
+static char Word[256];
+static char *PtWord;
+static S32 NbLineDial;
+static S32 MaxLineDial = 3;
+static S32 FlagEndPage = FALSE;
+static S32 FlagRunningDial = FALSE;
+static S32 FlagEndDial = FALSE;
+static S32 CurrentDial = 0;
+static S32 LenWord;
+
+//------------------------------
+// le 03/05/95
+#ifndef COMPILATOR
+struct ListMessages {
+    S32 Perso;   // numero personnage scenarique
+    S32 Message; // numero message
+};
+
+struct ListMessages *MessList = NULL; // Alloue dynamiquement
+
+S32 NbMess = 0; // nombre de messages dans le .txt
+#endif
+
+/*-------------------------------------------------------------------------*/
+U32 GetHDFreeSize() {
+    // FIXME: Implement in a portable way
+    return 10000000;
+}
+
+/*-------------------------------------------------------------------------*/
+#ifdef CDROM
+
+#define BAR_X0 16
+#define BAR_Y0 400
+#define BAR_X1 623
+#define BAR_Y1 440
+
+void TimeBar(U32 max, U32 val) {
+#ifdef LBA_EDITOR
+    max = max;
+    val = val;
+#else
+    U32 x;
+    U32 dx;
+    MemoClipWindow();
+    MemoClip();
+    UnsetClipWindow();
+
+    // old way
+    //      CopyBlock( 16, 400, 623, 440, Log, 16, 400, Screen );
+    //      PalOne( LBAWHITE, 0,255,255 )   ;
+    //      Rect( 16, 400, 623, 440, LBAWHITE );
+
+    x = RegleTrois(BAR_X0 + 1, BAR_X1 - 1, max, val); //      Lib_3D
+
+    BackupAngles(BAR_X0, BAR_Y0, BAR_X1, BAR_Y1);
+    if (x < BAR_X1 - 1)
+        ShadeBoxBlk(x + 1, BAR_Y0 + 1, BAR_X1 - 1, BAR_Y1 - 1, 8);
+
+    //      Box( BAR_X0+1, BAR_Y0+1, x, BAR_Y1-1, 9*16+15 ) ;
+    DrawFireBar(BAR_X0 + 1, BAR_Y0 + 1, x, BAR_Y1 - 1, FIRE_SELECT_MENU);
+
+    DrawCadre(BAR_X0, BAR_Y0, BAR_X1, BAR_Y1, ALL_ANGLES);
+    RestoreAngles(BAR_X0, BAR_Y0, BAR_X1, BAR_Y1);
+
+    ColorFont(LBAWHITE);
+    dx = SizeFont(PleaseWait);
+    Font((S32)ModeDesiredX / 2 - dx / 2, BAR_Y0, PleaseWait);
+
+    BoxMovingAdd(BAR_X0, BAR_Y0, BAR_X1, BAR_Y1);
+    BoxUpdate();
+
+    RestoreClipWindow();
+    RestoreClip();
+#endif
+}
+#endif
+/*-------------------------------------------------------------------------*/
+
+/* Index into TabLanguage, or -1 when the name is empty or unrecognised.
+   TabLanguage is UTF-8 because this source file is, while a retail LBA2.CFG is
+   CP437/CP850, where ç is one byte rather than UTF-8's two. Comparing across
+   encodings is what EqualsIgnoringCaseAndEncoding is for; a plain strcasecmp
+   missed every accented language, which is how a Spanish retail install booted
+   in French. The six names differ in their ASCII letters, so ignoring how the
+   accent is spelled cannot make two of them collide. */
+static S32 FindLanguage(const char *name) {
+    if (name == NULL) {
+        return -1;
+    }
+    for (S32 n = 0; n < NB_LANGUAGES; n++) {
+        if (EqualsIgnoringCaseAndEncoding(name, TabLanguage[n])) {
+            return n;
+        }
+    }
+    return -1;
+}
+
+void InitLanguage() {
+    char string[256];
+    S32 n;
+
+    /* A missing key means English, which is what the shipped default config
+       says and what every retail LBA2.CFG we have says. Reading the default
+       through the same match keeps the two paths from drifting apart. */
+    strcpy(string, DefFileBufferReadStringDefault("Language", TabLanguage[0]));
+
+    n = FindLanguage(string);
+    if (n < 0) {
+        /* Say so rather than silently landing somewhere. This used to leave
+           Language at its initialiser, which was 1 and therefore French, while
+           the comment beside it claimed English. An unset key is not worth
+           reporting, a value we could not read is. */
+        if (string[0] != '\0') {
+            Log_Warn("Language   '%s' not recognised, using %s", string,
+                     TabLanguage[0]);
+        }
+        n = 0;
+    }
+    Language = n;
+
+#ifdef CDROM
+    // Attention: Voix toujours Valides !!!
+    strcpy(string, DefFileBufferReadStringDefault("LanguageCD", TabLanguage[0]));
+
+    /* No usable voice language means no speech: there is no VOX prefix to pick
+       (ListLanguage is indexed by this), so it cannot be guessed. An empty
+       LanguageCD is how a release with no voices installed says so, and stays
+       silent; anything else non-empty is a config error worth reporting. */
+    n = FindLanguage(string);
+    FlagSpeak = (n >= 0);
+    if (n >= 0) {
+        LanguageCD = n;
+    } else if (string[0] != '\0') {
+        Log_Warn("LanguageCD '%s' not recognised, no speech", string);
+    }
+
+    if (!SamplesEnable)
+        FlagSpeak = FALSE; // No Sound PC
+
+    strcpy(string, DefFileBufferReadStringDefault("FlagKeepVoice", "ON"));
+
+    if (!strcasecmp(string, "ON"))
+        FlagKeepVoice = 1; // default
+    else
+        FlagKeepVoice = 0;
+
+    if (!FlagSpeak) {
+        // pas de voix, on force l'affichage des textes
+        FlagDisplayText = TRUE;
+    }
+#endif
+}
+
+/*-------------------------------------------------------------------------*/
+S32 GetLanguageCount(void) {
+    return NB_LANGUAGES;
+}
+
+/*-------------------------------------------------------------------------*/
+const char *GetLanguageName(S32 language) {
+    if (language < 0 OR language >= NB_LANGUAGES) {
+        return TabLanguage[0]; // English
+    }
+
+    return TabLanguage[language];
+}
+
+#ifdef CDROM
+/*-------------------------------------------------------------------------*/
+S32 GetVoiceLanguageCount(void) {
+    return 3;
+}
+#endif
+
+/*-------------------------------------------------------------------------*/
+void ReloadMultiTextFile(S32 file) {
+    BufferMultiText[0] = 0;
+    NumMultiText = -1;
+    FileMultiText = -1;
+    LastFileInit = -1;
+    InitDial(file);
+}
+
+/*-------------------------------------------------------------------------*/
+
+S32 FindText(S32 text) {
+    U16 *pt;
+    S32 i;
+
+    pt = BufOrder;
+
+    for (i = 0; i < MaxText; i++) {
+        if (*pt++ == text)
+            return (i);
+    }
+    return (-1);
+}
+#ifdef TITRE
+/*-------------------------------------------------------------------------*/
+CDROM PART
+/*-------------------------------------------------------------------------*/
+#endif
+#ifdef CDROM
+    /*-------------------------------------------------------------------------*/
+    /* The CD to hard-disk voice cache.
+
+   Built for a 1997 install: a small copy on the hard disk, the disc in the
+   drive, and voice banks pulled off the CD on demand. A bank copied to the
+   disk carried the time it was last used as its own mtime, so the oldest could
+   be unlinked when the disk filled.
+
+   Nothing reaches it now, for two independent reasons. InitDirectories is
+   called with an empty CD prefix; and GetVoicePath's no-prefix branch then
+   assigns voicePathHD a second time rather than voicePathCD, so correcting the
+   first alone changes nothing. voicePathCD stays empty either way, which makes
+   GetVoicePath(fromCD) yield a bare filename resolved against the working
+   directory rather than a disc, and TryCopyFileCD_HD stops at its zero-size
+   check before any copy begins. Anyone restoring a CD path has to settle both,
+   deliberately. A mounted disc image cannot supply that source either:
+   DiscImage_OpenRead maps only paths under the mount base, which a bare
+   filename is not. An image would want no cache regardless, being byte-range
+   reads into a local file.
+
+   Two guards keep it harmless while it sits here, and both are load-bearing.
+   ClearVoiceFile and DeleteOlderFileHD skip anything under the resource
+   directory, because InitVoiceFile registers every installed .VOX into the
+   same table the eviction picks its victim from. (On an image-only install it
+   registers nothing at all: it walks the folder with opendir, which sees the
+   filesystem and not the image.) Without those guards the only bound on the
+   eviction loop is GetHDFreeSize returning a constant, and that function
+   carries a FIXME asking for a real implementation.
+
+   Reviving this for a physical drive is worth doing if the hardware is ever
+   supported: a real disc is slow enough to need a cache where an image is not.
+   Three things have to change first.
+
+     - Where it writes. It caches into the resource directory, which holds
+       installed game data and which the port otherwise only reads. A cache
+       belongs in the user directory. See the note above GetVoicePath in
+       DIRECTORIES.CPP.
+     - What it keys on. It stamps the mtime of the very file it caches, and
+       InitVoiceFile reads that mtime back as the LRU key on the next run. Both
+       halves have to move to an index the cache owns, or the order it evicts
+       in is the order entries were copied rather than last use.
+     - What bounds it. Real free space or a configured ceiling, not a stub.
+
+   The guards move with it rather than going away. Once entries live in the
+   user directory none of them is under the resource directory, so both tests
+   fall inert on cache entries while still protecting installed data.
+
+   The presentation in CopyFileCD_HD, the fade, the copy screen and TimeBar, is
+   the original and is the part a revival would want kept as it stands. */
+    /*-------------------------------------------------------------------------*/
+    //      Pour prendre en compte les eventuels fichiers déjà sur HD
+    void
+    InitVoiceFile() {
+    char pathname[ADELINE_MAX_PATH];
+    char filesDir[ADELINE_MAX_PATH];
+    dirent *file;
+    DIR *dir;
+
+    GetVoicePath(filesDir, ADELINE_MAX_PATH, NULL);
+    dir = opendir(filesDir);
+    if (dir != NULL) {
+        while ((file = readdir(dir)) != NULL) {
+            /* The extension ends the name; it does not merely appear in it.
+               A substring test also takes EN_001.VOX.bak and anything else
+               someone left beside the banks, and each one costs a slot in a
+               table sized for the banks a release ships. */
+            const size_t nameLen = strlen(file->d_name);
+            const size_t extLen = strlen(EXT_VOX);
+            if ((nameLen > extLen) &&
+                (strcasecmp(file->d_name + nameLen - extLen, EXT_VOX) == 0)) {
+                GetVoicePath(pathname, ADELINE_MAX_PATH, file->d_name);
+
+                /* A failed stat leaves fileInfo untouched, so the mode and the
+                   size below would be whatever the stack held. Dangling
+                   symlinks and races with deletion both land here. */
+                struct stat fileInfo;
+                if ((stat(pathname, &fileInfo) == 0) && S_ISREG(fileInfo.st_mode)) {
+                    AddFileNameOnHD(pathname, fileInfo.st_size, fileInfo.st_mtime);
+                }
+            }
+        }
+        closedir(dir);
+    }
+}
+
+/*-------------------------------------------------------------------------*/
+void ClearVoiceFile() {
+#ifndef DEBUG_TOOLS
+    T_FILEONHD *pt;
+    S32 i;
+#endif
+    CloseFdNar();
+
+    if (FlagKeepVoice)
+        return;
+
+#ifdef DEBUG_TOOLS
+    LogPrintf("FlagKeepVoice=0 !!!!!");
+    return;
+#else
+
+    pt = TabFileOnHD;
+
+    for (i = 0; i < NbFileOnHD; i++, pt++) {
+        /* Never delete installed game-data voice files: only genuine CD->HD
+           temp copies are transient. Guards the player's assets even if
+           FlagKeepVoice somehow ends up 0 (e.g. a hand-edited/corrupt cfg).
+           On an HD install every voice file lives under the resource dir, so
+           this path effectively never deletes -- the intended invariant. */
+        if (Directories_IsUnderResDir(pt->NameHD))
+            continue;
+        if (FileSize(pt->NameHD)) //  On ne sait jamais,
+            Delete(pt->NameHD);   // un bug est si vite arrive :-o
+    }
+
+    TotalSizeFileHD = 0;
+#endif
+}
+/*-------------------------------------------------------------------------*/
+void CalcTotalSizeFileOnHD() {
+    T_FILEONHD *pt;
+    S32 i;
+
+    TotalSizeFileHD = 0;
+    pt = TabFileOnHD;
+
+    for (i = 0; i < NbFileOnHD; i++, pt++)
+        TotalSizeFileHD += pt->SizeFileHD;
+}
+/*-------------------------------------------------------------------------*/
+#ifdef LORAN
+void AffStatusVoiceFile() {
+    T_FILEONHD *pt;
+    S32 i;
+
+    Text(10, 8, "%FStatus des fichiers voix :");
+
+    pt = TabFileOnHD;
+    for (i = 0; i < NbFileOnHD; i++, pt++) {
+        Text(10, i * 10 + 16, "%FName : %s  Size : %L  Time : %L", pt->NameHD, pt->SizeFileHD, pt->SaveTimer);
+    }
+    while (!Key)
+        ;
+    while (Key)
+        ;
+}
+#endif
+/*-------------------------------------------------------------------------*/
+void AddFileNameOnHD(char *filename, U32 size, U32 timer) {
+    T_FILEONHD *pt;
+    S32 i;
+
+    // on n'insere pas FR_GAM.VOX dans cette liste
+    if (ade_strcasestr(filename, "_GAM.VOX"))
+        return;
+
+    pt = TabFileOnHD;
+
+    for (i = 0; i < NbFileOnHD; i++, pt++) {
+        if (!strcasecmp(pt->NameHD, filename))
+            break;
+    }
+
+    /* Updating an existing entry always has a slot. Adding one needs a free
+       slot, and the table holds what a release ships, so a folder with more
+       banks than that is not a case to grow for. Drop the extra rather than
+       write past the end and into the globals that follow. */
+    if ((i == NbFileOnHD) && (NbFileOnHD >= MAX_FILE_VOICE)) {
+        Log_Warn("Voice file table full (%d entries), ignoring '%s'",
+                 MAX_FILE_VOICE, filename);
+        return;
+    }
+
+    strcpy(pt->NameHD, filename); //     Eventuelle recopie...
+    pt->SaveTimer = timer;
+    pt->SizeFileHD = size;
+
+    if (i == NbFileOnHD)
+        NbFileOnHD++; // Maj ou Add
+
+    CalcTotalSizeFileOnHD(); //     Place prise
+}
+/*-------------------------------------------------------------------------*/
+void DeleteOlderFileHD() {
+    T_FILEONHD *pt, *pt1;
+    S32 i;
+    U32 min;
+
+    min = 0xFFFFFFFFL; //     le plus récent, non?
+
+    pt = TabFileOnHD;
+    pt1 = NULL;
+
+    for (i = 0; i < NbFileOnHD; i++, pt++) {
+        /* Installed game data is never a cache entry, so it is never a
+           candidate for eviction. The same invariant ClearVoiceFile holds,
+           applied to the other delete site: InitVoiceFile registers every .VOX
+           under the resource directory into this table, so without the test
+           the oldest entry chosen here is one of the player's own files. */
+        if (Directories_IsUnderResDir(pt->NameHD))
+            continue;
+        if (pt->SaveTimer <= min) {
+            min = pt->SaveTimer;
+            pt1 = pt;
+        }
+    }
+
+    /* Nothing evictable, which is the normal case on an install whose voices
+       all came with it. Leave the table alone; the caller re-reads the free
+       space, sees it unchanged and gives up. */
+    if (pt1 == NULL)
+        return;
+
+    if (FileSize(pt1->NameHD)) //  cf Del upper
+    {
+        Delete(pt1->NameHD);
+    }
+
+    TotalSizeFileHD -= pt1->SizeFileHD; // Maj TotalSizeFileHD
+
+    NbFileOnHD--; // One less
+
+    if (NbFileOnHD) {
+        pt--; //     back to last Entry
+
+        /* The freed slot is filled from the end of the table. When the victim
+           was the last entry there is nothing to move, and the copy would be a
+           strcpy onto itself, which is undefined and which the sanitizers
+           abort on. */
+        if (pt1 != pt) {
+            strcpy(pt1->NameHD, pt->NameHD); // copy Last -> Current
+            pt1->SaveTimer = pt->SaveTimer;
+            pt1->SizeFileHD = pt->SizeFileHD;
+        }
+    }
+}
+/*-------------------------------------------------------------------------*/
+//      Copy File CD On HD
+S32 CopyFileCD_HD(char *filecd, char *filehd) {
+    U32 fdr;
+    U32 fdw;
+    S32 size;
+    S32 i;
+    S32 sizefile;
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    sizefile = FileSize(filecd);
+    if (!sizefile)
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+        return (0);
+#else
+        TheEnd(PROGRAM_OK, MessageNoCD);
+#endif
+
+    fdr = OpenRead(filecd);
+    if (!fdr)
+        return (0);
+
+    size = GetHDFreeSize(); //     HD Free Space
+
+    size -= (1024L * 1024L); //     1 megas marge
+
+    if (sizefile >= size)
+        goto error;
+
+    fdw = OpenWrite(filehd);
+    if (!fdw) {
+    error:
+        Close(fdr);
+        return (0);
+    }
+
+#ifndef LBA_EDITOR
+    BoxReset();
+    Cls(); // fait le BoxStaticAdd()
+    CopyScreen(Log, Screen);
+
+    FadeToBlack(PtrPal);
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, SCREEN_HQR_NAME);
+    Image_LoadCentered(tmpFilePath, Log, PCR_CDROM);
+    BoxUpdate();
+
+    FadeToPal(PtrPalNormal);
+    PalOne(LBAWHITE, 255, 255, 255);
+
+    InitPlasmaMenu();
+//      BackupScreen( TRUE ) ;
+#endif
+
+    //------------------------------------------------ 64Ko fast copy   :-)
+    size = sizefile;
+
+    for (i = 0; i < sizefile / CDBLOCK; i++) {
+        if (Read(fdr, BufSpeak, CDBLOCK) != CDBLOCK) {
+            Close(fdr);
+            Close(fdw);
+            Delete(filehd);
+            return (0);
+        }
+
+        if (Write(fdw, BufSpeak, CDBLOCK) != CDBLOCK) {
+            Close(fdr);
+            Close(fdw);
+            Delete(filehd);
+            return (0);
+        }
+        size -= (CDBLOCK);
+        TimeBar(sizefile, sizefile - size);
+    }
+    //------------------------------------------------ Copy left Bytes
+
+    if (size > 0) {
+        if (Read(fdr, BufSpeak, size) != size) {
+            Close(fdr);
+            Close(fdw);
+            Delete(filehd);
+            return (0);
+        }
+
+        if (Write(fdw, BufSpeak, size) != size) {
+            Close(fdr);
+            Close(fdw);
+            Delete(filehd);
+            return (0);
+        }
+    }
+
+    TimeBar(sizefile, sizefile);
+    BoxBlit();
+    BoxReset();
+
+    /*      CopyScreen( ScreenAux, Screen ) ;
+        CopyScreen( ScreenAux, Log )    ;
+        BoxStaticAdd( 0, 0, ModeDesiredX-1, ModeDesiredY-1 ) ;
+*/
+    Close(fdr);
+    Close(fdw);
+
+#ifndef LBA_EDITOR
+    FadeToBlack(PtrPalNormal);
+    Cls();
+    BoxUpdate(); // fait le Cls()
+#endif
+
+    return (1);
+}
+/*-------------------------------------------------------------------------*/
+S32 TryCopyFileCD_HD(char *filecd, char *filehd) {
+    S32 ret = 0;
+    U32 freesize, size, verif;
+
+    PauseMusic(FALSE);
+
+    freesize = GetHDFreeSize() - (1024L * 1024L); //    1 Mega de marge
+
+    size = FileSize(filecd);
+
+    if (!size)
+        goto endtry; // Ne doit Jamais Arriver!
+
+    if (freesize > size) // Y a la place :-)
+    {
+        ret = CopyFileCD_HD(filecd, filehd);
+        goto endtry;
+    }
+
+    //------------------------------ Ok, y a pas la place for the moment :-(
+
+    if (!NbFileOnHD)
+        goto endtry; // Nothing to delete :-<
+
+    if (TotalSizeFileHD + freesize < size)
+        goto endtry; // We can't do nothing :-[
+
+    do {
+        DeleteOlderFileHD();
+        verif = freesize;
+        freesize = GetHDFreeSize() - (1024L * 1024L);
+        if (freesize == verif) {
+            // Can't delete!
+            goto endtry;
+        }
+    } while (freesize < size); // Keep hope... :-)
+
+    //----------------------------- Ok, maintenant on a forcément la place...
+
+    ret = CopyFileCD_HD(filecd, filehd); //  ;-)
+
+endtry:
+    ResumeMusic(TRUE);
+
+    return ret;
+}
+/*-------------------------------------------------------------------------*/
+void CloseFdNar() {
+    if (FdNar) //  Fichier ouvert CD ou HD, on doit le fermer
+    {
+        Close(FdNar);
+        FdNar = 0L;
+    }
+}
+/*-------------------------------------------------------------------------*/
+void InitFileNar(char *file, S32 from) {
+    U32 offset;
+
+    CloseFdNar();
+
+    FlagVoiceCD = 0; //Je touche pas au CD pour le moment
+
+    if (from == FROM_CD)
+        PauseMusic(FALSE);
+
+    FdNar = OpenRead(file); // CD or HD, it's working
+                            // with FdNar, so...  ;-)
+    if (!FdNar)
+        goto error;
+
+    offset = 0;
+
+    while (!offset) // Sans Filet
+    {
+        Read(FdNar, &offset, 4L);
+    }
+
+    MaxVoice = (offset / 4) - 1; // Normalement en phase
+                                 // avec MaxText mais bon,
+                                 // en chantier... {:) --D      (un ouvrier, je sais, il est nul celui la, désolé...)
+    Seek(FdNar, 0L, SEEK_FROM_START);
+
+    if (Read(FdNar, BufMemoSeek, offset) != offset) {
+        CloseFdNar();
+        goto error;
+    }
+
+    FlagVoiceCD = from; //     0 si HD, 1 si CD (cf InitSpeak )
+
+error:
+    if (from == FROM_CD)
+        ResumeMusic(FALSE);
+}
+/*-------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------*/
+void InitSpeak(S32 file) {
+    S32 size;
+    char filehd[ADELINE_MAX_PATH];
+    char filecd[ADELINE_MAX_PATH];
+    char fileName[ADELINE_MAX_PATH];
+
+    //      if ( CDDrive < 0 )      return          ;// a virer, d'ailleur c'est fait... ;-)
+
+    if (file < START_FILE_ISLAND - 1)
+        return; // SYS CRE not spoken
+
+#ifndef LBA_EDITOR
+    // Grosse Rustine crade LBA2 (fin de projet oblige...) pour la
+    // scene finale dans le desert (on avait un transfert de voix
+    // alors qu'il n'y a pas de dialogue !)
+
+    if (PLAY_THE_END
+            AND Island == 2) // desert
+    {
+        return;
+    }
+#endif
+
+    snprintf(fileName, ADELINE_MAX_PATH, "%s%s%s", ListLanguage[LanguageCD], ListFileText[file], EXT_VOX);
+    GetVoicePath(filehd, ADELINE_MAX_PATH, fileName);
+
+    size = FileSize(filehd);
+
+    if (size) //      Already on HD
+    {
+        /* The stamp is in-memory only. Reading a bank never writes to the
+           directory it came from, so installed game data is untouched by
+           playback. See the section header above. */
+        AddFileNameOnHD(filehd, size, time(NULL)); // Maj Timer
+
+        InitFileNar(filehd, FROM_HD);
+        return;
+    }
+
+    GetVoicePath(filecd, ADELINE_MAX_PATH, fileName, true);
+
+    CloseFdNar(); // To close last file so that it can be deleted
+
+    if (!TryCopyFileCD_HD(filecd, filehd)) {
+        InitFileNar(filecd, FROM_CD); // CD
+    } else {
+        size = FileSize(filehd);
+        AddFileNameOnHD(filehd, size, time(NULL)); // FileCD_Size TryCopy...
+        InitFileNar(filehd, FROM_HD);              // HD
+    }
+}
+/*-------------------------------------------------------------------------*/
+void PlaySpeakVoc(S32 fd) {
+    S32 size;
+    S32 sizelzss;
+    S16 method;
+    U32 pan = 64;
+    S32 volume;
+
+    //      modif du 4/10/94 au cas ou SayMessage avant ( crac HP )
+    if (IsSamplePlaying(SPEAK_SAMPLE))
+        StopOneSample(SPEAK_SAMPLE);
+
+    Read(fd, &size, 4L);
+    Read(fd, &sizelzss, 4L);
+    Read(fd, &method, 2L);
+
+    if (method == 0) {
+        Read(fd, BufSpeak, size);
+    } else {
+        // ATTENTION: bouzille ScreenAux
+        Read(fd, ScreenAux, sizelzss); /* 256Ko max ds ScreenAux */
+        ExpandLZ(BufSpeak, ScreenAux, size, 2);
+    }
+
+    FlagNextVoc = *BufSpeak;
+    *BufSpeak = 'W'; // Must be correct for the sound driver
+
+    NumObjSpeak = NumObjDial;
+    volume = VoiceVolume;
+
+    // Paning de la voix (ne le faire que pour les SAY_MESSAGES ?)
+    if (NumObjSpeak != -1 AND FlagDial & DIAL_SAY) {
+        S32 distance;
+
+        PtrProjectPoint(ListObjet[NumObjSpeak].Obj.X,
+                        ListObjet[NumObjSpeak].Obj.Y,
+                        ListObjet[NumObjSpeak].Obj.Z);
+
+        if (CubeMode == CUBE_INTERIEUR)
+            distance = Distance2D((S32)ModeDesiredX / 2, (S32)ModeDesiredY / 2, Xp, Yp);
+        else {
+            distance = Distance3D(ListObjet[NumObjSpeak].Obj.X,
+                                  ListObjet[NumObjSpeak].Obj.Y,
+                                  ListObjet[NumObjSpeak].Obj.Z,
+                                  CameraX, CameraY, CameraZ);
+        }
+
+        GiveBalance(Xp, Yp, distance, &pan, &volume);
+        volume = RegleTrois(0, VoiceVolume, 127, volume);
+    }
+
+    PlaySample(BufSpeak, size, SPEAK_SAMPLE, 4096, 1, volume, pan);
+
+    NumObjSpeak = -1;
+}
+/*-------------------------------------------------------------------------*/
+S32 TestSpk(S32 fd) {
+#ifdef LBA_EDITOR
+    if (!(OptionsDebug & OPT_SPEAK_MESSAGES))
+        return (0); //     Le Codeur ne veut pas
+#endif
+    if (!FlagSpeak)
+        return (0); //     Le joueur ne veut pas
+    if (!fd)
+        return (0); //     Le programme ne peut pas
+
+    if (IsSamplePlaying(SPEAK_SAMPLE))
+        return (1); // ça joue...
+
+    if (FlagNextVoc) // Ya une suite...
+    {
+        PlaySpeakVoc(fd); //     Scratch ScreenAux
+        return (1);       // Ca continue de jouer...
+    }
+
+    return (0); // A plus, snif... :-(
+}
+/*-------------------------------------------------------------------------*/
+S32 TestSpeak() {
+    return (TestSpk(FdNar));
+}
+/*-------------------------------------------------------------------------*/
+//#ifdef        A_VOIR_SI_UTIL_STOP_MUSIC_BEFORE_PLAYING
+/*
+S32    TestSpeakFromCD()
+{
+        S32     ret     ;
+
+        if ( !CDDrive  )        return(0)       ;
+
+        ret = TestSpk( FdCd )   ;
+
+        if (( !ret ) AND ( FdCd ))
+        {
+                Close(FdCd)     ;
+                FdCd = 0L       ;
+        }
+
+        return( ret )   ;
+}
+*/
+/*-------------------------------------------------------------------------*/
+/*
+void    SpeakFromCD( S32 file, S32 text )
+{
+        U16     *pt             ;
+        S32    num, offset     ;
+        S32     max             ;
+        char    tmpname[ADELINE_MAX_PATH]    ;
+        char    tmpFilename[ADELINE_MAX_PATH];
+
+        if ( !CDDrive ) return  ;
+
+        snprintf(tmpFilename, ADELINE_MAX_PATH, "%s%s.ord, ListLanguage[LanguageCD], ListFileText[file]);
+        GetResPath(tmpname, ADELINE_MAX_PATH, tmpFilename);
+
+
+//--------------------------------------
+        max = FileSize( tmpname )/2     ;
+        Load( tmpname, BufSpeak )       ;// Ne pas bousiller BufOrder!
+
+        pt = (U16*)BufSpeak             ;
+
+        for ( num = 0 ; num < max ; num++ )
+        {
+                if ( *pt++ == text )
+                        break           ;
+        }
+
+        if ( num == max )       return  ;
+//--------------------------------------
+
+        tmpname[0] = CDDrive ;
+        tmpname[1] = ':'                                ;
+        tmpname[2] = 0                                  ;
+        strcat( tmpname, PathVoxCD )                    ;
+        strcat( tmpname, ListLanguage[LanguageCD] )     ;
+        strcat( tmpname, ListFileText[file])            ;
+        AddExt( tmpname, EXT_VOX)                       ;
+
+        FdCd = OpenRead( tmpname )      ;
+        if ( !FdCd )    return          ;
+
+        Seek( FdCd, num*4L, SEEK_FROM_START );
+
+        Read( FdCd, &offset, 4L )       ;
+
+        if ( !offset )
+        {
+                Close(FdCd)     ;
+                return          ;
+        }
+
+        Seek( FdCd, offset, SEEK_FROM_START );
+        PlaySpeakVoc(FdCd)              ;
+}
+*/
+/*-------------------------------------------------------------------------*/
+/*
+S32     IsVoiceFileOnHD( S32 island )
+{
+        char    filehd[_MAX_PATH]       ;
+
+        strcpy( filehd, PATH_VOX_HD )                   ;
+        strcat( filehd, ListLanguage[LanguageCD] )      ;
+        strcat( filehd, ListFileText[island])           ;
+        AddExt( filehd, EXT_VOX)                        ;
+
+        if ( FileSize( filehd ))        return( 1L )    ;
+
+        return(0L)      ;
+}
+*/
+/*-------------------------------------------------------------------------*/
+S32 Speak(S32 text) {
+    S32 num;
+    U32 offset;
+
+    if (!FdNar)
+        return (0L);
+
+    num = FindText(text);
+
+    if ((num == -1)
+            OR(num >= MaxVoice))
+        return (0L); //     Ne doit pas arrivé,
+                     //     sauf en cours de dvp...
+    offset = BufMemoSeek[num];
+
+    if (!offset)
+        return (0L);
+
+    if (!FlagRestoreCD) {
+        if (FlagVoiceCD == FROM_CD) {
+            PauseMusic(TRUE);
+            FlagRestoreCD = 4; // 4 = ResumeMusic() ;
+        } else {
+            if (!(FlagDial & DIAL_SAY)) // Say Message
+            {
+                // baisse volume music
+                SetVolumeCD(CDVolume / 2);
+                SetVolumeJingle(JingleVolume / 2);
+                FlagRestoreCD = 3; // 3 = FadeInVolumeMusic() ;
+            }
+        }
+    }
+
+    Seek(FdNar, offset, SEEK_FROM_START);
+    PlaySpeakVoc(FdNar);
+
+    return (1L);
+}
+/*-------------------------------------------------------------------------*/
+void StopSpeak() {
+    FlagNextVoc = FALSE; // Important, dans tout les cas !
+#ifdef LBA_EDITOR
+    if (!(OptionsDebug & OPT_SPEAK_MESSAGES))
+        return; //     Le Codeur ne veut pas
+#endif
+    if (!FlagSpeak)
+        return;
+    if (!FdNar)
+        return;
+    if (IsSamplePlaying(SPEAK_SAMPLE))
+        StopOneSample(SPEAK_SAMPLE);
+
+    /*      if( !FlagRestoreCD )
+        {
+                if( FlagVoiceCD == FROM_CD )
+                {
+                        FlagRestoreCD = 4       ;// 4 = ResumeMusic(TRUE) ;
+                }
+                else
+                {
+                        FlagRestoreCD = 3       ;// 3 = FadeInVolumeMusic() ;
+                }
+        }
+*/
+}
+/*-------------------------------------------------------------------------*/
+#else
+
+//-------------------------------------------------------------------------
+//           █▀▀▀▀ █▀▀▀▄ █▀▀▀█ █▀▀▀█ █▄ ▄█       █▀▀▀▀ ██▄ █ █▀▀▀▄
+//           ██    ██  █ ██▀█▀ ██  █ ██▀ █       ██▀▀  ██▀██ ██  █
+//           ▀▀▀▀▀ ▀▀▀▀  ▀▀  ▀ ▀▀▀▀▀ ▀▀  ▀       ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀
+//-------------------------------------------------------------------------
+
+//----------------------------------------------------------------------------
+S32 Speak(S32 text) {
+    text = text; //     Avoid Compilator Warning
+    return (0);
+}
+//----------------------------------------------------------------------------
+S32 TestSpeak() {
+    return (0);
+}
+//----------------------------------------------------------------------------
+//void  StopSpeak() { }
+//----------------------------------------------------------------------------
+#endif
+/*-------------------------------------------------------------------------*/
+void InitDial(S32 file) {
+    NormalWinDial(); //     By Security
+
+    if (LastFileInit == file)
+        return;
+    LastFileInit = file;
+
+    GetResPath(FileText, ADELINE_MAX_PATH, TEXT_HQR_NAME);
+    MaxText = (U16)(Load_HQR(FileText, BufOrder,
+                             (Language * MAX_TEXT_LANG * 2) + (file * 2) + 0) /
+                    2);
+
+    Load_HQR(FileText, BufText,
+             (Language * MAX_TEXT_LANG * 2) + (file * 2) + 1);
+
+#ifdef CDROM
+    if (FlagSpeak)
+        InitSpeak(file);
+#endif
+}
+/*-------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------*/
+void ClearDial() {
+}
+/*-------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------*/
+//      NEW
+S32 FlagGui = 0;
+
+void GetNextWord(char *ptchaine, char *mot) {
+    char *dst;
+    const char *pt;
+
+    dst = mot;
+    LenWord = 0;
+
+    if ((*ptchaine == '\"') AND(*(ptchaine + 1) == ' ')) {
+        *dst++ = *ptchaine++;
+        *dst++ = CODE_HARD_SPACE; //     Code SPACE
+        ptchaine++;
+        LenWord += 2;
+        FlagGui = 1; // Open "
+    }
+
+    while ((*ptchaine != 0)
+               AND(*ptchaine != 1)
+                   AND(*ptchaine != ' ')) {
+        *dst++ = *ptchaine++;
+        LenWord++;
+
+        while (*ptchaine == ' ') {
+            if (FlagGui)
+                pt = strchr("!?);:\"", *(ptchaine + 1));
+            else
+                pt = strchr("!?);:", *(ptchaine + 1));
+
+            if (pt) {
+                if (*pt == '\"')
+                    FlagGui = 0;
+                ptchaine++;
+                *dst++ = CODE_HARD_SPACE; //     Code SPACE
+                *dst++ = *ptchaine++;     //     Ponctuation
+                LenWord += 2;
+            } else
+                break;
+        }
+    }
+
+    *dst = 0;
+    SizeWord = SizeFont(mot);
+}
+/*-------------------------------------------------------------------------*/
+static inline S32 PushCar(S32 x, S32 y, char c) {
+    if (NbCar >= MAX_STACK) {
+        return FALSE;
+    }
+
+    StackCar[NbCar].c = c;
+    StackCar[NbCar].x = x;
+    StackCar[NbCar].y = y;
+    NbCar++;
+
+    return TRUE;
+}
+
+/*-------------------------------------------------------------------------*/
+static inline void FlushCar() {
+    if (NbCar < MAX_SHADE) {
+        return;
+    }
+
+    memmove(&StackCar[0], &StackCar[NbCar - (MAX_SHADE - 1)], (MAX_SHADE - 1) * sizeof(StackCar[0]));
+
+    NbCar = MAX_SHADE - 1;
+}
+/*-------------------------------------------------------------------------*/
+void AffOneCar(S32 x, S32 y, char c, S32 coul) {
+    S32 x0, y0, x1, y1;
+
+    if ((c != 32) AND(c != CODE_HARD_SPACE)) {
+#ifdef LBA_EDITOR
+        if (!(OptionsDebug & OPT_QUICK_MESSAGES))
+#endif
+#ifdef LORAN
+            if (!QuickMessage)
+#endif
+            {
+                ColorFont(BLACK);
+                CarFont(x + 2, y + 4, c);
+            }
+
+        ColorFont(coul);
+        CarFont(x, y, c);
+
+        x0 = x;
+        y0 = y;
+        x1 = x + 32;
+        y1 = y + 38;
+        if (x0 < Dial_X0 + 1)
+            x0 = Dial_X0 + 1;
+        if (y0 < Dial_Y0 + 1)
+            y0 = Dial_Y0 + 1;
+        if (x1 > Dial_X1 - 1)
+            x1 = Dial_X1 - 1;
+        if (y1 > Dial_Y1 - 1)
+            y1 = Dial_Y1 - 1;
+
+        BoxStaticAdd(x0, y0, x1, y1);
+    }
+}
+/*-------------------------------------------------------------------------*/
+void AffAllCar() {
+    T_STACKCAR *pt;
+    S32 i, c;
+
+    c = MinDegrade;
+
+    //	pt calculé dans la boucle: NbCar == 0 formait &StackCar[-1]
+    for (i = NbCar - 1; i >= 0; i--) {
+        pt = &StackCar[i];
+
+        AffOneCar(pt->x, pt->y, pt->c, c);
+
+        if (c < MaxDegrade)
+            c++;
+    }
+
+    FlushCar();
+}
+/*-------------------------------------------------------------------------*/
+void TestCoulDial(S32 coul) {
+    MinDegrade = coul * 16;
+    MaxDegrade = coul * 16 + 12;
+}
+/*-------------------------------------------------------------------------*/
+void NormalWinDial() {
+    S32 inset = DialLetterboxInset();
+    S32 insetY = DialLetterboxInsetY();
+    Dial_X0 = inset + 8;
+    Dial_Y0 = ClipWindowYMax - insetY - 137; // 334 at YMax==479; insetY pins to picture bottom when letterboxed
+    Dial_X1 = (S32)ModeDesiredX - 1 - inset - 8;
+    Dial_Y1 = ClipWindowYMax - insetY - 8;
+
+    MaxLineDial = 3;
+    DialMaxSize = ((Dial_X1 - 8) - (Dial_X0 + 8));
+}
+/*-------------------------------------------------------------------------*/
+void DemoWinDial() {
+    S32 inset = DialLetterboxInset();
+    Dial_X0 = inset - 6; // demo dialog bleeds 6 px past each edge of the active region
+    Dial_Y0 = 340;       // 334 lorsque ClipWindowYMax==479
+    Dial_X1 = (S32)ModeDesiredX - 1 - inset + 6;
+    Dial_Y1 = 8;
+
+    MaxLineDial = 3;
+    DialMaxSize = ((Dial_X1 - 8) - (Dial_X0 + 8));
+}
+/*-------------------------------------------------------------------------*/
+void BigWinDial() {
+    S32 inset = DialLetterboxInset();
+    S32 insetY = DialLetterboxInsetY();
+    Dial_X0 = inset + 8;
+    Dial_Y0 = ClipWindowYMin + insetY + 8;
+    Dial_X1 = (S32)ModeDesiredX - 1 - inset - 8;
+    Dial_Y1 = ClipWindowYMax - insetY - 8;
+
+    MaxLineDial = (Dial_Y1 - Dial_Y0) / 42;
+    DialMaxSize = ((Dial_X1 - 8) - (Dial_X0 + 8));
+}
+/*-------------------------------------------------------------------------*/
+void HoloWinDial() {
+    S32 inset = DialLetterboxInset();
+    Dial_X0 = inset + 8;
+    // Single-line holomap name strip. Authored at the bottom of the 480 canvas;
+    // UI_VBOTTOM_OFS pins it to the bottom edge of a taller framebuffer so it
+    // stays a bottom strip rather than drifting to mid-screen. No-op at 480.
+    Dial_Y0 = 425 + UI_VBOTTOM_OFS;
+    Dial_X1 = (S32)ModeDesiredX - 1 - inset - 8;
+    Dial_Y1 = 477 + UI_VBOTTOM_OFS;
+
+    MaxLineDial = 1;
+    DialMaxSize = ((Dial_X1 - 8) - (Dial_X0 + 8));
+}
+/*-------------------------------------------------------------------------*/
+/*
+void    DefWinDial( S32 x0, S32 y0, S32 x1, S32 y1 )
+{
+        S16    yh, yb   ;
+        S16    xl, xr   ;
+
+        Dial_X0 = x0    ;
+        Dial_Y0 = y0    ;
+        Dial_X1 = x1    ;
+        Dial_Y1 = y1    ;
+
+        xl = Dial_X0+8  ;
+        xr = Dial_X1-8  ;
+        yh = Dial_Y0+8  ;
+        yb = Dial_Y1-40 ;
+
+        DialMaxSize = ((Dial_X1-8)-(Dial_X0+8)) ;
+        MaxLineDial = (yb-yh)/36        ;
+}
+*/
+/*-------------------------------------------------------------------------*/
+void ExplainWinDial() {
+    Dial_X0 = INV_START_X + INV_INTER_X;
+    Dial_Y0 = INV_START_Y + (3 * INV_INTER_Y) + INV_SIZEO_Y;
+    Dial_X1 = INV_END_X - INV_INTER_X;
+    Dial_Y1 = INV_END_Y - INV_INTER_Y;
+
+    MaxLineDial = (Dial_Y1 - Dial_Y0) / 42;
+    DialMaxSize = ((Dial_X1 - 8) - (Dial_X0 + 8));
+}
+/*-------------------------------------------------------------------------*/
+S32 GereFlagDial(S32 text) {
+    S32 ret = FALSE;
+
+    /* Harness override: when Dial_ForceFlag is non-zero, replace the FlagDial
+       byte read from the text bank so the test can force a specific WinDial
+       mode (BigWinDial, NormalWinDial, …) without needing a text-id that's
+       authored with that mode. No-op for production callers. */
+    if (Dial_ForceFlag) {
+        FlagDial = Dial_ForceFlag;
+    }
+
+    FlagMessageShade = TRUE;
+
+    // Gere code d'attribut
+    if (FlagDial & DIAL_DEF) // Normal Message
+    {
+        NormalWinDial();
+    }
+
+    if (FlagDial & DIAL_BIG) // Big Message
+    {
+        BigWinDial();
+    }
+
+    if (FlagDial & DIAL_EXP) // Explaination Inventory
+    {
+        ExplainWinDial();
+        FlagMessageShade = FALSE;
+    }
+
+#ifdef DEMO
+    if (FlagDial & DIAL_DEM) // SlideShow Demo Jouable
+    {
+        DemoWinDial();
+        FlagMessageShade = FALSE;
+    }
+#endif
+
+    if (FlagDial & DIAL_FUL) // FullScreen Message
+    {
+        BigWinDial();
+        FlagMessageShade = FALSE;
+    }
+
+    if (FlagDial & DIAL_SAY) // Say Message
+    {
+        InitIncrustDisp(INCRUST_TEXT,
+                        (S16)text,
+                        0, 0,
+                        (S16)(NumObjDial | (ListObjet[NumObjDial].CoulObj << 8)), 1, 2);
+
+        // Optimisation : mise a jour des globales servant a
+        // GetMultiText pour ne pas charger le texte 2 fois
+        /*	Meme troncature que GetMultiText(), qui ne recopie jamais plus de
+            MULTI_TEXT_MAX octets. Sans cela le cache garde la chaine entiere
+            alors que le chemin non cache la coupe, donc le meme texte sort
+            different selon qu'il vient du cache ou non, et une ligne plus
+            longue que le buffer deborde. Les donnees retail en comptent 483
+            au-dela de 255 octets, la plus longue faisant 1133. */
+        S32 cached = SizeText - 1;
+        if (cached > MULTI_TEXT_MAX - 1)
+            cached = MULTI_TEXT_MAX - 1;
+        memmove(BufferMultiText, PtText, cached);
+        BufferMultiText[cached] = 0;
+        NumMultiText = text;
+        FileMultiText = LastFileInit;
+
+        if (FlagSpeak
+#ifdef LBA_EDITOR
+                AND(OptionsDebug & OPT_SPEAK_MESSAGES)
+#endif
+        )
+            ret = Speak(text);
+
+        ret = TRUE;
+    }
+    return ret;
+}
+
+/*-------------------------------------------------------------------------*/
+S32 GetText(S32 text) {
+    U16 offset0;
+    U16 offset1;
+    S32 num;
+
+    num = FindText(text); //     Must have good number
+    if (num == -1)
+        return (0L); //   RETURN
+
+    offset0 = *(U16 *)(BufText + ((num + 0) * 2L));
+    offset1 = *(U16 *)(BufText + ((num + 1) * 2L));
+
+    PtText = BufText + offset0;
+
+    FlagDial = *PtText++; //  attribut pour GereFlagDial()
+
+    SizeText = offset1 - offset0 - 1; // -1 pour virer octet d'attribut
+
+    return (1L);
+}
+/*-------------------------------------------------------------------------*/
+
+#define AffFleche() DrawAngles(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1, ARROW_ID /*|A_FLIP*/);
+
+/*-------------------------------------------------------------------------*/
+//----- : incrust vignette Radio
+void TestAndDrawRadio(void) {
+    if (FlagDial & DIAL_RAD) // Message Radio
+    {
+        S32 sprite;
+        S32 mindx, mindy;
+
+        // ATTENTION: rustine car seuls ZOE et BALDINO peuvent parler
+        //            avec la radio, donc on teste qui c'est avec la
+        //            couleur !
+
+        if (ListObjet[NumObjDial].CoulObj == COUL_ZOE) {
+            // c'est zoé qui cause
+            sprite = SYS_SPRITE_ZOE;
+        } else {
+            // c'est baldino qui cause
+            sprite = SYS_SPRITE_BALD;
+        }
+
+        mindx = PtrZvExtra[sprite * 8 + 0];
+        mindy = PtrZvExtra[sprite * 8 + 1];
+
+        if (FlagDisplayText) {
+            // affiché en haut à droite de la fenetre de dialogue
+            mindx += Dial_X1;
+            mindy += Dial_Y0;
+        } else {
+            // affiché en haut à droite de l'ecran
+            mindx += ModeDesiredX - 1;
+            mindy += ClipWindowYMin;
+        }
+
+        AffGraph(0, mindx, mindy, HQR_Get(HQRPtrSprite, sprite));
+
+        if (FlagDisplayText OR !FlagAnimWhoSpeak) {
+            BoxStaticAdd(ScreenXMin, ScreenYMin, ScreenXMax, ScreenYMax);
+        } else {
+            BoxMovingAdd(ScreenXMin, ScreenYMin, ScreenXMax, ScreenYMax);
+        }
+    }
+}
+
+/*-------------------------------------------------------------------------*/
+//      Prepare le Screen avec boite message shade et cadre et bulle
+void NewInitDialWindow() {
+    //----- Cadre et Shade
+    if (FlagMessageShade) {
+        BackupAngles(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1);
+        ShadeBoxBlk(Dial_X0 + 1, Dial_Y0 + 1, Dial_X1 - 1, Dial_Y1 - 1, 8);
+    }
+
+    //----- Pour Big Message surtout et bulle a cheval sur texte
+    if (Bulle)
+        DrawBulle(NumObjDial);
+
+    //----- incrust vignette Radio
+    TestAndDrawRadio();
+
+    if (FlagMessageShade) {
+        DrawCadre(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1, ALL_ANGLES);
+        RestoreAngles(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1);
+    }
+
+    //----- Debug for Editor
+    //----- Save Result in Screen ( J'en prends plus car apres, le BoxStaticAdd
+    //                              va recopier cette zone modulo 8... )
+    CopyBlock(0, Dial_Y0, ModeDesiredX - 1, ModeDesiredY - 1, Log,
+              0, Dial_Y0, Screen);
+
+    //----- Display empty window
+    BoxStaticAdd(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1);
+
+    //----- Cas d'un message suivant l'affichage d'une PCX (on se trouve
+    //           sur une frame noire) !
+
+    if (FlagFade) {
+        FadeToPalAndSamples(PtrPal);
+        FlagFade = FALSE;
+    }
+
+    //----- Reset Char Display
+    NbCar = 0;
+}
+/*-------------------------------------------------------------------------*/
+void NextDialWindow() {
+    //----- Restore Window saved in Screen ( and scratch old text )
+    CopyBlock(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1, Screen,
+              Dial_X0, Dial_Y0, Log);
+
+    //----- Display empty window
+    BoxStaticAdd(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1);
+
+    //----- Reset Char Display
+    NbCar = 0;
+}
+/*-------------------------------------------------------------------------*/
+//      Utilise pour HoloGlobe et HoloPlan ( sans AffScene ni clip box )
+void HoloInitDialWindow() {
+    HoloWinDial();
+
+    BackupAngles(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1);
+    ShadeBoxBlk(Dial_X0 + 1, Dial_Y0 + 1, Dial_X1 - 1, Dial_Y1 - 1, 8);
+    DrawCadre(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1, ALL_ANGLES);
+    RestoreAngles(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1);
+
+    CopyBlock(Dial_X0, Dial_Y0, Dial_X1, Dial_Y1, Log,
+              Dial_X0, Dial_Y0, Screen);
+}
+/*-------------------------------------------------------------------------*/
+
+void CommonOpenDial(S32 text) {
+    CloseDial();
+
+    CurrentDial = text;
+
+    X_Dial = Dial_X0 + 8;
+    Y_Dial = Dial_Y0 + 8;
+    NbLineDial = 0;
+    PtDial = (char *)PtText;
+    *Word = 0;
+    PtWord = Word;
+    *BufLine = 0;
+    PtLine = BufLine;
+    NbCar = 0;
+    FlagEndDial = FALSE;
+    FlagEndPage = FALSE;
+    FlagRunningDial = TRUE;
+
+    SetFont(LbaFont, INTER_LEAVE, INTER_SPACE);
+}
+
+/*-------------------------------------------------------------------------*/
+
+void OpenDial(S32 text) {
+    CommonOpenDial(text);
+
+    NewInitDialWindow();
+
+#ifdef LBA_EDITOR
+    if (OptionsDebug & OPT_QUICK_MESSAGES) {
+        CoulText(YELLOW, -1);
+        GraphPrintf(FALSE, Dial_X0 + 2, Dial_Y0 + 2, "Mess:%d   ", text);
+    }
+#endif
+}
+/*-------------------------------------------------------------------------*/
+void GetNextLine() {
+    S32 dx, dd;
+    S32 flag;
+
+    SizeLine = 0;
+    NbSpace = 0;
+    *BufLine = 0;
+    SizeSpace = INTER_SPACE;
+    flag = 1; //     Justifie
+
+    //----- Retrait du texte si vignette Baldino ou Zoe en Radio...
+    //      if (( FlagDial & DIAL_BIG ) AND ( FlagDial & DIAL_RAD ))
+    if ((FlagDial & DIAL_RAD)) {
+        S32 clipxmax = 8;
+
+        if (NbLineDial < 3) {
+            if (ListObjet[NumObjDial].CoulObj == COUL_ZOE) {
+                //                              clipxmax = 118 ;
+                clipxmax = 148;
+            } else {
+                clipxmax = 148;
+            }
+        }
+
+        DialMaxSize = ((Dial_X1 - clipxmax) - (Dial_X0 + 8));
+    }
+    //-----
+    while (TRUE) {
+        while (*PtDial == ' ')
+            PtDial++;
+        if (*PtDial == 0)
+            break;
+        GetNextWord(PtDial, Word);
+        if (SizeLine + SizeSpace + SizeWord > DialMaxSize)
+            break;
+        //------------- Caractere Spéciaux, saut de ligne, de page, etc.
+        if (*PtDial == 1) {
+            PtDial++;
+            flag = 0;
+            break;
+        }
+        if (*Word == '@') {
+            flag = 0;
+            PtDial++;
+            if (SizeLine == 0) // Line Vide
+            {
+                strcpy(BufLine, " ");
+                SizeLine = INTER_SPACE;
+            }
+            if (*(Word + 1) == 'P') {
+                NbLineDial = MaxLineDial;
+                PtDial++;
+            }
+            break;
+        }
+        //-------------
+        PtDial += LenWord;
+        strcat(BufLine, Word);
+        strcat(BufLine, " ");
+        SizeLine += (SizeWord + SizeSpace);
+        NbSpace++;
+        if (*PtDial == 0)
+            break;
+        PtDial++;
+    }
+
+    if (NbSpace)
+        NbSpace--; // Ne doit jamais arrive :-]
+
+    if ((*PtDial != 0)  // Derniere Ligne ou Ligne seule
+        AND(flag == 1)) // Pas tout le temps, c'est a c...
+    {
+        dx = DialMaxSize - SizeLine;
+        dd = dx / NbSpace;
+        SizeSpace += dd;
+        dd = NbSpace * dd;
+        NbBigSpace = dx - dd;
+    }
+
+    LenLine = strlen(BufLine);
+    PtLine = BufLine;
+    DialNbLine++; //  pour la version demo le 02/08/96
+}
+/*-------------------------------------------------------------------------*/
+void InitEndPage() {
+    S32 i;
+
+    *BufLine = 0;
+    for (i = 0; i < NB_DEGRADE; i++)
+        strcat(BufLine, " ");
+    PtLine = BufLine;
+    LenLine = NB_DEGRADE;
+    SizeLine = 16; // Bidon
+    NbLineDial = 0;
+}
+/*-------------------------------------------------------------------------*/
+S32 NextDialCar() {
+    static S32 savetimer;
+    static S32 flagnewpage = TRUE;
+    static S32 flagfirstline;
+    S32 iter;
+    S32 res = 1;
+    S32 dx, dy;
+
+    if (FlagRunningDial == FALSE) {
+        flagnewpage = TRUE;
+        return 0;
+    }
+
+    if (flagnewpage) {
+        savetimer = TimerRefHR;
+        flagnewpage = FALSE;
+        flagfirstline = TRUE;
+    }
+
+    iter = TimerRefHR - savetimer;
+
+#ifdef LBA_EDITOR
+    if (OptionsDebug & OPT_QUICK_MESSAGES) {
+        iter = 1000000; // Huge value so display whole line
+    }
+#endif
+
+#ifdef DEMO
+    if (FlagDial & DIAL_DEM)
+        iter = 1000000;
+#endif
+
+    if (FlagSpeedMessage)
+        iter = 1000000;
+
+    if (iter >= 0) {
+        iter = 1 + iter / TIME_DELTA_CAR;
+
+        savetimer += iter * TIME_DELTA_CAR;
+
+        for (; iter > 0; iter--) {
+            if (*PtLine == 0) {
+                //----------------------------- End Texte Management
+                if (FlagEndDial == TRUE) // The END
+                {
+                    if (FlecheForcee)
+                        AffFleche();
+                    CloseDial();
+                    FlagRunningDial = FALSE;
+                    flagnewpage = TRUE;
+                    res = 0; // RETURN 0
+                    break;
+                }
+
+                if (*PtDial == 0) // Pre END
+                {
+                    InitEndPage();
+                    FlagEndDial = TRUE;
+                    res = 1;
+                    break; // RETURN 1
+                }
+                //----------------------------- Page Management
+                if (FlagEndPage == 2) {
+                    FlagEndPage = 0;
+                    NextDialWindow();
+                    X_Dial = Dial_X0 + 8;
+                    Y_Dial = Dial_Y0 + 8;
+                    flagnewpage = TRUE;
+                    res = 1; // RETURN 1
+                    break;
+                } else if (FlagEndPage == 1) // PAGE
+                {
+                    FlagEndPage = 2;
+                    AffFleche();
+                    flagnewpage = TRUE;
+                    res = 2; // RETURN 2
+                    break;
+                }
+                //-----------------------------
+
+                if (flagfirstline == FALSE) {
+                    X_Dial = Dial_X0 + 8;
+                    Y_Dial += INTER_LINE;
+                    if (++NbLineDial >= MaxLineDial) {
+                        FlagEndPage = 1; // Pre PAGE
+                        InitEndPage();
+                        res = 1;
+                        break;
+                    }
+                } else
+                    flagfirstline = FALSE;
+
+                GetNextLine();
+            }
+
+            if (*PtLine != 0) {
+                if (!PushCar(X_Dial, Y_Dial, *PtLine)) {
+                    break;
+                }
+                // FIXME: There is a bug here, *PtLine may be
+                //  negative (character with accent, past 127
+                //  value on a signed char).
+                //  Can reproduce by interacting with
+                //  Twinsen and Zoe statue on the main square at
+                //  the first external scenario of the game or
+                //  fisher in yellow cap on the docs.
+                GetDxDyMask(*PtLine, &dx, &dy, LbaFont);
+
+                if (*PtLine != ' ') {
+                    X_Dial += dx + INTER_LEAVE;
+                } else {
+                    if (NbBigSpace) {
+                        NbBigSpace--;
+                        X_Dial++;
+                    }
+                    X_Dial += SizeSpace;
+                }
+
+                PtLine++;
+            }
+        }
+    }
+
+    AffAllCar();
+
+    return res;
+}
+/*-------------------------------------------------------------------------*/
+void CloseDial() {
+    FlagRunningDial = FALSE;
+    NextDialCar(); // to force it to reset
+}
+/*-------------------------------------------------------------------------*/
+S32 FlagAnimWhoSpeak = 0;
+S32 WhoSpeak = 0;
+S32 XSpeak, YSpeak, ZSpeak;
+S32 OrgAnimSpeak;
+S32 AlphaSpeak, BetaSpeak, GammaSpeak;
+T_OBJET *PtrWhoSpeak;
+/*-------------------------------------------------------------------------*/
+void InitWhoSpeak(S32 numobj) {
+    S32 numanim, flag = 0, YProj;
+
+    FlagAnimWhoSpeak = FALSE;
+
+    WhoSpeak = numobj;
+
+    PtrWhoSpeak = &ListObjet[WhoSpeak];
+
+    if (PtrWhoSpeak->Flags & SPRITE_3D)
+        return;
+
+    XSpeak = X0 = PtrWhoSpeak->Obj.X;
+    YSpeak = Y0 = PtrWhoSpeak->Obj.Y;
+    ZSpeak = Z0 = PtrWhoSpeak->Obj.Z;
+
+    PtrProjectPoint(X0, Y0, Z0);
+    YProj = Yp;
+
+    if ((((YProj >= Dial_Y0) OR(FlagDial & (DIAL_BIG | DIAL_FUL))) AND(FlagDisplayText))
+            OR(FlagDial & (DIAL_EXP | DIAL_DEM))) {
+        CopyScreen(Log, Screen);
+        BoxReset();
+        return; //     Can't do it...
+    }
+
+    FlagAnimWhoSpeak = TRUE;
+
+    AlphaSpeak = PtrWhoSpeak->Obj.Alpha;
+    BetaSpeak = PtrWhoSpeak->Obj.Beta;
+    GammaSpeak = PtrWhoSpeak->Obj.Gamma;
+
+    OrgAnimSpeak = PtrWhoSpeak->Obj.Anim.Num;
+
+    numanim = SearchAnim(ListObjet[numobj].AnimDial, numobj);
+
+    if (numanim == -1) {
+        numanim = SearchAnim(GEN_ANIM_RIEN, numobj);
+#ifdef LBA_EDITOR
+        if (numanim == -1) {
+            Message("InitWhoSpeak(): OBJET sans ANIM", TRUE);
+            FlagAnimWhoSpeak = FALSE;
+            return;
+        }
+#endif
+    }
+
+    ObjectInitAnim(&PtrWhoSpeak->Obj, (void *)(uintptr_t)(U32)numanim);
+}
+/*-------------------------------------------------------------------------*/
+void ClearWhoSpeak() {
+    if (!FlagAnimWhoSpeak)
+        return;
+
+    PtrWhoSpeak->Obj.X = XSpeak;
+    PtrWhoSpeak->Obj.Y = YSpeak;
+    PtrWhoSpeak->Obj.Z = ZSpeak;
+
+    PtrWhoSpeak->Obj.Alpha = AlphaSpeak;
+    PtrWhoSpeak->Obj.Beta = BetaSpeak;
+    PtrWhoSpeak->Obj.Gamma = GammaSpeak;
+
+    ObjectInitAnim(&PtrWhoSpeak->Obj, (void *)(uintptr_t)(U32)OrgAnimSpeak);
+}
+/*-------------------------------------------------------------------------*/
+
+/* Harness capture state — declarations hoisted above SpeakAnimation so its
+   capture-armed guard can reference them. Full doc on the request API lives
+   at Dial_RequestCapture() below. */
+static char s_dial_capture_path[ADELINE_MAX_PATH] = "";
+static int s_dial_capture_countdown = 0;
+
+void SpeakAnimation() {
+    S32 saveyclip;
+
+    if (FlagZoomed)
+        DrawOneInventory(InvSelect);
+
+    if (FlagAnimWhoSpeak) {
+        saveyclip = ClipWindowYMax;
+
+        SetClipWindow(ClipWindowXMin, ClipWindowYMin, ClipWindowXMax, Dial_Y0 - 1);
+        UnsetClip();
+
+        if (s_dial_capture_path[0] && Console_GetCaptureBlackBg()) {
+            /* Cleanroom golden — clear only above Dial_Y0, matching the
+               clip window set five lines up (which is what AffScene would
+               have written into). The dialog strip below Dial_Y0 holds the
+               typewriter text and bubble portrait — preserve those across
+               the loop iterations or each step wipes them out before the
+               capture countdown reaches zero. */
+            size_t bytes = (size_t)ModeDesiredX * (size_t)Dial_Y0;
+            memset(Log, 0, bytes);
+            memset(Screen, 0, bytes);
+        } else {
+            AffScene(AFF_OBJETS_NO_FLIP);
+        }
+
+        if (Bulle)
+            DrawBulle(NumObjDial);
+
+        SetClipWindow(ClipWindowXMin, ClipWindowYMin, ClipWindowXMax, saveyclip);
+
+        UnsetClip();
+
+        if (!FlagDisplayText)
+            TestAndDrawRadio();
+
+        ObjectSetInterDep(&PtrWhoSpeak->Obj);
+
+        PtrWhoSpeak->Obj.X = XSpeak;
+        PtrWhoSpeak->Obj.Y = YSpeak;
+        PtrWhoSpeak->Obj.Z = ZSpeak;
+    }
+
+    BoxUpdate(); // For Char & perhaps Speaking guy...
+
+    ManageTime();
+    MyGetInput();
+}
+//────────────────────────────────────────────────────────────────────────────
+//                                 D I A L
+//────────────────────────────────────────────────────────────────────────────
+/* Harness capture state — definitions hoisted above SpeakAnimation; see the
+   forward declarations there. The state machine: when the path is non-empty,
+   Dial's typewriter loop counts down per iteration; on reaching zero it
+   SavePNGs and sets flagabort so Dial exits cleanly without waiting for
+   input. The countdown lets the typewriter draw substantial text before the
+   snapshot — ~1 game-second at fixed-dt 16 is enough for most LBA2 dialogue
+   lines. We don't gate on ret==0/2 because that fires the moment NextDialCar
+   returns "page break" or "done", which on short or empty texts can be the
+   very first iteration before any char is drawn. */
+
+void Dial_RequestCapture(const char *path) {
+    if (!path || !path[0]) {
+        s_dial_capture_path[0] = '\0';
+        s_dial_capture_countdown = 0;
+        return;
+    }
+    strncpy(s_dial_capture_path, path, ADELINE_MAX_PATH - 1);
+    s_dial_capture_path[ADELINE_MAX_PATH - 1] = '\0';
+    s_dial_capture_countdown = 60; /* iterations -- ~1 game-second at dt 16 */
+}
+
+void Dial(S32 text, S32 drawscene) {
+    S32 ret = 0;
+    S32 flagabort = 0;
+
+#ifndef COMPILATOR
+    if (Control_IsVerbose())
+        fprintf(stderr, "[control] modal: Dial(text=%d, DemoSlide=%d) -- dialogue; under DemoSlide "
+                        "auto-advances when TimerRefHR>=endtimer\n",
+                (int)text, (int)DemoSlide);
+#endif
+
+    /* Harness capture pre-arm.  Match the normal LM_MESSAGE caller
+       (GERELIFE.CPP:1246-1257): NumObjDial set explicitly (otherwise the
+       speaker's portrait/bubble follows whatever NumObjDial happened to be
+       at save-load time), and Palette(PtrPal) restores the palette in case
+       the save's state had an eclair-effect palette active. */
+    if (s_dial_capture_path[0]) {
+        NumObjDial = NUM_PERSO;
+        Palette(PtrPal);
+    }
+
+#ifndef LBA_EDITOR
+    ClearIncrusts(INCRUST_SYS_TEXT);
+    ClearIncrusts(INCRUST_TEXT);
+#endif
+
+    /*      if ( FirstTime == AFF_ALL_FLIP )// Si CAM_FOLLOW juste avant MESSAGE
+        {
+                AffScene( AFF_ALL_FLIP )        ;
+        }
+*/
+    FlagGui = 0; //     NEW
+
+    NormalWinDial(); //     By default
+    FlagMessageShade = TRUE;
+
+    if (!GetText(text))
+        return; // Test rajouté  pour
+                // éviter plantage.
+    if (GereFlagDial(text))
+        return;
+
+    //----- Si CAM_FOLLOW juste avant MESSAGE ( cas dans grot01 )
+    // Déplacé le 30/05/97
+    if (s_dial_capture_path[0] && Console_GetCaptureBlackBg()) {
+        /* Cleanroom golden — dialog box composites over solid black. */
+        memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
+        memset(Screen, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
+    } else if (FirstTime == AFF_ALL_FLIP) {
+        AffScene(AFF_ALL_FLIP);
+    } else if (!(FlagDial & (DIAL_BIG | DIAL_FUL | DIAL_EXP | DIAL_DEM))) {
+        AffScene(AFF_OBJETS_NO_FLIP);
+        BoxBlit();
+    }
+    //-----
+
+    DialNbLine = 0; //  pour la démo le 02/08/96
+
+    SaveTimer();
+
+    TestCoulDial(ListObjet[NumObjDial].CoulObj);
+
+    MemoClip();
+    UnsetClip();
+
+    BackupScreen(FALSE);
+
+    //      InitWhoSpeak( NumObjDial )      ;
+
+    if (FlagSpeak
+#ifdef LBA_EDITOR
+            AND OptionsDebug &
+        OPT_SPEAK_MESSAGES
+#endif
+    )
+        ret = Speak(text);
+    //-----
+    if ((!FlagDisplayText) // Pas de texte et Voix OK
+        AND(ret)) {
+        Dial_Y0 = 480; // Pour ne pas avoir d'overlap
+        Dial_Y1 = 480;
+
+        InitWhoSpeak(NumObjDial);
+
+        while ((TestSpeak())AND(MyKey != K_ESC) AND !(Input & I_MENUS) AND !DbgSkipModals) {
+            SpeakAnimation();
+        }
+        StopSpeak();
+        ClearWhoSpeak();
+        FlagAnimWhoSpeak = FALSE; // Cela pose-t-il un probleme ??
+        RestoreClip();
+        InitWaitNoKey();
+        InitWaitNoInput(I_FIRE | I_ACTION | I_MENUS);
+        RestoreTimer();
+        return;
+    }
+    //-----
+
+    InitWhoSpeak(NumObjDial);
+
+    OpenDial(text);
+
+    while (TRUE) {
+        ret = NextDialCar();
+
+        TestSpeak();
+        SpeakAnimation();
+
+        /* Harness one-shot capture.  Read Log (back buffer), not Screen --
+           Dial's typewriter renders into Log via the dialogue compositor
+           and SpeakAnimation's BoxUpdate flushes a subset to Screen; the
+           full bubble + portrait + text live in Log.  Countdown-driven so
+           the typewriter has time to draw substantial text. */
+        if (s_dial_capture_path[0]) {
+            if (--s_dial_capture_countdown <= 0 || ret == 0 || ret == 2) {
+                SavePNG(s_dial_capture_path, Log, (S32)ModeDesiredX,
+                        (S32)ModeDesiredY, PtrPal);
+                s_dial_capture_path[0] = '\0';
+                flagabort = 1;
+                break;
+            }
+        }
+
+        if (ret == 2 && !DbgSkipModals) /*      Attente de Touche       */
+        {
+            while (MyKey OR Input) {
+                TestSpeak(); // Tu relaches ?
+                SpeakAnimation();
+            }
+
+            if (DemoSlide) {
+                S32 endtimer = TimerRefHR + DialNbLine * 1000;
+
+                while (TimerRefHR < endtimer
+                                        AND !MyKey AND !Input) {
+                    SpeakAnimation();
+                }
+            } else
+                while (!MyKey AND !Input) {
+                    TestSpeak(); // Tu appuies ?
+                    SpeakAnimation();
+                }
+
+            DialNbLine = 0;
+        }
+
+        // Harness (console `skipmodals`): abort the dialog immediately, as if the player pressed
+        // Esc, so a headless run does not hang. This exits the whole typewriter loop on the first
+        // iteration (the loop otherwise depends on TimerRefHR, which is frozen while a modal spins
+        // under --fixed-dt) without changing quest state -- the script continues past the dialog.
+        if (MyKey == K_ESC OR Input & I_MENUS OR DbgSkipModals)
+            flagabort = 1;
+
+        if (((ret == 0) AND(!TestSpeak())) // Tout fini
+            OR(flagabort))
+            break; // Ou Abort by player
+    }
+
+    StopSpeak();
+    CloseDial();
+
+    if ((ret == 0) AND(!flagabort)
+#ifdef DEMO
+            AND(!FlagSlideShow)
+#endif
+    ) {
+        ManageTime();
+
+        while (MyKey OR Input) {
+            SpeakAnimation();
+        }
+
+        if (DemoSlide) {
+            S32 endtimer = TimerRefHR + DialNbLine * 1000;
+
+            while (TimerRefHR < endtimer
+                                    AND !MyKey AND !Input) {
+                SpeakAnimation();
+            }
+        } else
+            while (!MyKey AND !Input) {
+                SpeakAnimation();
+            }
+    }
+
+    RestoreClip();
+
+    ClearWhoSpeak();
+
+    FlagAnimWhoSpeak = FALSE; // Cela pose-t-il un probleme ??
+
+    //----- remplace le RestoreScreen pour le CinemaMode (c crade !)
+    if (drawscene) {
+        CopyScreen(ScreenAux, Screen);
+        CopyScreen(ScreenAux, Log);
+        BoxStaticAdd(0, 0, ModeDesiredX, ModeDesiredY);
+        RestoreTimer();
+        SaveTimer();
+        AffScene(AFF_OBJETS_NO_FLIP);
+        FixeCinemaMode(FALSE);
+        BoxBlit();
+    }
+    //-----
+
+    InitWaitNoKey();
+    InitWaitNoInput(I_FIRE | I_ACTION | I_MENUS);
+
+    RestoreTimer();
+}
+/*──────────────────────────────────────────────────────────────────────────*/
+S32 MyDial(S32 nummess) // attends une touche si autre page sinon continue
+{
+    //      S32     memoflagdisplaytext ;
+    S32 dialstat = 1;
+    S32 esc = FALSE;
+
+#ifndef LBA_EDITOR
+    ClearIncrusts(INCRUST_SYS_TEXT);
+    ClearIncrusts(INCRUST_TEXT);
+#endif
+
+    BoxClean(); // Clean Log from last AffScene
+
+    //----- Si CAM_FOLLOW juste avant MESSAGE ( cas dans grot01 )
+    if (s_dial_capture_path[0] && Console_GetCaptureBlackBg()) {
+        /* Cleanroom golden — see Dial() above. Per-page redraw clears the
+           same buffers each time so the dialog box composites cleanly even
+           across multi-page advances. */
+        memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
+        memset(Screen, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
+    } else if (FirstTime == AFF_ALL_FLIP) {
+        AffScene(AFF_ALL_NO_FLIP);
+    } else
+        AffScene(AFF_OBJETS_NO_FLIP);
+    //-----
+
+    CopyScreen(Log, Screen);
+    BoxUpdate();
+
+    FlagGui = 0; //     NEW
+
+    if (FlagSpeak
+#ifdef LBA_EDITOR
+            AND OptionsDebug &
+        OPT_SPEAK_MESSAGES
+#endif
+    )
+        Speak(nummess);
+
+    InitWaitNoKey();
+    InitWaitNoInput(I_FIRE | I_ACTION | I_MENUS);
+
+    if (FlagDisplayText) {
+        NormalWinDial();
+        FlagMessageShade = TRUE;
+
+        if (!GetText(nummess))
+            return FALSE; // Test rajouté pour
+                          // éviter plantage.
+
+        /*              // Magouille pour etre sùr d'incruster la bulle en BoxStaticAdd
+                // quand FlagDisplayText=FALSE (cf DrawBulle())
+                memoflagdisplaytext = FlagDisplayText ;
+                FlagDisplayText = TRUE ;
+*/
+        OpenDial(nummess);
+
+        //              FlagDisplayText = memoflagdisplaytext ;
+    }
+
+    //      while( dialstat AND !esc )
+    while (!esc) {
+        ManageTime();
+
+        dialstat = NextDialCar();
+
+        if (!FlagDisplayText AND Bulle)
+            DrawBulle(NumObjDial);
+        BoxUpdate();
+
+        TestSpeak();
+        if (dialstat == 2) // encore 1 page
+        {
+            while (MyKey OR Input) {
+                TestSpeak();
+                MyGetInput();
+            }
+
+            while (!MyKey AND !Input) {
+                TestSpeak();
+                MyGetInput();
+            }
+        } else {
+            MyGetInput();
+            if ((MyKey == K_ESC OR Input & I_MENUS)
+                    OR((dialstat == 0) AND(!TestSpeak()))) // Tout fini
+            {
+                // affiche fin du message a vitesse grand v
+                FlagSpeedMessage = TRUE;
+                while (NextDialCar() != 0)
+                    ;
+                FlagSpeedMessage = FALSE;
+                esc = 1;
+                StopSpeak();
+            }
+        }
+    }
+
+    /*if( !esc )*/ while (TestSpeak())
+        ManageSystem(); // Wait until silence
+
+    StopSpeak(); // Security
+    CloseDial();
+
+    InitWaitNoKey();
+    InitWaitNoInput(I_FIRE | I_ACTION | I_MENUS);
+
+    return esc;
+}
+/*──────────────────────────────────────────────────────────────────────────*/
+// attention size max ou tronquée à 255 car + 0
+char *GetMultiText(S32 text, char *dst) {
+    char *pts;
+    char *ptd;
+    S32 smax;
+
+    if ((text == NumMultiText) AND(LastFileInit == FileMultiText)) {
+        strcpy(dst, BufferMultiText);
+        return dst;
+    }
+
+    if (!GetText(text)) {
+        *dst = 0;
+        return 0L;
+    }
+
+    pts = (char *)PtText;
+    ptd = dst;
+
+    smax = SizeText - 1;
+
+    if (smax > 255)
+        smax = 255;
+
+    memmove(dst, PtText, smax);
+    dst[smax] = 0;
+
+    memmove(BufferMultiText, dst, smax + 1);
+    NumMultiText = text;
+    FileMultiText = LastFileInit;
+
+    return (dst);
+}
+/*-------------------------------------------------------------------------*/
+#ifdef LBA_EDITOR
+void CleanMessage(char *string, S32 flag) {
+    CopyScreen(Log, Screen);
+    Message(string, flag);
+    CopyScreen(Screen, Log);
+    BoxStaticFullflip();
+}
+#endif
+
+#ifndef COMPILATOR
+#ifdef LBA_EDITOR
+/*-------------------------------------------------------------------------*/
+/*--- PARTIE RESERVEE A L'EDITION DES MESSAGES (le 03/05/95) ----------*/
+
+#define GetTxtNextLine(ptr) (strchr(ptr, 0x0A) + 1)
+
+void LoadListMessages(S32 file)
+
+// Cette fonction doit imperativement etre appellee apres un InitDial
+// car elle considere que la variables MaxText est deja
+// positionnee !!!!
+{
+    char nametxt[256]; // nom du fichier .txt
+    char *buftxt = 0L;
+    char *ptr; // pointe sur buftxt
+    S32 sizetxt;
+    S32 mess = 0; // message en cours
+    S32 n;
+    S32 flag;
+
+    // si un fichier .txt d'une autre ile a deja ete lu, on libere
+    // la structure
+    FreeListMessages();
+
+    strcpy(nametxt, PATH_TXT);
+    strcat(nametxt, ListLanguage[Language]);
+    strcat(nametxt, ListFileText[file]);
+    AddExt(nametxt, ".txt");
+
+    sizetxt = FileSize(nametxt);
+    buftxt = (char *)LoadMalloc(nametxt);
+
+    if (!buftxt)
+        TheEndCheckFile(nametxt);
+
+    // compte le nombre de messages dans le fichier
+    ptr = buftxt;
+    NbMess = 0;
+    while (ptr < buftxt + sizetxt) {
+        if (*ptr == '*' AND * (ptr + 1) != '*') {
+            NbMess++;
+        }
+
+        ptr++;
+    }
+
+    // alloue memoire pour la liste de messages
+    MessList = (struct ListMessages *)Malloc(NbMess * sizeof(struct ListMessages));
+
+    if (!MessList) {
+        Message("Memoire insuffisante pour la liste des messages.", TRUE);
+        Free(buftxt);
+        return;
+    }
+
+    for (n = 0; n < NbMess; n++) {
+        MessList[n].Perso = -1;
+        MessList[n].Message = -1;
+    }
+
+    ptr = buftxt;
+
+    while (ptr AND(ptr < buftxt + sizetxt) AND(mess < NbMess)) {
+        while (ptr AND(ptr < buftxt + sizetxt) AND * ptr != '*') {
+            ptr = GetTxtNextLine(ptr);
+        }
+
+        if (ptr AND(ptr < buftxt + sizetxt)) {
+            // si le caractere suivant un '*' est un '*' alors c'est
+            // la fin du fichier
+            if (ptr AND * (ptr + 1) != '*') {
+                ptr++; // pointe apres le '*'
+
+                while (*ptr < '0' OR * ptr > '9')
+                    ptr++;
+
+                MessList[mess].Message = atol(ptr);
+
+                flag = FALSE;
+
+                while (ptr AND(ptr < buftxt + sizetxt) AND !flag) {
+                    ptr = (char *)strchr(ptr, '#');
+
+                    if (ptr AND(*(ptr + 1) == 'p' OR * (ptr + 1) == 'P')) {
+                        ptr += 2; // pointe apres le 'p'
+
+                        if (*ptr >= '0' AND * ptr <= '9') {
+                            MessList[mess++].Perso = atol(ptr);
+                        }
+
+                        flag = TRUE;
+                    } else
+                        ptr++; // pointe apres le '#'
+                }
+            } else
+                ptr = 0L;
+        }
+    }
+
+    Free(buftxt);
+}
+
+/*-------------------------------------------------------------------------*/
+void FreeListMessages()
+
+{
+    if (MessList) {
+        Free(MessList);
+        MessList = NULL;
+    }
+}
+
+/*-------------------------------------------------------------------------*/
+S32 NextMessagePerso(S32 numperso, S32 message)
+
+{
+    S32 n, i = 0;
+
+    if (!MessList OR numperso == -1)
+        return (-1);
+
+    // cherche index message
+    if (message != -1) {
+        while (i < NbMess
+                       AND(MessList[i].Perso != numperso OR MessList[i].Message != message)) {
+            i++;
+        }
+
+        if (i >= NbMess)
+            i = 0;
+        else
+            i++;
+    }
+
+    for (n = i; n < NbMess; n++) {
+        if (MessList[n].Perso == numperso) {
+            return (MessList[n].Message);
+        }
+    }
+
+    // on a trouve aucun message, on tente dans la premiere partie
+    // du tableau.
+    for (n = 0; n < i; n++) {
+        if (MessList[n].Perso == numperso) {
+            return (MessList[n].Message);
+        }
+    }
+
+    // pas d'autre message pour ce perso, on retourne l'ancien
+    return (message);
+}
+
+/*-------------------------------------------------------------------------*/
+S32 PreviousMessagePerso(S32 numperso, S32 message)
+
+{
+    S32 n, i = 0;
+
+    if (!MessList OR numperso == -1)
+        return (-1);
+
+    // cherche index message
+    if (message != -1) {
+        while (i < NbMess
+                       AND(MessList[i].Perso != numperso OR MessList[i].Message != message)) {
+            i++;
+        }
+
+        if (i >= NbMess)
+            i = 0;
+        else
+            i--;
+    }
+
+    for (n = i; n >= 0; n--) {
+        if (MessList[n].Perso == numperso) {
+            return (MessList[n].Message);
+        }
+    }
+
+    // on a trouve aucun message, on tente dans la deuxieme partie
+    // du tableau.
+    for (n = NbMess - 1; n > i; n--) {
+        if (MessList[n].Perso == numperso) {
+            return (MessList[n].Message);
+        }
+    }
+
+    // pas d'autre message pour ce perso, on retourne l'ancien
+    return (message);
+}
+
+/*-------------------------------------------------------------------------*/
+S32 VerifyMessagePerso(S32 numperso, S32 message)
+
+{
+    S32 n;
+    S32 firstmessage = -1;
+
+    if (!MessList OR numperso == -1)
+        return (-1);
+
+    for (n = 0; n < NbMess; n++) {
+        if (MessList[n].Perso == numperso) {
+            if (MessList[n].Message == message) {
+                return (message);
+            }
+
+            if (firstmessage == -1) {
+                firstmessage = MessList[n].Message;
+            }
+        }
+    }
+
+    // le message n'existe pas pour ce perso, on retourne le premier
+    // valide
+    return (firstmessage);
+}
+#endif
+#endif
+/*-------------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------*/

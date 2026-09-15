@@ -1,0 +1,143 @@
+#ifndef LOG_H
+#define LOG_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Structured logging: one call fans out to every registered sink, each
+ * rendering the record its own way. Built on an SDL_Log spine (a single
+ * SDL_SetLogOutputFunction owns the fan-out); host tests compile with
+ * -DLBA_LOG_NO_SDL to bypass SDL entirely. See docs/plan/BOOT_LOG_PLAN.md.
+ *
+ * Sinks: file (always), ANSI terminal (TTY-gated), and the in-engine console
+ * buffer. main adds the file and terminal sinks as soon as the user folder is
+ * known; InitAdeline adds the console sink once there is a console. */
+
+typedef enum {
+    LOG_DEBUG,
+    LOG_INFO,
+    LOG_WARN,
+    LOG_ERROR
+} LogSeverity;
+
+typedef struct LogSink LogSink; /* opaque handle */
+
+/* The kind of line reaching the console sink, so its adapter can colour
+ * structural lines (the Log_Banner bookends, section headers) distinctly from
+ * ordinary text. NORMAL lines are coloured by severity; BANNER/SECTION get the
+ * structural accent (cyan, matching the terminal sink). */
+typedef enum {
+    LOG_LINE_NORMAL = 0,
+    LOG_LINE_BANNER,
+    LOG_LINE_SECTION
+} LogLineKind;
+
+/* A formatted, ready-to-print line (no trailing newline) plus its severity and
+ * kind. The console buffer sink calls one of these for each record — the engine
+ * passes an adapter over Console_Print, keeping this core free of any SOURCES
+ * dependency. Severity/kind are handed across so the adapter can colour the line
+ * (the console shows level/structure as colour, not a text tag); the core stays
+ * palette-agnostic. */
+typedef void (*LogLineFn)(const char *line, LogSeverity sev, LogLineKind kind);
+
+/* Install the fan-out (no-op under LBA_LOG_NO_SDL) and reset the sink registry.
+ * Shutdown flushes and closes sinks and uninstalls the fan-out. */
+void Log_Init(void);
+void Log_Shutdown(void);
+
+/* Severity entry points — printf-style. Each formats once and fans out. */
+void Log_Debug(const char *fmt, ...);
+void Log_Info(const char *fmt, ...);
+void Log_Warn(const char *fmt, ...);
+void Log_Error(const char *fmt, ...);
+
+/* Global minimum severity: the master log level. A record below it is dropped
+ * for every sink before that sink's own min_severity is even consulted, so this
+ * is the single knob that turns debug output on or off across the file, terminal,
+ * and F12 console at once. Log_Init seeds it permissive (LOG_DEBUG); the engine
+ * raises the threshold to LOG_INFO at boot so debug is hidden unless asked for,
+ * and --log-level / LBA2_LOG_LEVEL / the `loglevel` console command move it. */
+void Log_SetLevel(LogSeverity min_severity);
+LogSeverity Log_GetLevel(void);
+
+/* Parse a level name ("debug"|"info"|"warn"|"error", lowercase) into *out.
+ * Returns 1 on success, 0 if unrecognised (*out left untouched). Shared by the
+ * --log-level flag, the LBA2_LOG_LEVEL env var, and the `loglevel` command so
+ * they all agree on the spelling. */
+int Log_ParseLevel(const char *name, LogSeverity *out);
+
+/* Verbatim line — no severity prefix, no section idiom; sinks print it as-is.
+ * For framing/banner output (e.g. the boot header). Admitted at INFO level for
+ * per-sink filtering. */
+void Log_Raw(const char *fmt, ...);
+
+/* Banner line — verbatim like Log_Raw, but the terminal sink tints it cyan (the
+ * section-header colour). For the boot log's bookend lines: the identity header
+ * and the "Ready" closer. File and console sinks print it plain. INFO level. */
+void Log_Banner(const char *fmt, ...);
+
+/* Section markers — sinks render the header in their own idiom (the file sink
+ * uses "==== Title ===="). EndSection has no file-sink output; it exists for
+ * sinks that bracket (terminal/console, later phases) and for ScopedSection. */
+void Log_BeginSection(const char *title);
+void Log_EndSection(void);
+
+/* File sink: appends to \a path, one record per line, flushed per write.
+ * Records below \a min_severity are dropped. The engine passes adeline.log's
+ * resolved path (GetLogPath) — one log file, reused, not a second one. */
+LogSink *Log_MakeFileSink(const char *path, LogSeverity min_severity);
+
+/* Terminal sink: always writes to stderr, so piped / harness / CI runs still see
+ * the log inline (not just in adeline.log). ANSI 16-colour (severity-coloured,
+ * cyan "------ Title ------" rules) only when stderr is a real TTY and NO_COLOR
+ * is unset (Windows: also enables VT processing); when redirected it falls back
+ * to plain, severity-tagged lines with the same info and no escape codes. */
+LogSink *Log_MakeTerminalSink(LogSeverity min_severity);
+
+/* Console buffer sink: feeds each record to \a printer (the engine passes an
+ * adapter over Console_Print), so the boot log and warnings show on the F12
+ * overlay. Monochrome — the console ring stores plain text with no per-line
+ * colour. Main-thread records only: the ring is not thread-safe, so off-thread
+ * records (e.g. the audio callback) are dropped here but still reach the file
+ * and terminal sinks. Admits every severity; the global level (Log_SetLevel,
+ * driven by the `loglevel` console command) is the sole gate, so debug output
+ * appears in the console exactly when it appears in the file and terminal. */
+LogSink *Log_MakeConsoleBufferSink(LogLineFn printer);
+
+/* Generic per-record sink: hands each admitted record to \a printer. This is what
+ * the console buffer sink is underneath, named for what it does so a non-console
+ * consumer (the control socket streams records to a connected driver) does not
+ * have to pretend to be a console. Note that \a min_severity can only raise this
+ * sink's floor above the global level, never below it: Log_SetLevel drops a
+ * record for every sink before any sink's own threshold is consulted.
+ * Records raised off the main thread are dropped, as for the console. */
+LogSink *Log_MakeCallbackSink(LogLineFn printer, LogSeverity min_severity);
+
+void Log_AddSink(LogSink *sink);
+void Log_RemoveSink(LogSink *sink);
+
+/* True once at least one sink is registered (the fan-out is live). Legacy
+ * LogPrintf/LogPuts use this to choose between routing through the fan-out and
+ * an early-boot direct write (before any sink exists). */
+int Log_HasSinks(void);
+
+#ifdef __cplusplus
+}
+
+/* C++-only RAII over Log_BeginSection / Log_EndSection. Best-effort: the boot
+ * path exit()s on init failure without unwinding (see docs/plan/BOOT_LOG_PLAN.md),
+ * so don't rely on the destructor for log correctness — the file sink flushes
+ * per line, so a section left unclosed by exit() still has its records on disk. */
+class ScopedSection {
+  public:
+    explicit ScopedSection(const char *title) { Log_BeginSection(title); }
+    ~ScopedSection() { Log_EndSection(); }
+
+  private:
+    ScopedSection(const ScopedSection &);
+    ScopedSection &operator=(const ScopedSection &);
+};
+#endif
+
+#endif /* LOG_H */

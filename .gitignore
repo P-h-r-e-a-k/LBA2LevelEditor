@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+native/lba2-classic-community/out/
+native/lba2-classic-community/.cache/
+native/lba2-classic-community/build/
+native/lba2-classic-community/.git/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+bin
+obj
+.vs
+*.user
+*.suo

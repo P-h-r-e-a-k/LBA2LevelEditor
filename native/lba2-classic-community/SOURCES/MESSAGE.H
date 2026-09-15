@@ -1,0 +1,129 @@
+#ifndef MESSAGE_H
+#define MESSAGE_H
+
+/* Number of UI languages, and the width of every per-language table in the
+   codebase. This is not a free parameter: it is the layout of TEXT.HQR, which
+   stores (NB_LANGUAGES * MAX_TEXT_LANG * 2) entries and which we cannot
+   regenerate. See docs/TEXT.md before changing it.
+
+   Exported so tables outside MESSAGE.CPP can bind their width to it rather than
+   restating 6 and drifting. GetLanguageCount() returns this. */
+#define NB_LANGUAGES 6
+
+//-------------------- Used by HoloGlob.cpp
+extern char *PtDial;
+extern S32 X_Dial, Y_Dial;
+extern S32 Dial_X0;
+extern S32 Dial_Y0;
+extern S32 Dial_X1;
+extern S32 Dial_Y1;
+
+/* When non-zero, the four *WinDial configurators clamp Dial_X0/X1 to a centred
+   4:3 region so the dialog box stays inside the centred-PCX picture instead of
+   bleeding into the black sidebars at wider framebuffers. Set/cleared by the
+   PCX-cinematic call sites (SlideShow, EffectPcx); regular gameplay dialog
+   keeps it 0 and renders full-width. Save/restore around nested sets is the
+   caller's responsibility. */
+extern S32 Dial_Letterbox;
+
+/* Test-only override for GereFlagDial. When non-zero, replaces the FlagDial
+   the dialog text encodes (its first byte) so the harness can force a
+   specific WinDial mode (BigWinDial, NormalWinDial, …) without needing to
+   find a text-id that's authored with that mode. Set to 0 to disable.
+   Production callers should leave at 0. */
+extern S32 Dial_ForceFlag;
+
+extern S32 FlagAnimWhoSpeak;
+
+extern S32 Language; // English
+
+#ifdef CDROM
+extern S32 LanguageCD; // Français, a changer of course!
+#endif
+
+extern S32 FlagRestoreCD;
+
+/*
+#ifdef	LBA_EDITOR
+extern void InitAnimDial(char *newanimdial);
+#else
+extern void InitAnimDial(U16 newanimdial);
+#endif
+*/
+
+extern S32 FlagDisplayText;
+
+#if defined(CDROM) || defined(LBA_EDITOR)
+extern void AddFileNameOnHD(char *filename, U32 size, U32 timer);
+extern U32 *BufMemoSeek;
+extern void InitVoiceFile(void);
+extern void ClearVoiceFile(void);
+extern S32 Speak(S32 text);
+extern S32 TestSpeak();
+extern void StopSpeak();
+extern void CloseFdNar();
+#else
+#define StopSpeak()
+#endif
+
+extern S32 IsVoiceFileOnHD(S32 island);
+extern void InitLanguage(void);
+extern S32 GetLanguageCount(void);
+extern const char *GetLanguageName(S32 language);
+#ifdef CDROM
+extern S32 GetVoiceLanguageCount(void);
+#endif
+extern void ReloadMultiTextFile(S32 file);
+extern S32 FindText(S32 text);
+extern void InitDial(S32 file);
+extern void ClearDial(void);
+extern void GetNextWord(char *ptchaine, char *mot);
+extern void AffOneCar(S32 x, S32 y, char c, S32 coul);
+extern void AffAllCar(void);
+extern void CoulDial(S32 min, S32 max, S32 step);
+extern void TestCoulDial(S32 coul);
+extern S32 GereFlagDial(S32 text);
+extern S32 GetText(S32 text);
+extern void AffFleche(void);
+//----- incrust vignette Radio
+extern void TestAndDrawRadio(void);
+extern void InitDialWindow(void);
+extern void HoloInitDialWindow(void);
+extern void AffHoloDialWindow(void);
+extern void NormalWinDial(void);
+extern void BigWinDial(void);
+extern void HoloWinDial(void);
+extern void CommonOpenDial(S32 text);
+extern void OpenDial(S32 text);
+extern void GetNextLine(void);
+extern void InitEndPage(void);
+extern void NextDialWindow();
+extern S32 NextDialCar(void);
+extern void CloseDial(void);
+extern void InitWhoSpeak(S32 numobj);
+extern void ClearWhoSpeak(void);
+extern void SpeakAnimation(void);
+extern void Dial(S32 text, S32 drawscene);
+/* Harness hook: arm a one-shot screenshot inside the next Dial call.
+   When the dialogue's typewriter completes the current page (NextDialCar
+   returns 0 or 2), SavePNG is called with the supplied path and flagabort
+   is set so Dial exits cleanly without waiting for input.  Pass NULL or
+   "" to disarm.  Used by the console "ui dialog <text-id> <path>" verb. */
+extern void Dial_RequestCapture(const char *path);
+extern S32 MyDial(S32 nummess);
+/*	GetMultiText() copies up to 255 bytes of the entry and always terminates at
+    dst[255] when the entry is that long, so a destination is 256 bytes or it
+    gets written past. The entry lengths are whatever TEXT.HQR holds for the
+    player's language, so a buffer that fits the English string can still
+    overflow on a translation. Size destinations with this. */
+#define MULTI_TEXT_MAX 256
+
+extern char *GetMultiText(S32 text, char *dst);
+extern void CleanMessage(char *string, S32 flag);
+extern void LoadListMessages(S32 file);
+extern void FreeListMessages(void);
+extern S32 NextMessagePerso(S32 numperso, S32 message);
+extern S32 PreviousMessagePerso(S32 numperso, S32 message);
+extern S32 VerifyMessagePerso(S32 numperso, S32 message);
+
+#endif // MESSAGE_H

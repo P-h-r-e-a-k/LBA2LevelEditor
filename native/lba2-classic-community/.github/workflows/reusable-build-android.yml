@@ -1,0 +1,300 @@
+name: Build Android APK (reusable)
+
+# Reusable build steps for the Android target. Called by release-android.yml
+# (tag-triggered) and release-latest.yml (rolling pre-release), which package,
+# and by android.yml on every push and PR, which does not.
+#
+# With bundle: true (the default) it produces a `dist/` directory with the
+# debug-signed APK and uploads it as a workflow artifact named
+# `<artifact-prefix>-<arch>`. With bundle: false it stops after the native
+# library, which is the part a validation run needs.
+#
+# Requires the Android SDK + NDK on the runner. The job installs them
+# via the command-line tools if not already present.
+#
+# See docs/RELEASING.md "Adding a new release target" for the recipe this
+# file follows.
+
+on:
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: >-
+          Prefix for the upload-artifact name. Caller appends -<arch>.
+          Tag releases pass "Android" (default); release-latest passes
+          "latest-android" so its download-artifact pattern picks them up.
+          Unused when bundle is false.
+        type: string
+        required: false
+        default: Android
+      bundle:
+        description: >-
+          Package the APK and upload it. Release callers leave this true.
+          The push/PR caller passes false: the native compile is what gates,
+          and packaging on every push would upload artifacts nobody reads.
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  build:
+    name: "Build ${{ matrix.arch }}"
+    runs-on: ubuntu-24.04
+    # The release key lives in this environment, whose deployment rules admit
+    # only main and the release tags. Naming it is what lets the job read those
+    # secrets, and what stops a workflow pushed to any other branch from doing
+    # the same.
+    #
+    # Conditional because one job serves every caller. A pull request builds
+    # with bundle: false from a branch the environment does not admit, and a job
+    # naming an environment it may not deploy to fails outright rather than
+    # quietly going without; an empty name means no environment at all, which is
+    # the unsigned path a fork's pull request already takes.
+    environment: ${{ inputs.bundle && 'android-release' || '' }}
+    timeout-minutes: 60
+    env:
+      # The certificate every published APK has to carry. Signing succeeds with
+      # whatever key it is handed, so this is the only thing between a wrong
+      # keystore and a release that no existing install will accept. Kept here
+      # rather than in a secret or a variable because it is not secret, and
+      # because changing the app's identity should be a reviewed change.
+      # docs/RELEASING.md records the same value.
+      ANDROID_RELEASE_CERT_SHA256: f735d16efceefd0c99ca4da618f93ee08c9655ca457e00b866c257cc433780d2
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64-v8a
+            abi: arm64-v8a
+            ndk_target: aarch64-linux-android
+            preset: android_arm64
+          - arch: armeabi-v7a
+            abi: armeabi-v7a
+            ndk_target: arm-linux-androideabi
+            preset: android_armv7a
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install Android SDK command-line tools
+        run: |
+          ANDROID_HOME="${ANDROID_HOME:-${HOME}/Android/Sdk}"
+          mkdir -p "${ANDROID_HOME}/cmdline-tools"
+          if [ ! -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            CLI_ZIP="${RUNNER_TEMP}/cmdline-tools.zip"
+            curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
+              --retry-max-time 300 --connect-timeout 15 --max-time 300 \
+              -o "$CLI_ZIP" \
+              "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+            unzip -qo "$CLI_ZIP" -d "${RUNNER_TEMP}/cmdline-tools-unzip"
+            mkdir -p "${ANDROID_HOME}/cmdline-tools/latest"
+            mv "${RUNNER_TEMP}/cmdline-tools-unzip/cmdline-tools/"* \
+               "${ANDROID_HOME}/cmdline-tools/latest/"
+            rm -rf "$CLI_ZIP" "${RUNNER_TEMP}/cmdline-tools-unzip"
+          fi
+          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+      - name: Accept SDK licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager --install \
+            "platforms;android-34" \
+            "build-tools;35.0.0" \
+            "ndk;28.2.13676358" \
+            "platform-tools" \
+            2>&1
+
+      - name: Set environment
+        run: |
+          ANDROID_NDK="${ANDROID_HOME}/ndk/28.2.13676358"
+          echo "ANDROID_NDK=${ANDROID_NDK}" >> "$GITHUB_ENV"
+          echo "${ANDROID_HOME}/build-tools/35.0.0" >> "$GITHUB_PATH"
+          echo "${ANDROID_HOME}/platform-tools" >> "$GITHUB_PATH"
+
+      # SDL3 is built from source per ABI. Cache the checkout (the APK bundler
+      # reads SDL's Java sources out of it) alongside the install prefix, so a
+      # run that changes neither pays a restore instead of a clone plus a full
+      # SDL build. RUNNER_TEMP is a fixed path on hosted runners, so the
+      # absolute paths baked into SDL3Config.cmake stay valid across runs.
+      #
+      # The key hashes this whole file rather than naming the inputs, because
+      # almost everything that changes the output lives here: the NDK version,
+      # ANDROID_PLATFORM, ANDROID_STL, the SHARED/STATIC split and the 16 KB
+      # page-size linker flags. A hand-written list would be a second thing to
+      # keep in sync, and forgetting to extend it links a stale SDL3 into a
+      # shipped APK rather than merely wasting time. An unrelated edit to this
+      # file costs one 45s rebuild per ABI, which is the right way round to be
+      # wrong. The one input that lives elsewhere is the SDL tag, so the pin
+      # file is hashed alongside it.
+      - name: Cache SDL3 for Android
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ runner.temp }}/SDL3
+            ${{ runner.temp }}/sdl3-install
+          key: sdl3-android-${{ matrix.abi }}-${{ hashFiles('.github/workflows/reusable-build-android.yml', '.github/sdl3-version.txt') }}
+
+      - name: Build SDL3 for Android
+        run: |
+          SDL3_DIR="${RUNNER_TEMP}/SDL3"
+          SDL3_BUILD="${RUNNER_TEMP}/sdl3-build"
+          SDL3_INSTALL="${RUNNER_TEMP}/sdl3-install"
+          SDL3_VERSION="$(tr -d '[:space:]' < .github/sdl3-version.txt)"
+
+          if [ ! -d "$SDL3_DIR" ]; then
+            for i in 1 2 3; do
+              # Bounded, not just retried: a stalled endpoint returns no error
+              # for the retry count to see, and would sit here until the job
+              # timeout cancelled the leg with nothing in the log.
+              timeout -k 30 300 git clone --depth 1 --branch "$SDL3_VERSION" \
+                https://github.com/libsdl-org/SDL.git "$SDL3_DIR" 2>&1 && break
+              echo "SDL3 clone attempt $i failed, retrying..."
+              rm -rf "$SDL3_DIR"
+              sleep 2
+            done
+            # Without this the loop falls through on three failures and the
+            # next cmake reports a missing source dir instead of a bad clone.
+            if [ ! -d "$SDL3_DIR" ]; then
+              echo "SDL3 clone failed after 3 attempts" >&2
+              exit 1
+            fi
+          fi
+
+          if [ ! -f "${SDL3_INSTALL}/lib/libSDL3.so" ]; then
+            cmake -S "$SDL3_DIR" -B "$SDL3_BUILD" -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI=${{ matrix.abi }} \
+              -DANDROID_PLATFORM=24 \
+              -DANDROID_STL=c++_shared \
+              -DSDL_SHARED=ON \
+              -DSDL_STATIC=OFF \
+              -DSDL_TEST=OFF \
+              -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+
+            cmake --build "$SDL3_BUILD" -- -j"$(nproc)"
+            cmake --install "$SDL3_BUILD" --prefix "$SDL3_INSTALL"
+          else
+            echo "SDL3 restored from cache: ${SDL3_INSTALL}"
+          fi
+
+          echo "SDL3_ANDROID_DIR=${SDL3_INSTALL}/lib/cmake/SDL3" >> "$GITHUB_ENV"
+          echo "SDL3_DIR=${SDL3_INSTALL}/lib/cmake/SDL3" >> "$GITHUB_ENV"
+
+      - name: Configure LBA2
+        run: |
+          cmake --preset ${{ matrix.preset }} \
+                -DSOUND_BACKEND=sdl \
+                -DMVIDEO_BACKEND=smacker \
+                -DLBA2_RELEASE_SYMBOLS=ON \
+                -DCMAKE_BUILD_TYPE=Release \
+                2>&1
+
+      - name: Build LBA2 native library
+        run: |
+          cmake --build --preset ${{ matrix.preset }} -- -j"$(nproc)" 2>&1
+
+      # Without this, bundle-android.sh falls back to ~/.android/debug.keystore
+      # and generates one, because a fresh runner has none. Every job then signs
+      # with a different random key -- including the two ABI legs of one release
+      # -- so no published APK can ever update another and players have to
+      # uninstall, which erases their saves. The secret is what makes an update
+      # an update. See docs/RELEASING.md for creating and rotating it.
+      - name: Restore the Android release key
+        if: ${{ inputs.bundle }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          # Absent is a normal outcome, not a failure: a fork's pull request
+          # cannot read secrets. Say so, and let the bundler debug-sign.
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "No release key here. This APK will be debug-signed, which"
+            echo "means it can update nothing and nothing can update it."
+            exit 0
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "${RUNNER_TEMP}/release.jks"
+          echo "LBA2_ANDROID_KEYSTORE=${RUNNER_TEMP}/release.jks" >> "$GITHUB_ENV"
+
+      - name: Bundle APK
+        if: ${{ inputs.bundle }}
+        env:
+          LBA2_ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          LBA2_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LBA2_ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          BUILD_DIR="out/build/${{ matrix.preset }}"
+          VERSION=$(cat "$BUILD_DIR/VERSION.txt")
+          NATIVE_LIB="$BUILD_DIR/SOURCES/liblba2cc.so"
+          SDL3_SRC="${RUNNER_TEMP}/SDL3"
+          SDL3_LIB="${RUNNER_TEMP}/sdl3-install/lib/libSDL3.so"
+          CXX_SHARED_LIB="${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/${{ matrix.ndk_target }}/libc++_shared.so"
+
+          mkdir -p dist
+
+          # A fork's pull request cannot read secrets, so LBA2_ANDROID_KEYSTORE
+          # is empty there and the bundler debug-signs and says so. That build
+          # is a compile check nobody installs over anything, and its debug
+          # certificate is not the one to check against.
+          EXPECT=()
+          if [[ -n "${LBA2_ANDROID_KEYSTORE:-}" ]]; then
+            EXPECT=(--expect-cert "$ANDROID_RELEASE_CERT_SHA256")
+          fi
+
+          bash scripts/packaging/bundle-android.sh \
+            --lib "$NATIVE_LIB" \
+            --version "$VERSION" \
+            --arch "${{ matrix.abi }}" \
+            --build-dir "$BUILD_DIR" \
+            --sdk-root "$ANDROID_HOME" \
+            --sdl3-java-src "$SDL3_SRC" \
+            --sdl3-lib "$SDL3_LIB" \
+            --cxx-shared-lib "$CXX_SHARED_LIB" \
+            --output-dir dist \
+            --split-symbols \
+            "${EXPECT[@]}"
+
+      # Reads the packaged APK, so it goes with the packaging. The alignment it
+      # checks comes from linker flags in the android_common preset, which a
+      # validation run does exercise; what it cannot see there is whether the
+      # bundling step preserved them.
+      - name: Verify 16 KB page alignment (arm64-v8a)
+        if: ${{ inputs.bundle && matrix.arch == 'arm64-v8a' }}
+        run: |
+          APK=$(find dist -maxdepth 1 -name '*-arm64-v8a.apk' | sort | head -1)
+          bash scripts/dev/check-16k-align.sh "$APK"
+
+      - name: Upload temporary artifact
+        if: ${{ inputs.bundle }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}
+          path: |
+            dist
+            !dist/*-symbols.tar.xz
+
+      # Its own artifact, so it outlives the rolling release, which replaces its
+      # assets on every push: scripts/dev/symbolize_crash.py --fetch finds it by the
+      # commit in a crash block. A tag release also attaches it to the release.
+      - name: Upload symbols
+        if: ${{ inputs.bundle }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}-symbols
+          path: dist/*-symbols.tar.xz
+          if-no-files-found: error
+          retention-days: 90

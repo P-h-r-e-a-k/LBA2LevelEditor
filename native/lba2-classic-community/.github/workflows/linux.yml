@@ -1,0 +1,283 @@
+name: Linux
+
+# paths-ignore set: docs/asset-only changes don't need a full multi-platform
+# build matrix to fire. Anything that can affect build/test output (source,
+# CMake, scripts, workflow YAML itself) is NOT in the ignore list and still
+# triggers the run. Mirrored in macos.yml, windows.yml, test.yml, and the
+# push: branches:[main] trigger of release-latest.yml.
+on:
+  push:
+    paths-ignore: &doc-paths
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.vscode/**'
+      - '.editorconfig'
+      - '.git-blame-ignore-revs'
+      - 'cliff.toml'
+  pull_request:
+    paths-ignore: *doc-paths
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install SDL3
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      # UASM is not required for this job (game + host tests: discovery + console state). ASM equivalence uses test.yml + Docker.
+      #
+      # No CMake/ninja install step: the ubuntu-latest runner image ships
+      # CMake 3.31 and Ninja 1.13, both well past the 3.23 floor in
+      # CMakePresets.json. Fetching a newer pair on every run bought nothing
+      # and put a third-party action plus a release download on the critical
+      # path. The linux-tarball release job builds the same presets against
+      # apt's older CMake, so this floor has cover.
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}" \
+            -DLBA2_BUILD_TESTS=ON \
+            -DLBA2_BUILD_ASM_EQUIV_TESTS=OFF \
+            --preset linux
+
+      # The generated .desktop entry and AppStream metainfo are copied into the
+      # AppDir verbatim, so validating them here validates what ships. Both are
+      # gates for the AppImageHub catalog, and neither failure mode is visible
+      # from a build that succeeds: an unregistered Categories= value just files
+      # the launcher entry under the wrong menu, on the machines that have one.
+      - name: Validate packaging metadata
+        run: |
+          # Bounded and retried for the same reason as the apt in
+          # .github/actions/setup-sdl3: a stalled Ubuntu mirror gives no error
+          # to retry on and no wall clock of its own, so it goes quiet until
+          # the job timeout fires.
+          apt_opts=(
+            -o Acquire::Retries=5
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
+          )
+          for attempt in 1 2 3; do
+            # Killing apt mid-transaction leaves dpkg interrupted, and every
+            # later attempt aborts on that before fetching anything.
+            sudo dpkg --configure -a || true
+            if timeout -k 30 90 sudo apt-get "${apt_opts[@]}" update \
+              && timeout -k 30 240 sudo apt-get "${apt_opts[@]}" install -y --no-install-recommends \
+                desktop-file-utils appstream; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "apt failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "apt attempt ${attempt} failed or timed out; retrying in 10s"
+            sleep 10
+          done
+          # Globbed rather than named so renaming LBA2_DESKTOP_ID or
+          # LBA2_BUNDLE_IDENTIFIER doesn't quietly validate nothing.
+          desktop-file-validate build/packaging/*.desktop
+          appstreamcli validate --explain build/packaging/*.metainfo.xml
+
+      - name: Build
+        run: |
+          cmake --build build --target lba2cc
+          cmake --build build --target host_tests
+
+      # Two architecture rules that need a compiled tree, so they cannot live in
+      # check-arch.py: whether the engine reaches the game through a header it does
+      # not name, and how many translation units still end up with DEFINES.H in
+      # front of them. This job already has the tree, so the check costs about a
+      # second. The self-test runs first for the reason it exists: both rules pass
+      # today, so a run here proves nothing crashed unless something has been seen
+      # to fire.
+      - name: Self-test the build-graph checker
+        run: python3 scripts/ci/check-build-graph-selftest.py
+
+      - name: Check the build graph
+        run: python3 scripts/ci/check-build-graph.py build
+
+      - name: Host tests
+        run: cd build && ctest -L host_quick --output-on-failure
+
+      - name: Verify Binary
+        run: test -f build/SOURCES/lba2cc && echo "Build successful"
+
+  # The same sources through a second front end. gcc and clang disagree about
+  # enough C++98 corners that gcc accepting a change is not evidence clang will,
+  # and the only other clang in the matrix is AppleClang on the macOS leg, where
+  # a front-end break reads as a platform failure and gets diagnosed as one.
+  # The linux_clang preset already existed for local warning comparisons;
+  # nothing ran it.
+  build-clang:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install SDL3
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-clang \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}" \
+            -DLBA2_BUILD_TESTS=ON \
+            -DLBA2_BUILD_ASM_EQUIV_TESTS=OFF \
+            --preset linux_clang
+
+      - name: Build
+        run: |
+          cmake --build build-clang --target lba2cc
+          cmake --build build-clang --target host_tests
+
+      - name: Host tests
+        run: cd build-clang && ctest -L host_quick --output-on-failure
+
+      - name: Verify Binary
+        run: test -f build-clang/SOURCES/lba2cc && echo "Clang build successful"
+
+  # The warning ratchet. -Wall -Wextra is not on in any normal build: 222
+  # diagnostics would drown the one a contributor just introduced, and nobody
+  # reads a wall of pre-existing noise. Instead this job builds with them on and
+  # compares against scripts/ci/warnings-baseline.txt, so the count can fall but
+  # not rise.
+  #
+  # The baseline is keyed on (file, flag), never on line numbers: those move
+  # whenever anything above them is edited, and a baseline that goes stale on
+  # contact teaches people to regenerate it without reading it.
+  warnings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install SDL3
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      - name: Compare warnings against the baseline
+        env:
+          CMAKE_PREFIX_PATH: ${{ steps.sdl.outputs.prefix }}
+        run: bash ./scripts/ci/warning-baseline.sh
+
+  # Address and UndefinedBehavior sanitizers over the same host tests the build
+  # job runs. The suite was clean under both when this job was written, so it can
+  # only ever fail on something new: a heap overflow, a use-after-free, a leak,
+  # or the undefined arithmetic UBSan covers. ASan here is also a host stand-in
+  # for Android MTE, which is what the linux_sanitize preset was written for.
+  #
+  # The preset compiles with -fno-sanitize-recover=undefined on purpose. UBSan's
+  # default is to print a diagnostic and carry on, which exits zero and makes the
+  # gate a decoration: findings scroll past in a green run. With recovery off, a
+  # finding aborts the test and ctest goes red.
+  #
+  # host_tests only, not lba2cc. The build job already proves the game target
+  # compiles, and nothing here can run it without retail data, so a second full
+  # link buys no coverage. The tests themselves take about three seconds.
+  sanitize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install SDL3
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      # No -DCMAKE_BUILD_TYPE here: the preset pins Debug, and passing Release
+      # would strip the frame pointers ASan needs for a readable stack.
+      - name: Configure
+        run: |
+          cmake -S . -B build-asan \
+            -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}" \
+            -DLBA2_BUILD_TESTS=ON \
+            -DLBA2_BUILD_ASM_EQUIV_TESTS=OFF \
+            --preset linux_sanitize
+
+      - name: Build
+        run: cmake --build build-asan --target host_tests
+
+      - name: Host tests under Address + UndefinedBehavior sanitizers
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: cd build-asan && ctest -L host_quick --output-on-failure
+
+  # The demo SKU compiles a different set of sources: ~60 #ifdef DEMO sites the
+  # default build never touches. That is exactly how it silently stopped
+  # compiling between 1997 and the LBA2_BUILD_DEMO option, so an edit to the
+  # files it shares with retail (GAMEMENU, PERSO, SAVEGAME, OBJECT) can break it
+  # against a green matrix.
+  #
+  # The host tests run here too. They need no game data, and several of them
+  # assert against build-dependent values -- test_res_picker checks the picker
+  # modals quote Directories_GetResMarker(), which the demo build changes. A
+  # compile-only job stays green while those messages send a demo player after
+  # a file no demo install has.
+  build-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install SDL3
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          build-type: ${{ env.BUILD_TYPE }}
+
+      # No CMake/ninja install step, for the reason given on the build job.
+      - name: Configure
+        run: |
+          cmake -S . -B build-demo \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}" \
+            -DLBA2_BUILD_DEMO=ON \
+            -DLBA2_BUILD_TESTS=ON \
+            -DLBA2_BUILD_ASM_EQUIV_TESTS=OFF \
+            --preset linux
+
+      - name: Build
+        run: |
+          cmake --build build-demo --target lba2cc
+          cmake --build build-demo --target host_tests
+
+      - name: Host tests
+        run: cd build-demo && ctest -L host_quick --output-on-failure
+
+      - name: Verify Binary
+        run: test -f build-demo/SOURCES/lba2cc && echo "Demo build successful"

@@ -1,0 +1,86 @@
+using System.Buffers.Binary;
+using System.IO;
+
+namespace LBA2LevelEditor;
+
+internal sealed class HqrArchive
+{
+    private readonly byte[] data;
+    private readonly uint[] offsets;
+
+    private HqrArchive(byte[] data, uint[] offsets)
+    {
+        this.data = data;
+        this.offsets = offsets;
+    }
+
+    public int Count => offsets.Length;
+    public IEnumerable<int> ValidIndices => Enumerable.Range(0, offsets.Length).Where(IsValid);
+
+    public static HqrArchive Open(string path)
+    {
+        var data = File.ReadAllBytes(path);
+        if (data.Length < 4) throw new InvalidDataException("The HQR file is too small.");
+        var count = BinaryPrimitives.ReadUInt32LittleEndian(data);
+        if (count < 1 || count > data.Length / 4) throw new InvalidDataException("The HQR index is invalid.");
+        var offsets = new uint[count];
+        for (var index = 0; index < offsets.Length; index++)
+        {
+            offsets[index] = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(index * 4));
+        }
+        return new HqrArchive(data, offsets);
+    }
+
+    public bool IsValid(int index)
+    {
+        if ((uint)index >= offsets.Length || offsets[index] == 0 || offsets[index] > data.Length - 10) return false;
+        var offset = (int)offsets[index];
+        var compressedSize = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset + 4));
+        return compressedSize <= data.Length - offset - 10;
+    }
+
+    public byte[] Read(int index)
+    {
+        if (!IsValid(index)) throw new ArgumentOutOfRangeException(nameof(index));
+        var offset = checked((int)offsets[index]);
+        var size = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset)));
+        var compressedSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset + 4)));
+        var method = BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset + 8));
+        if (compressedSize < 0 || compressedSize > data.Length - offset - 10)
+            throw new InvalidDataException($"HQR record {index} has an invalid payload size.");
+        var source = data.AsSpan(offset + 10, compressedSize);
+        if (method == 0) return source.ToArray();
+        if (method is not (1 or 2)) throw new InvalidDataException($"Unsupported HQR compression method {method}.");
+        return DecodeLz(source, size);
+    }
+
+    private static byte[] DecodeLz(ReadOnlySpan<byte> source, int expectedSize)
+    {
+        var output = new byte[expectedSize];
+        var sourceIndex = 0;
+        var outputIndex = 0;
+        while (outputIndex < output.Length && sourceIndex < source.Length)
+        {
+            var flags = source[sourceIndex++];
+            for (var bit = 0; bit < 8 && outputIndex < output.Length; bit++)
+            {
+                if ((flags & (1 << bit)) != 0)
+                {
+                    if (sourceIndex >= source.Length) throw new InvalidDataException("Truncated LZ literal.");
+                    output[outputIndex++] = source[sourceIndex++];
+                    continue;
+                }
+                if (sourceIndex + 1 >= source.Length) throw new InvalidDataException("Truncated LZ back-reference.");
+                var token = BinaryPrimitives.ReadUInt16LittleEndian(source.Slice(sourceIndex, 2));
+                sourceIndex += 2;
+                var distance = ((token >> 4) & 0x0FFF) + 1;
+                var length = (token & 0x0F) + 2;
+                if (distance > outputIndex) throw new InvalidDataException("Invalid LZ back-reference.");
+                for (var copy = 0; copy < length && outputIndex < output.Length; copy++)
+                    output[outputIndex] = output[outputIndex++ - distance];
+            }
+        }
+        if (outputIndex != output.Length) throw new InvalidDataException("The LZ record decompressed to an unexpected size.");
+        return output;
+    }
+}

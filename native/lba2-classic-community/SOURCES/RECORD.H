@@ -1,0 +1,79 @@
+#ifndef LBA2_RECORD_H
+#define LBA2_RECORD_H
+
+/* Session recording. Usage and limits in docs/RECORDING.md.
+ *
+ * Records the polled device state at the tail of UpdateKeyboardState(), indexed by
+ * input poll, and replays it back through the same site so every consumer (MainLoop,
+ * modals, CheckKey sites, the pad) sees it without knowing.
+ *
+ * Three values do not pass through TabKeys and are carried alongside: the pad's
+ * first-pressed scancode, the raw right-stick axes, and the mouse deltas plus Click.
+ */
+
+#include <SYSTEM/ADELINE_TYPES.H>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Tail of UpdateKeyboardState(): capture or inject this poll's device state. */
+void Record_PollHook(void);
+
+/* ManageTime(): capture or supply the clock where the engine actually reads it. */
+void Record_ClockHook(U32 *now);
+
+/* Timer_FixedDtPump(): mint a step of the held clock, so a wait loop that never polls
+   still ends. */
+void Record_WaitHook(void);
+
+/* ChangeCube(): supply the seed a replay's first scene load has to run on. */
+void Record_SeedHook(U32 *seed);
+
+/* Control_TickHook(): one state hash per tick, the recording's own oracle. */
+void Record_TickHook(void);
+
+/* Control_TickHook() again, further down: run the commands a replay has read off the
+   stream. Its own seam because reading one and running it are two different points in
+   the frame -- the reader meets a command where the record before it left off, and the
+   session ran it after that tick's step was minted, beside --exec-at. */
+void Record_ExecHook(void);
+
+/* `verbose` records the telemetry --record-telemetry asks for: every value the digest
+   mixes, every tick, so a divergence names the field rather than only the tick. It costs
+   a few kilobytes a tick, so it belongs to the session that asked for it rather than to
+   the run -- a player who has just seen the bug can start a diagnostic recording without
+   relaunching. */
+int Record_Start(const char *path, int verbose);
+int Record_Stop(void);
+int Record_Play(const char *path);
+void Record_CommandHook(const char *line);
+/* Arm from the CLI. The recorder starts on its first input poll rather than from
+   MainLoop's tick hook, because the menus never reach that hook. */
+void Record_ArmRecord(const char *path);
+void Record_ArmReplay(const char *path);
+/* The armed replay's own starting state, as a savegame Control_Begin can load when no
+   --load was given, so a replay boots into the state its recording began from instead of
+   one supplied by hand. Returns 1 with *out set, 0 when no replay is armed (or its file
+   will not open, which Record_Play reports by name, or its session began with no cube
+   live and a fresh boot is the state it began from), and -1 when a replay is armed and
+   carries no obtainable starting state -- which the caller must refuse rather than boot
+   fresh into. */
+int Record_ArmedReplayLoad(const char **out);
+unsigned long Record_Squeeze(const char *path);
+/* The file the last Record_Start / Record_Play resolved to. A bare name is a name in
+   the recordings folder, so this is where it actually went, which is not the string the
+   caller passed. Empty before either has run. */
+const char *Record_Path(void);
+int Record_IsReplaying(void);
+int Record_IsRecording(void);
+
+/* Human-readable report. `path` NULL reports the live run's mode; otherwise it reads
+   that recording's header and reports it against the live run, naming each mismatch. */
+void Record_Report(const char *path);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

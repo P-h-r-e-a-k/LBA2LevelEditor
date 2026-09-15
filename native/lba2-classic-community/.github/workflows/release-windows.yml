@@ -1,0 +1,40 @@
+name: Release Windows
+
+# Tag-triggered Windows portable ZIP release. Build steps live in
+# .github/workflows/reusable-build-windows.yml so release-latest.yml can
+# share them. See docs/RELEASING.md "Release workflow conventions" and
+# "Adding a new release target".
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-windows.yml
+
+  release:
+    name: Attach to GitHub Release
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: Windows-*
+          merge-multiple: true
+
+      - name: Release Windows ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            lba2cc-*-windows-*.zip
+            *-symbols.tar.xz
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true

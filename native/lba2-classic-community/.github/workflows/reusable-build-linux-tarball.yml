@@ -1,0 +1,128 @@
+name: Build Linux tarball (reusable)
+
+# Reusable build steps for the Linux portable tarball target. Called by
+# release-linux-tarball.yml (tag-triggered) and release-latest.yml (rolling
+# pre-release). Produces a `dist/` directory with the .tar.gz and uploads
+# it as a workflow artifact named `<artifact-prefix>-<arch>`.
+#
+# See docs/RELEASING.md "Adding a new release target" for the recipe this
+# file follows.
+
+on:
+  workflow_call:
+    inputs:
+      artifact-prefix:
+        description: >-
+          Prefix for the upload-artifact name. Caller appends -<arch>.
+          Tag releases pass "LinuxTarball" (default); release-latest passes
+          "latest-linux-tarball" so its download-artifact pattern picks
+          them up.
+        type: string
+        required: false
+        default: LinuxTarball
+
+jobs:
+  build:
+    name: "Build ${{ matrix.arch }}"
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: ubuntu-latest
+            arch: x86_64
+          - runs-on: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v6
+        with:
+          # Need full history so cmake/git_version.cmake can detect a clean
+          # vs dirty tree (release tags are clean; -dirty is suppressed).
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          # Timeouts as well as retries: Acquire::Retries only covers a fetch
+          # that returned an error, and a stalled mirror has hung `update`
+          # for 29 minutes. See .github/actions/setup-sdl3 for the incident.
+          apt_opts=(
+            -o Acquire::Retries=5
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
+          )
+          # Toolchain only. The X11/Wayland/ALSA dev packages a static SDL3
+          # needs at the lba2cc link step come from the setup-sdl3 action
+          # below, which installs them unconditionally for link: static.
+          for attempt in 1 2 3; do
+            # Killing apt mid-transaction leaves dpkg interrupted, and every
+            # later attempt aborts on that before fetching anything.
+            sudo dpkg --configure -a || true
+            if timeout -k 30 90 sudo apt-get "${apt_opts[@]}" update \
+              && timeout -k 30 240 sudo apt-get "${apt_opts[@]}" install -y --no-install-recommends \
+                cmake ninja-build build-essential; then
+              exit 0
+            fi
+            if [ "${attempt}" = 3 ]; then
+              echo "apt failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "apt attempt ${attempt} failed or timed out; retrying in 10s"
+            sleep 10
+          done
+
+      - name: Install SDL3 (static build)
+        # link: static forces SDL_STATIC=ON/SDL_SHARED=OFF, so find_package
+        # resolves SDL3::SDL3-static and the resulting lba2cc binary doesn't
+        # link libSDL3.so. The action's cache key carries runner.arch, so the
+        # x86_64 and aarch64 legs no longer need a discriminator to stop one
+        # pulling the other's libSDL3.a.
+        uses: ./.github/actions/setup-sdl3
+        id: sdl
+        with:
+          link: static
+          build-type: Release
+
+      - name: Configure (static-link release build)
+        run: |
+          cmake --preset linux \
+                -DCMAKE_PREFIX_PATH="${{ steps.sdl.outputs.prefix }}" \
+                -DLBA2_LINK_STATIC=ON \
+                -DLBA2_RELEASE_SYMBOLS=ON \
+                -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build --preset linux
+
+      - name: Bundle tarball
+        run: |
+          BUILD_DIR=out/build/linux
+          VERSION=$(cat "$BUILD_DIR/VERSION.txt")
+          mkdir -p dist
+          bash scripts/packaging/bundle-linux-tarball.sh \
+            --exe "$BUILD_DIR/SOURCES/lba2cc" \
+            --version "$VERSION" \
+            --arch ${{ matrix.arch }} \
+            --build-dir "$BUILD_DIR" \
+            --output-dir dist \
+            --split-symbols
+
+      - name: Upload temporary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}
+          path: |
+            dist
+            !dist/*-symbols.tar.xz
+
+      # Its own artifact, so it outlives the rolling release, which replaces its
+      # assets on every push: scripts/dev/symbolize_crash.py --fetch finds it by the
+      # commit in a crash block. A tag release also attaches it to the release.
+      - name: Upload symbols
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}-symbols
+          path: dist/*-symbols.tar.xz
+          if-no-files-found: error
+          retention-days: 90

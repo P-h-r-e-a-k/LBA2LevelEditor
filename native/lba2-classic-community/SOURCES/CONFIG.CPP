@@ -1,0 +1,1456 @@
+/*
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+                ██████┐ ██████┐ ██┐ ██┐ ██████┐ ██████┐ ██████┐
+                ██┌───┘ ██┌─██│ ███┐██│ ██┌───┘ └─██┌─┘ ██┌───┘
+                ██│     ██│ ██│ ██████│ █████┐    ██│   ██│███┐
+                ██│     ██│ ██│ ██┌███│ ██┌──┘    ██│   ██│└██│
+                ██████┐ ██████│ ██│└██│ ██│     ██████┐ ██████│
+                └─────┘ └─────┘ └─┘ └─┘ └─┘     └─────┘ └─────┘
+
+                        (Menu de configuration du clavier)
+
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+*/
+
+#include "C_EXTERN.H"
+#include "CONFIG.H"
+#include "IMAGE_LOAD.H"
+#include "DIRECTORIES.H"
+#include "INPUT.H"
+#include "GAMEMENU.H"
+#include "MENU_KEYNAV.H"
+
+#include <FILEIO/SAVEPNG.H>
+
+#include <stdio.h>
+
+#include <SVGA/SCREEN.H>
+#include <SVGA/VIDEO.H>
+#include <SYSTEM/KEYBOARD.H>
+#include <SYSTEM/KEYBOARD_KEYS.H>
+#include <SYSTEM/STRING.H>
+#include "AMBIANCE.H"
+
+#define CONFIG_SHADE_LVL MENU_SHADE_LVL
+
+#define START_ACTION_TXT 100
+#define START_STATUS_TXT 150
+#define START_MENUS_TXT 160
+#define START_KEYS_TXT 200
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+#define KEY_STRING_LEN 50
+#define KEY_STRING_EMPTY ".............."
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+#define STATUS_MENU 0
+#define STATUS_PRESS 1
+#define STATUS_ERROR 2
+#define STATUS_NOTHING 3
+
+#define CFG_TXT_ACTION 0
+#define CFG_TXT_KEY1 1
+#define CFG_TXT_KEY2 2
+#define CFG_TXT_DEFAUT 3
+#define CFG_TXT_LAST 4
+#define CFG_TXT_OK 5
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+S32 SelectConfig = 0;
+S32 SelectKey = 0;
+
+/* The config screen is a fixed 620-px-wide three-column layout (margins of
+   10 each side in the 4:3 layout). At wider framebuffers, centre the 620-px
+   region rather than letting it cling to the left edge — keeps the
+   ACTION/KEY1/KEY2 columns visually balanced and matches the rest of the
+   centred UI (menus, save-load, config text). At 640, both edges resolve to
+   the original 10 / 630 literals. */
+#define CFG_X0 ((S32)ModeDesiredX / 2 - 310)
+#define CFG_Y0 10
+#define CFG_X1 ((S32)ModeDesiredX / 2 + 310)
+#define CFG_Y1 (CFG_Y0 + MAX_INPUT_SLOTS * 10 + 35)
+
+#define ACTION_X (CFG_X0 + 20)
+#define KEY1_X (CFG_X0 + 371)
+#define KEY2_X (CFG_X0 + 501)
+
+#define CFG_MENU_X0 CFG_X0
+#define CFG_MENU_Y0 (CFG_Y1 + 5)
+#define CFG_MENU_X1 CFG_X1
+#define CFG_MENU_Y1 (CFG_MENU_Y0 + 10 + 3 * 10)
+
+#define CFG_TXT_X0 CFG_X0
+#define CFG_TXT_Y0 (CFG_MENU_Y1 + 5)
+#define CFG_TXT_X1 CFG_X1
+#define CFG_TXT_Y1_NORMAL (CFG_TXT_Y0 + 20)
+
+// Set while drawing / using the gamepad remap screen (footer text differs;
+// layout height stays the same so the bottom menu stays within 480px).
+static S32 s_ConfigGamepadTripleFooter = 0;
+
+/* old colors (Programmer's colors !)
+#define COUL_TXT        (12*16+11)
+#define COUL_CADRE      (255)
+#define COUL_STATUS     (2*16+13)
+#define COUL_ERROR      (4*16+13)
+#define COUL_CONFIG     (255)
+#define COUL_KEY        (255)
+#define COUL_MENU       (8*16+11)
+*/
+
+// new colors (Artist's colors !)
+#define COUL_TXT (12 * 16 + 11)
+#define COUL_CADRE (2 * 16 + 13)
+#define COUL_STATUS (2 * 16 + 13)
+#define COUL_ERROR (4 * 16 + 10)
+#define COUL_CONFIG (255)
+#define COUL_KEY (255)
+#define COUL_MENU (10 * 16 + 14)
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+char KeyStrings[MAX_INPUT_SLOTS * 2][KEY_STRING_LEN]; // 14 char max
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+U8 ScanKnown[] =
+    {
+        K_NUMPAD_1,
+        K_NUMPAD_2,
+        K_NUMPAD_3,
+        K_NUMPAD_4,
+        K_NUMPAD_5,
+        K_NUMPAD_6,
+        K_NUMPAD_7,
+        K_NUMPAD_8,
+        K_NUMPAD_9,
+        K_NUMPAD_0,
+        K_NUMPAD_POINT,
+        K_NUMPAD_ENTER,
+        K_NUMPAD_DIV,
+        K_NUMPAD_MUL,
+        K_NUMPAD_PLUS,
+        K_NUMPAD_MOINS,
+
+        K_GRAY_UP,
+        K_GRAY_DOWN,
+        K_GRAY_LEFT,
+        K_GRAY_RIGHT,
+        K_GRAY_HOME,
+        K_GRAY_END,
+        K_GRAY_PAGE_UP,
+        K_GRAY_PAGE_DOWN,
+        K_GRAY_INSER,
+        K_GRAY_SUPPR,
+
+        K_SHIFT_LEFT,
+        K_SHIFT_RIGHT,
+        K_CTRL_LEFT,
+        K_CTRL_RIGHT,
+        K_ALT_LEFT,
+        K_ALT_RIGHT,
+
+        K_TAB,
+        K_NUMLOCK,
+        K_CAPSLOCK,
+
+        K_F1,
+        K_F2,
+        K_F3,
+        K_F4,
+        K_F5,
+        K_F6,
+        K_F7,
+        K_F8,
+        K_F9,
+        K_F10,
+        K_F11,
+        K_F12,
+
+        K_1,
+        K_2,
+        K_3,
+        K_4,
+        K_5,
+        K_6,
+        K_7,
+        K_8,
+        K_9,
+        K_0,
+
+        K_SPACE,
+        K_ENTER,
+
+        K_WINDOWS_LEFT,
+        K_WINDOWS_RIGHT,
+        K_APPLICATION,
+
+        K_BACKSPACE,
+        K_PAUSE,
+        K_SCROLLLOCK,
+        K_PRINTSCR,
+
+        K_SHIFT,
+        K_CTRL,
+        K_ALT,
+
+        0 // End
+};
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawConfigFire(S32 xmin, S32 ymin, S32 xmax, S32 ymax, S32 coul) {
+    Struc_Point TabPoint[4];
+
+    TabPoint[0].Pt_XE = (S16)xmin;
+    TabPoint[0].Pt_YE = (S16)ymin;
+    TabPoint[0].Pt_MapU = (U16)0;
+    TabPoint[0].Pt_MapV = (U16)0;
+
+    TabPoint[1].Pt_XE = (S16)xmin;
+    TabPoint[1].Pt_YE = (S16)ymax;
+    TabPoint[1].Pt_MapU = (U16)0; //(16<<8);
+    TabPoint[1].Pt_MapV = (U16)((63 << 8) + 250);
+
+    TabPoint[2].Pt_XE = (S16)xmax;
+    TabPoint[2].Pt_YE = (S16)ymax;
+    TabPoint[2].Pt_MapU = (U16)(2 * ((63 << 8) + 250)); //(16<<8);
+    TabPoint[2].Pt_MapV = (U16)((63 << 8) + 250);
+
+    TabPoint[3].Pt_XE = (S16)xmax;
+    TabPoint[3].Pt_YE = (S16)ymin;
+    TabPoint[3].Pt_MapU = (U16)(2 * ((63 << 8) + 250));
+    TabPoint[3].Pt_MapV = (U16)0;
+
+    RepMask = 0x3f3f; // repmask x=32 y=32
+
+    switch (coul) {
+    case FIRE_SELECT_MENU:
+    case FIRE_INPUT_NAME:
+        SelectPlasmaBank(12);
+        break;
+
+    case FIRE_SLIDER_MENU:
+        SelectPlasmaBank(4);
+        break;
+    }
+
+    DoTextureAnimation();
+
+    FixePlasmaPtrMap();
+
+    Fill_Poly(POLY_TEXTURE, 0, 4, TabPoint);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void GetKeyText(char *string, U32 scan) {
+    if (scan == 0) {
+        strcpy(string, KEY_STRING_EMPTY);
+        return;
+    }
+
+    if (scan >= K_GAMEPAD_BASE && scan < K_GAMEPAD_BASE + K_GAMEPAD_COUNT) {
+        // Friendly labels for the SDL-positional gamepad virtual scancodes.
+        static const char *kNames[K_GAMEPAD_COUNT] = {
+            "Action Down",
+            "Action Right",
+            "Action Left",
+            "Action Up",
+            "Back",
+            "Guide",
+            "Start",
+            "L-Axis Btn",
+            "R-Axis Btn",
+            "LB",
+            "RB",
+            "D-Up",
+            "D-Down",
+            "D-Left",
+            "D-Right",
+            "L-Axis Up",
+            "L-Axis Down",
+            "L-Axis Left",
+            "L-Axis Right",
+            "R-Axis Up",
+            "R-Axis Down",
+            "R-Axis Left",
+            "R-Axis Right",
+            "LT",
+            "RT",
+        };
+        const char *name = kNames[scan - K_GAMEPAD_BASE];
+        snprintf(string, KEY_STRING_LEN, "%s", name);
+        string[14] = 0;
+        return;
+    }
+
+    if (scan < 256) {
+        GetKeyScancodeName(string, 14, scan);
+    } else {
+        S32 joy;
+        S32 button;
+        char rest[MULTI_TEXT_MAX];
+
+        scan -= 256;
+
+        joy = 1 + (scan >> 6);
+        button = scan & 63;
+        (void)snprintf(string, KEY_STRING_LEN, "Joy %d ", joy);
+
+        if (button < 32) {
+            (void)snprintf(rest, sizeof(rest), "Btn %d", button + 1);
+        } else {
+            switch (button) {
+            case 32:
+            case 33:
+            case 34:
+            case 35:
+                button -= 32;
+                break;
+            case 36:
+            case 37:
+                button -= 34;
+                strcat(string, "Z ");
+                break;
+            case 38:
+            case 39:
+                button -= 36;
+                strcat(string, "R ");
+                break;
+            case 40:
+            case 41:
+                button -= 38;
+                strcat(string, "U ");
+                break;
+            case 42:
+            case 43:
+                button -= 40;
+                strcat(string, "V ");
+                break;
+            default:
+                button -= 44;
+                strcat(string, "H ");
+                break;
+            }
+
+            button = 3 - button;
+            GetMultiText(START_KEYS_TXT + 16 + button, rest);
+        }
+
+        strcat(string, rest);
+        string[14] = 0;
+    }
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void InitKeyStrings(void) {
+    S32 n;
+
+    for (n = 0; n < MAX_INPUT_SLOTS; n++) {
+        GetKeyText(KeyStrings[n * 2], DefKeys[n].Key1);
+        GetKeyText(KeyStrings[n * 2 + 1], DefKeys[n].Key2);
+    }
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawOneConfig(S32 n) {
+    char string[MULTI_TEXT_MAX];
+    S32 y = CFG_Y0 + 30 + n * 10;
+    S32 x = ACTION_X;
+    S32 x0, y0, x1, y1;
+
+    // Action
+
+    x0 = CFG_X0 + 5;
+    y0 = y - 2;
+    x1 = KEY1_X - 15;
+    y1 = y + 8;
+
+    CopyBlock(x0, y0, x1, y1, Screen, x0, y0, Log);
+
+    //      if( FlagShadeMenu )
+    {
+        ShadeBoxBlk(x0, y0, x1, y1, CONFIG_SHADE_LVL);
+    }
+
+    if (n == SelectConfig) {
+        CoulText(COUL_CONFIG, -1);
+        x -= 5;
+    } else {
+        CoulText(COUL_TXT, -1);
+    }
+
+    BoxStaticAdd(x0, y0, x1, y1);
+
+    GetMultiText(START_ACTION_TXT + n, string);
+    GraphPrintf(FALSE, x, y, string);
+
+    // Key 1
+
+    x0 = KEY1_X - 5;
+    y0 = y - 2;
+    x1 = KEY2_X - 15;
+    y1 = y + 8;
+
+    CopyBlock(x0, y0, x1, y1, Screen, x0, y0, Log);
+
+    //      if( FlagShadeMenu )
+    {
+        ShadeBoxBlk(x0, y0, x1, y1, CONFIG_SHADE_LVL);
+    }
+
+    BackupAngles(x0, y0, x1, y1);
+
+    x = KEY1_X;
+
+    if (n == SelectConfig) {
+        if (SelectKey == 0) {
+            CoulText(COUL_KEY, -1);
+            DrawConfigFire(x0, y0, x1, y1, FIRE_SELECT_MENU);
+            DrawCadre(x0, y0, x1, y1, ALL_ANGLES);
+        } else
+            x -= 5;
+    }
+
+    RestoreAngles(x0, y0, x1, y1);
+    BoxStaticAdd(x0, y0, x1, y1);
+
+    GraphPrintf(FALSE, x, y, KeyStrings[n * 2]);
+
+    // Key 2
+
+    x0 = KEY2_X - 5;
+    y0 = y - 2;
+    x1 = CFG_X1 - 5;
+    y1 = y + 8;
+
+    CopyBlock(x0, y0, x1, y1, Screen, x0, y0, Log);
+
+    //      if( FlagShadeMenu )
+    {
+        ShadeBoxBlk(x0, y0, x1, y1, CONFIG_SHADE_LVL);
+    }
+
+    BackupAngles(x0, y0, x1, y1);
+
+    x = KEY2_X;
+
+    if (n == SelectConfig) {
+        if (SelectKey == 1) {
+            CoulText(COUL_KEY, -1);
+            DrawConfigFire(x0, y0, x1, y1, FIRE_SELECT_MENU);
+            DrawCadre(x0, y0, x1, y1, ALL_ANGLES);
+        } else {
+            CoulText(COUL_CONFIG, -1);
+            x -= 5;
+        }
+    }
+
+    RestoreAngles(x0, y0, x1, y1);
+    BoxStaticAdd(x0, y0, x1, y1);
+
+    GraphPrintf(FALSE, x, y, KeyStrings[n * 2 + 1]);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawOneConfigMenu(S32 n) {
+    char txt[MULTI_TEXT_MAX];
+    S32 x0, y0, x1, y1;
+    S32 y;
+
+    if (n < MAX_INPUT_SLOTS) {
+        DrawOneConfig(n);
+        return;
+    }
+
+    n -= MAX_INPUT_SLOTS;
+    y = CFG_MENU_Y0 + 7 + n * 10;
+
+    GetMultiText(START_MENUS_TXT + CFG_TXT_DEFAUT + n, txt);
+
+    x0 = (S32)ModeDesiredX / 2 - (strlen(txt) * SizeChar) / 2 - 10;
+    y0 = y - 2;
+    x1 = (S32)ModeDesiredX / 2 + (strlen(txt) * SizeChar) / 2 + 10;
+    y1 = y + 8;
+
+    CopyBlock(x0, y0, x1, y1, Screen, x0, y0, Log);
+
+    //      if( FlagShadeMenu )
+    {
+        ShadeBoxBlk(x0, y0, x1, y1, CONFIG_SHADE_LVL);
+    }
+
+    if ((SelectConfig - MAX_INPUT_SLOTS) == n) {
+        CoulText(COUL_KEY, -1);
+        BackupAngles(x0, y0, x1, y1);
+        DrawConfigFire(x0, y0, x1, y1, FIRE_SELECT_MENU);
+        DrawCadre(x0, y0, x1, y1, ALL_ANGLES);
+        RestoreAngles(x0, y0, x1, y1);
+    } else {
+        CoulText(COUL_MENU, -1);
+    }
+
+    GraphPrintf(FALSE, (S32)ModeDesiredX / 2 - (strlen(txt) * SizeChar) / 2, y, txt);
+
+    BoxStaticAdd(x0, y0, x1, y1);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawCadreConfig(S32 x0, S32 y0, S32 x1, S32 y1, S32 flagclean) {
+    if (flagclean) {
+        CopyBlock(x0, y0, x1, y1, Screen,
+                  x0, y0, Log);
+    }
+
+    BackupAngles(x0, y0, x1, y1);
+
+    //      if( FlagShadeMenu )
+    {
+        ShadeBoxBlk(x0, y0, x1, y1, CONFIG_SHADE_LVL);
+    }
+
+    DrawCadre(x0, y0, x1, y1, ALL_ANGLES);
+    RestoreAngles(x0, y0, x1, y1);
+
+    if (flagclean) {
+        BoxStaticAdd(x0, y0, x1, y1);
+    }
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawStatusConfig(S32 num) {
+    char txt[MULTI_TEXT_MAX];
+
+    if (num == STATUS_MENU && s_ConfigGamepadTripleFooter) {
+        char lineBuf[220];
+        char kExit[KEY_STRING_LEN];
+        char kSel[KEY_STRING_LEN];
+        char kClr[KEY_STRING_LEN];
+
+        DrawCadreConfig(CFG_TXT_X0, CFG_TXT_Y0, CFG_TXT_X1, CFG_TXT_Y1_NORMAL, TRUE);
+        CoulText(COUL_STATUS, -1);
+
+        if (GamepadKeys[9].Key1 != 0)
+            GetKeyText(kExit, GamepadKeys[9].Key1);
+        else if (GamepadKeys[9].Key2 != 0)
+            GetKeyText(kExit, GamepadKeys[9].Key2);
+        else
+            strcpy(kExit, "---");
+
+        if (GamepadKeys[8].Key1 != 0)
+            GetKeyText(kSel, GamepadKeys[8].Key1);
+        else if (GamepadKeys[8].Key2 != 0)
+            GetKeyText(kSel, GamepadKeys[8].Key2);
+        else
+            strcpy(kSel, "---");
+
+        if (GamepadKeys[7].Key1 != 0)
+            GetKeyText(kClr, GamepadKeys[7].Key1);
+        else if (GamepadKeys[7].Key2 != 0)
+            GetKeyText(kClr, GamepadKeys[7].Key2);
+        else
+            strcpy(kClr, "---");
+
+        FormatUtf8ToCp850(lineBuf, sizeof(lineBuf),
+                          GetLocalizedMenuLabel(MENU_LABEL_KEYCFG_FOOTER), kExit, kSel, kClr);
+        GraphPrintf(FALSE, (S32)ModeDesiredX / 2 - (strlen(lineBuf) * SizeChar) / 2, CFG_TXT_Y0 + 6, lineBuf);
+        return;
+    }
+
+    GetMultiText(START_STATUS_TXT + num, txt);
+
+    DrawCadreConfig(CFG_TXT_X0, CFG_TXT_Y0, CFG_TXT_X1, CFG_TXT_Y1_NORMAL, TRUE);
+
+    if (num == STATUS_ERROR) {
+        CoulText(COUL_ERROR, -1);
+    } else {
+        CoulText(COUL_STATUS, -1);
+    }
+
+    GraphPrintf(FALSE, (S32)ModeDesiredX / 2 - (strlen(txt) * SizeChar) / 2, CFG_TXT_Y0 + 7, txt);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawScreenConfig(S32 gamepadTripleFooter) {
+    S32 n;
+    char string[MULTI_TEXT_MAX];
+
+    s_ConfigGamepadTripleFooter = gamepadTripleFooter;
+
+    CopyScreen(Screen, Log);
+
+    // Fenetres Action/Key1/Key2
+
+    DrawCadreConfig(CFG_X0, CFG_Y0, KEY1_X - 11, CFG_Y0 + 20, FALSE);
+    DrawCadreConfig(KEY1_X - 9, CFG_Y0, KEY2_X - 11, CFG_Y0 + 20, FALSE);
+    DrawCadreConfig(KEY2_X - 9, CFG_Y0, CFG_X1, CFG_Y0 + 20, FALSE);
+
+    DrawCadreConfig(CFG_X0, CFG_Y0 + 20 + 2, KEY1_X - 11, CFG_Y1, FALSE);
+    DrawCadreConfig(KEY1_X - 9, CFG_Y0 + 20 + 2, KEY2_X - 11, CFG_Y1, FALSE);
+    DrawCadreConfig(KEY2_X - 9, CFG_Y0 + 20 + 2, CFG_X1, CFG_Y1, FALSE);
+
+    CoulText(COUL_CADRE, -1);
+
+    GetMultiText(START_MENUS_TXT + CFG_TXT_ACTION, string);
+    GraphPrintf(FALSE, ACTION_X, CFG_Y0 + 7, string);
+
+    GetMultiText(START_MENUS_TXT + CFG_TXT_KEY1, string);
+    GraphPrintf(FALSE, KEY1_X, CFG_Y0 + 7, string);
+
+    GetMultiText(START_MENUS_TXT + CFG_TXT_KEY2, string);
+    GraphPrintf(FALSE, KEY2_X, CFG_Y0 + 7, string);
+
+    // Menu
+
+    DrawCadreConfig(CFG_MENU_X0, CFG_MENU_Y0, CFG_MENU_X1, CFG_MENU_Y1, FALSE);
+
+    // Barre de Status
+
+    DrawStatusConfig(STATUS_MENU);
+
+    for (n = 0; n < MAX_INPUT_SLOTS; n++) {
+        DrawOneConfig(n);
+    }
+
+    for (n = MAX_INPUT_SLOTS; n < MAX_INPUT_SLOTS + 3; n++) {
+        DrawOneConfigMenu(n);
+    }
+
+    BoxStaticAdd(0, 0, ModeDesiredX, ModeDesiredY);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+S32 CheckKeyConfig(S32 key) {
+    S32 n;
+
+    for (n = 0; n < MAX_INPUT_SLOTS; n++) {
+        if (DefKeys[n].Key1 == key OR DefKeys[n].Key2 == key) {
+            return n;
+        }
+    }
+
+    return -1;
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+#define REPEATDELAY 400
+#define REPEATRATE 40
+
+/* Harness capture state — see Config_RequestCapture() in CONFIG.H. When the
+   path is non-empty, MenuConfig's modal loop counts down per iteration; on
+   reaching zero it SavePNGs the rendered config screen and sets `ok = TRUE`
+   so the loop exits cleanly without modifying the saved key bindings.
+   Mirror of Menu_RequestCapture (GAMEMENU.CPP) / Inv_RequestCapture etc. */
+static char s_config_capture_path[ADELINE_MAX_PATH] = "";
+static int s_config_capture_countdown = 0;
+
+void Config_RequestCapture(const char *path) {
+    if (!path || !path[0]) {
+        s_config_capture_path[0] = '\0';
+        s_config_capture_countdown = 0;
+        return;
+    }
+    strncpy(s_config_capture_path, path, ADELINE_MAX_PATH - 1);
+    s_config_capture_path[ADELINE_MAX_PATH - 1] = '\0';
+    s_config_capture_countdown = 60; /* ~1 s at fixed-dt 16 — past fade-in
+                                        + initial DrawScreenConfig settle */
+}
+
+/* Full harness entry: set up the screen background MenuConfig expects from
+   its in-game invocation chain (Main Menu → Options → Controls loads the
+   menu PCX into Screen), arm the capture, and call MenuConfig. Mirror of
+   GAMEMENU.CPP's Menu_MainCapture. */
+void Config_MainCapture(const char *path) {
+    char tmpFilePathScreen[ADELINE_MAX_PATH];
+
+    GetResPath(tmpFilePathScreen, ADELINE_MAX_PATH, SCREEN_HQR_NAME);
+    Image_LoadStretched(tmpFilePathScreen, Screen, PCR_MENU);
+    CopyScreen(Screen, Log);
+    PtrPal = PtrPalNormal;
+    PaletteSync(PtrPalNormal);
+
+    Config_RequestCapture(path);
+    MenuConfig();
+    Config_RequestCapture(NULL); /* disarm if MenuConfig exited some other way */
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void MenuConfig(void) {
+    S32 oldselect;
+    U32 lasttime;
+    U32 repeattime;
+    S32 ok = FALSE;
+    S32 memoclipwindow = FALSE;
+
+    if (ClipWindowYMin > 0) {
+        // on vient du jeu en cinema mode
+        MemoClipWindow();
+        UnsetClipWindow();
+        memoclipwindow = TRUE;
+    }
+
+    // premiere fois
+    if (!KeyStrings[0][0])
+        InitKeyStrings();
+
+    PaletteSync(PtrPalNormal);
+
+    DrawScreenConfig(0);
+
+    WaitNoInput();
+
+    oldselect = SelectConfig;
+
+    memcpy(MemoDefKeys, DefKeys, sizeof(T_DEF_KEY) * MAX_INPUT_SLOTS);
+
+    MyKey = 0;
+    ManageTime();
+    lasttime = TimerRefHR;
+
+    while (!ok) {
+        S32 oldkey;
+        S32 time;
+
+        DrawOneConfigMenu(SelectConfig);
+
+        BoxUpdate();
+
+        if (s_config_capture_path[0] && --s_config_capture_countdown <= 0) {
+            SavePNG(s_config_capture_path, Log, (S32)ModeDesiredX,
+                    (S32)ModeDesiredY, PtrPal);
+            s_config_capture_path[0] = '\0';
+            ok = TRUE; /* exit cleanly without restoring MemoDefKeys */
+            break;
+        }
+
+        oldkey = MyKey;
+        DetectJoys();
+        MyGetInput();
+
+        MyKey = MenuKey_NumpadToNav(MyKey);
+
+        switch (MyKey) {
+        /* This screen's own aliases, on top of the keypad legend. */
+        case K_TAB:
+            MyKey = K_RIGHT;
+            break;
+        case K_BACKSPACE:
+            MyKey = K_SUPPR;
+            break;
+        case K_SPACE:
+            MyKey = K_ENTER;
+            break;
+        case K_UP:
+        case K_DOWN:
+        case K_LEFT:
+        case K_RIGHT:
+        case K_PAGE_UP:
+        case K_PAGE_DOWN:
+        case K_HOME:
+        case K_END:
+        case K_SUPPR:
+        case K_ENTER:
+        case K_ESC:
+            break;
+        default:
+            MyKey = 0;
+            break;
+        }
+
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+        CheckSaveLogPcx(PtrPalNormal);
+#endif
+        if (!MyKey) {
+            if (Input & I_UP) {
+                MyKey = K_UP;
+            } else if (Input & I_DOWN) {
+                MyKey = K_DOWN;
+            } else if (Input & I_LEFT) {
+                MyKey = K_LEFT;
+            } else if (Input & I_RIGHT) {
+                MyKey = K_RIGHT;
+            }
+
+            if (Input & ~I_JOY) {
+                MyKey = K_ENTER;
+            }
+        }
+
+        if (!MyKey) {
+            MyKey = JoystickMenuAction();
+        }
+        ManageTime();
+        time = TimerRefHR;
+
+        if (oldkey == MyKey) {
+            if (MyKey == K_ESC) {
+                continue;
+            }
+            if (time - lasttime < REPEATDELAY) {
+                repeattime = 0;
+                continue;
+            }
+
+            if (repeattime) {
+                if (time - repeattime < REPEATRATE) {
+                    continue;
+                }
+                repeattime += REPEATRATE;
+            } else {
+                repeattime = time;
+            }
+        } else {
+            lasttime = time;
+        }
+
+        if (MyKey == K_UP) {
+            SelectConfig--;
+            if (SelectConfig < 0)
+                SelectConfig = MAX_INPUT_SLOTS - 1 + 3;
+        } else if (MyKey == K_DOWN) {
+            SelectConfig++;
+            if (SelectConfig >= (MAX_INPUT_SLOTS + 3))
+                SelectConfig = 0;
+        } else if (MyKey == K_ENTER) {
+            if (SelectConfig < MAX_INPUT_SLOTS) {
+                S32 memokey;
+                U32 *ptr;
+
+                // define new key
+                if (SelectKey == 0) {
+                    ptr = &DefKeys[SelectConfig].Key1;
+                } else {
+                    ptr = &DefKeys[SelectConfig].Key2;
+                }
+
+                memokey = *ptr;
+
+                WaitNoInput();
+
+                *ptr = 0;
+
+                KeyDown();
+                MyKey = 0;
+                while (!MyKey) {
+                    MyKey = KeyDown();
+                    // Input-source guard: this is the keyboard rebind screen,
+                    // so ignore any gamepad scancode the user happens to press.
+                    // The parallel Game Controller screen handles pad bindings.
+                    if (MyKey >= (S32)K_GAMEPAD_BASE) {
+                        MyKey = 0;
+                    }
+
+                    if ((TimerRefHR & 0xFF) < 127) // aff 2/3 eff 1/3
+                    {
+                        DrawStatusConfig(STATUS_NOTHING);
+                        strcpy(KeyStrings[SelectConfig * 2 + SelectKey], "              ");
+                    } else {
+                        DrawStatusConfig(STATUS_PRESS);
+                        strcpy(KeyStrings[SelectConfig * 2 + SelectKey], KEY_STRING_EMPTY);
+                    }
+
+                    DrawOneConfig(SelectConfig);
+
+                    BoxUpdate();
+                }
+
+                if (MyKey == K_ESC) {
+                    MyKey = memokey;
+                    DrawStatusConfig(STATUS_MENU);
+                } else {
+                    if (CheckKeyConfig(MyKey) != -1) {
+                        PlayErrorSample();
+                        MyKey = memokey;
+                        DrawStatusConfig(STATUS_ERROR);
+                    } else {
+                        DrawStatusConfig(STATUS_MENU);
+                    }
+                }
+
+                *ptr = MyKey;
+                GetKeyText(KeyStrings[SelectConfig * 2 + SelectKey], MyKey);
+
+                WaitNoInput();
+            } else {
+                switch ((SelectConfig - MAX_INPUT_SLOTS)) {
+                case 0: // Configuration par Défaut
+                    memcpy(MemoDefKeys, DefKeys, sizeof(T_DEF_KEY) * MAX_INPUT_SLOTS);
+                    RestoreInput();
+                    InitKeyStrings();
+                    DrawScreenConfig(0);
+                    break;
+
+                case 1: // Restaurer Configuration Précédente
+                    memcpy(DefKeys, MemoDefKeys, sizeof(T_DEF_KEY) * MAX_INPUT_SLOTS);
+                    InitKeyStrings();
+                    DrawScreenConfig(0);
+                    break;
+
+                case 2: // Accepter Configuration
+                    // memo config ici
+                    ok = TRUE;
+                    break;
+                }
+            }
+        }
+
+        switch (MyKey) {
+        case K_PAGE_UP:
+            SelectConfig -= 10;
+            if (SelectConfig < 0)
+                SelectConfig = 0;
+            break;
+
+        case K_PAGE_DOWN:
+            SelectConfig += 10;
+            if (SelectConfig >= (MAX_INPUT_SLOTS + 3))
+                SelectConfig = MAX_INPUT_SLOTS - 1 + 3;
+            break;
+
+        case K_HOME:
+            SelectConfig = 0;
+            break;
+
+        case K_END:
+            SelectConfig = MAX_INPUT_SLOTS - 1 + 3;
+            break;
+
+        case K_ESC:
+            if (SelectConfig != MAX_INPUT_SLOTS + 2) {
+                SelectConfig = MAX_INPUT_SLOTS + 2; // Menu Accepter Configuration
+            } else {
+                goto endloop;
+            }
+            break;
+        }
+
+        if (oldselect != SelectConfig) {
+            DrawOneConfigMenu(oldselect);
+            oldselect = SelectConfig;
+        }
+
+        if (SelectConfig < MAX_INPUT_SLOTS) {
+            if (MyKey == K_LEFT OR MyKey == K_RIGHT) {
+                SelectKey ^= 1;
+            }
+
+            if (MyKey == K_SUPPR) {
+                if (SelectKey == 0)
+                    DefKeys[SelectConfig].Key1 = 0;
+                else
+                    DefKeys[SelectConfig].Key2 = 0;
+
+                strcpy(KeyStrings[SelectConfig * 2 + SelectKey], KEY_STRING_EMPTY);
+            }
+        }
+    }
+endloop:
+    if (!ok) // Sortie par <ESC>
+    {
+        // restaure config
+        memcpy(DefKeys, MemoDefKeys, sizeof(T_DEF_KEY) * MAX_INPUT_SLOTS);
+        InitKeyStrings();
+    }
+
+    CopyScreen(Screen, Log);
+    BoxStaticAdd(0, 0, ModeDesiredX, ModeDesiredY);
+
+    InitInput();
+
+    InitWaitNoInput(Input | I_MENUS | I_FIRE);
+    InitWaitNoKey();
+
+    if (memoclipwindow) {
+        RestoreClipWindow();
+    }
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+// Gamepad remap — parallel GamepadKeys[] (Key1 OR Key2 per row). Rebind
+// capture accepts only K_GAMEPAD_* (not keyboard). See GP_MENU_ROW_* for
+// footer / edge-detected menu gestures.
+
+#define GP_MENU_ROW_CLEAR 7
+#define GP_MENU_ROW_ENTER 8
+#define GP_MENU_ROW_EXIT 9
+
+static S32 GamepadBindHeld(const T_DEF_KEY *k) {
+    return ((k->Key1 != 0 && CheckKey(k->Key1)) OR(k->Key2 != 0 && CheckKey(k->Key2)));
+}
+
+static S32 GamepadRebindAllowed(S32 scan) {
+    if (scan == K_ESC)
+        return TRUE;
+    if (scan < (S32)K_GAMEPAD_BASE OR scan >= (S32)(K_GAMEPAD_BASE + K_GAMEPAD_COUNT))
+        return FALSE;
+    if (scan == (S32)K_GAMEPAD_GUIDE)
+        return FALSE;
+    return TRUE;
+}
+
+static void InitGamepadKeyStrings(void) {
+    for (S32 n = 0; n < MAX_INPUT_SLOTS; n++) {
+        GetKeyText(KeyStrings[n * 2], GamepadKeys[n].Key1);
+        GetKeyText(KeyStrings[n * 2 + 1], GamepadKeys[n].Key2);
+    }
+}
+
+static S32 CheckGamepadKeyConfig(S32 key) {
+    for (S32 n = 0; n < MAX_INPUT_SLOTS; n++) {
+        if ((S32)GamepadKeys[n].Key1 == key OR(S32) GamepadKeys[n].Key2 == key) {
+            return n;
+        }
+    }
+    return -1;
+}
+
+void MenuGamepadConfig(void) {
+    S32 oldselect;
+    U32 lasttime;
+    U32 repeattime;
+    S32 ok = FALSE;
+    S32 memoclipwindow = FALSE;
+    T_DEF_KEY MemoGamepadKeys[MAX_INPUT_SLOTS];
+    S32 padMenuPrev7 = 0;
+    S32 padMenuPrev8 = 0;
+    S32 padMenuPrev9 = 0;
+    S32 padMenuPrevStart = 0;
+    S32 padMenuPrevBack = 0;
+
+    if (ClipWindowYMin > 0) {
+        MemoClipWindow();
+        UnsetClipWindow();
+        memoclipwindow = TRUE;
+    }
+
+    PaletteSync(PtrPalNormal);
+
+    InitGamepadKeyStrings();
+    DrawScreenConfig(1);
+
+    WaitNoInput();
+
+    oldselect = SelectConfig;
+    SelectKey = 0;
+
+    memcpy(MemoGamepadKeys, GamepadKeys, sizeof(MemoGamepadKeys));
+
+    MyKey = 0;
+    ManageTime();
+    lasttime = TimerRefHR;
+
+    while (!ok) {
+        S32 oldkey;
+        S32 time;
+        S32 g7;
+        S32 g8;
+        S32 g9;
+        S32 gStart;
+        S32 gBack;
+
+        DrawOneConfigMenu(SelectConfig);
+        BoxUpdate();
+
+        oldkey = MyKey;
+        DetectJoys();
+        MyGetInput();
+
+        MyKey = MenuKey_NumpadToNav(MyKey);
+
+        switch (MyKey) {
+        /* This screen's own aliases. Left and Right are missing from the list
+           below, which leaves the Key1/Key2 column switch at the bottom of the
+           loop reachable only from the pad itself. Kept as-is here so this
+           stays a mapping change; see the tracking issue for the gap. */
+        case K_BACKSPACE:
+            MyKey = K_SUPPR;
+            break;
+        case K_SPACE:
+            MyKey = K_ENTER;
+            break;
+        case K_UP:
+        case K_DOWN:
+        case K_PAGE_UP:
+        case K_PAGE_DOWN:
+        case K_HOME:
+        case K_END:
+        case K_SUPPR:
+        case K_ENTER:
+        case K_ESC:
+            break;
+        default:
+            MyKey = 0;
+            break;
+        }
+
+        g7 = GamepadBindHeld(&GamepadKeys[GP_MENU_ROW_CLEAR]);
+        g8 = GamepadBindHeld(&GamepadKeys[GP_MENU_ROW_ENTER]);
+        g9 = GamepadBindHeld(&GamepadKeys[GP_MENU_ROW_EXIT]);
+        // Unconditional rescue: Start=Enter, Back=Exit. Ensures the pad is
+        // never trapped if the user clears rows 7/8/9.
+        gStart = CheckKey(K_GAMEPAD_START) ? 1 : 0;
+        gBack = CheckKey(K_GAMEPAD_BACK) ? 1 : 0;
+        if (!MyKey) {
+            if (g7 && !padMenuPrev7)
+                MyKey = K_SUPPR;
+            else if (g8 && !padMenuPrev8)
+                MyKey = K_ENTER;
+            else if (g9 && !padMenuPrev9)
+                MyKey = K_ESC;
+            else if (gStart && !padMenuPrevStart)
+                MyKey = K_ENTER;
+            else if (gBack && !padMenuPrevBack)
+                MyKey = K_ESC;
+        }
+        padMenuPrev7 = g7;
+        padMenuPrev8 = g8;
+        padMenuPrev9 = g9;
+        padMenuPrevStart = gStart;
+        padMenuPrevBack = gBack;
+
+        if (!MyKey) {
+            MyKey = JoystickMenuNavOnly();
+        }
+
+        ManageTime();
+        time = TimerRefHR;
+
+        if (oldkey == MyKey) {
+            if (MyKey == K_ESC) {
+                continue;
+            }
+            if (time - lasttime < REPEATDELAY) {
+                repeattime = 0;
+                continue;
+            }
+            if (repeattime) {
+                if (time - repeattime < REPEATRATE) {
+                    continue;
+                }
+                repeattime += REPEATRATE;
+            } else {
+                repeattime = time;
+            }
+        } else {
+            lasttime = time;
+        }
+
+        if (MyKey == K_UP) {
+            SelectConfig--;
+            if (SelectConfig < 0)
+                SelectConfig = MAX_INPUT_SLOTS - 1 + 3;
+        } else if (MyKey == K_DOWN) {
+            SelectConfig++;
+            if (SelectConfig >= (MAX_INPUT_SLOTS + 3))
+                SelectConfig = 0;
+        } else if (MyKey == K_ENTER) {
+            if (SelectConfig < MAX_INPUT_SLOTS) {
+                S32 memokey;
+                U32 *ptr =
+                    (SelectKey == 0) ? &GamepadKeys[SelectConfig].Key1 : &GamepadKeys[SelectConfig].Key2;
+                memokey = (S32)*ptr;
+
+                WaitNoInput();
+                *ptr = 0;
+
+                KeyDown();
+                MyKey = 0;
+                while (!MyKey) {
+                    MyKey = KeyDown();
+                    if (MyKey != 0 && MyKey != K_ESC && !GamepadRebindAllowed(MyKey)) {
+                        MyKey = 0;
+                    }
+
+                    if ((TimerRefHR & 0xFF) < 127) {
+                        DrawStatusConfig(STATUS_NOTHING);
+                        strcpy(KeyStrings[SelectConfig * 2 + SelectKey], "              ");
+                    } else {
+                        DrawStatusConfig(STATUS_PRESS);
+                        strcpy(KeyStrings[SelectConfig * 2 + SelectKey], KEY_STRING_EMPTY);
+                    }
+
+                    DrawOneConfig(SelectConfig);
+                    BoxUpdate();
+                }
+
+                if (MyKey == K_ESC) {
+                    MyKey = memokey;
+                    DrawStatusConfig(STATUS_MENU);
+                } else {
+                    if (CheckGamepadKeyConfig(MyKey) != -1) {
+                        PlayErrorSample();
+                        MyKey = memokey;
+                        DrawStatusConfig(STATUS_ERROR);
+                    } else {
+                        DrawStatusConfig(STATUS_MENU);
+                    }
+                }
+
+                *ptr = (U32)MyKey;
+                GetKeyText(KeyStrings[SelectConfig * 2 + SelectKey], (U32)MyKey);
+                WaitNoInput();
+            } else {
+                switch ((SelectConfig - MAX_INPUT_SLOTS)) {
+                case 0: // restore defaults
+                    memcpy(MemoGamepadKeys, GamepadKeys, sizeof(MemoGamepadKeys));
+                    memcpy(GamepadKeys, GamepadKeysDefault, sizeof(GamepadKeys));
+                    InitGamepadKeyStrings();
+                    DrawScreenConfig(1);
+                    break;
+
+                case 1: // restore previous
+                    memcpy(GamepadKeys, MemoGamepadKeys, sizeof(GamepadKeys));
+                    InitGamepadKeyStrings();
+                    DrawScreenConfig(1);
+                    break;
+
+                case 2: // accept
+                    ok = TRUE;
+                    break;
+                }
+            }
+        }
+
+        switch (MyKey) {
+        case K_PAGE_UP:
+            SelectConfig -= 10;
+            if (SelectConfig < 0)
+                SelectConfig = 0;
+            break;
+        case K_PAGE_DOWN:
+            SelectConfig += 10;
+            if (SelectConfig >= (MAX_INPUT_SLOTS + 3))
+                SelectConfig = MAX_INPUT_SLOTS - 1 + 3;
+            break;
+        case K_HOME:
+            SelectConfig = 0;
+            break;
+        case K_END:
+            SelectConfig = MAX_INPUT_SLOTS - 1 + 3;
+            break;
+        case K_ESC:
+            if (SelectConfig != MAX_INPUT_SLOTS + 2) {
+                SelectConfig = MAX_INPUT_SLOTS + 2;
+            } else {
+                goto endloop_pad;
+            }
+            break;
+        }
+
+        if (oldselect != SelectConfig) {
+            DrawOneConfigMenu(oldselect);
+            oldselect = SelectConfig;
+        }
+
+        if (SelectConfig < MAX_INPUT_SLOTS && MyKey == K_SUPPR) {
+            if (SelectKey == 0)
+                GamepadKeys[SelectConfig].Key1 = 0;
+            else
+                GamepadKeys[SelectConfig].Key2 = 0;
+            GetKeyText(KeyStrings[SelectConfig * 2 + SelectKey], 0);
+            DrawStatusConfig(STATUS_MENU);
+        }
+
+        if (SelectConfig < MAX_INPUT_SLOTS && (MyKey == K_LEFT OR MyKey == K_RIGHT)) {
+            SelectKey ^= 1;
+        }
+    }
+endloop_pad:
+    if (!ok) {
+        // ESC without accepting — restore pre-entry values.
+        memcpy(GamepadKeys, MemoGamepadKeys, sizeof(GamepadKeys));
+    }
+
+    s_ConfigGamepadTripleFooter = 0;
+
+    CopyScreen(Screen, Log);
+    BoxStaticAdd(0, 0, ModeDesiredX, ModeDesiredY);
+
+    // Repopulate KeyStrings from the keyboard table so the parent menu
+    // continues to reflect keyboard bindings (the gamepad screen used the
+    // shared storage for its own rendering).
+    InitKeyStrings();
+
+    InitInput();
+    InitWaitNoInput(Input | I_MENUS | I_FIRE);
+    InitWaitNoKey();
+
+    if (memoclipwindow) {
+        RestoreClipWindow();
+    }
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+//
+//              Petit Module pour demander l'insertion du CDROM
+//
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+#define CONFIRM_SHADE_LVL 15
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DetourGraphPrintf(S32 flip, S32 coul, S32 x, S32 y, char *txt) {
+    CoulText(0, -1);
+
+    GraphPrintf(FALSE, x - 1, y - 1, txt);
+    GraphPrintf(FALSE, x, y - 1, txt);
+    GraphPrintf(FALSE, x + 1, y - 1, txt);
+    GraphPrintf(FALSE, x - 1, y, txt);
+    GraphPrintf(FALSE, x + 1, y, txt);
+    GraphPrintf(FALSE, x - 1, y + 1, txt);
+    GraphPrintf(FALSE, x, y + 1, txt);
+    GraphPrintf(FALSE, x + 1, y + 1, txt);
+
+    CoulText(coul, -1);
+    GraphPrintf(flip, x, y, txt);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawCadreConfirm(S32 x0, S32 y0, S32 x1, S32 y1) {
+    BackupAngles(x0, y0, x1, y1);
+    ShadeBoxBlk(x0, y0, x1, y1, CONFIRM_SHADE_LVL);
+
+    DrawCadre(x0, y0, x1, y1, ALL_ANGLES);
+    RestoreAngles(x0, y0, x1, y1);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+void DrawConfirmChoice(S32 xlen, S32 y0, char *txt, S32 select) {
+    S32 x0, x1, y1, coul = COUL_MENU;
+
+    x0 = (S32)ModeDesiredX / 2 - xlen;
+    x1 = (S32)ModeDesiredX / 2 + xlen;
+    y1 = y0 + SizeChar + 3;
+    y0--;
+
+    CopyBlock(x0, y0, x1, y1, Screen, x0, y0, Log);
+
+    if (select) {
+        coul = COUL_KEY;
+        BackupAngles(x0, y0, x1, y1);
+        DrawConfigFire(x0, y0, x1, y1, FIRE_SELECT_MENU);
+        DrawCadre(x0, y0, x1, y1, ALL_ANGLES);
+        RestoreAngles(x0, y0, x1, y1);
+    }
+
+    DetourGraphPrintf(FALSE, coul, (S32)ModeDesiredX / 2 - (strlen(txt) * SizeChar) / 2, y0 + 3, txt);
+    BoxStaticAdd(x0, y0, x1, y1);
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+S32 ConfirmMenu(char *ask, char *ok, char *cancel) {
+    char *ptr;
+    S32 larg = (strlen(ask) + 6) * SizeChar;
+    S32 haut = 4 * SizeChar;
+    S32 x0, y0, x1, y1;
+    S32 by0, by1; // boutons y
+    S32 blen;     // boutons lenght
+    S32 select = 0;
+    S32 oldselect = 1;
+    S32 flag = -1;
+
+    x0 = (S32)ModeDesiredX / 2 - larg / 2;
+    x1 = (S32)ModeDesiredX / 2 + larg / 2;
+    y0 = (S32)ModeDesiredY / 2 - haut / 2;
+    y1 = (S32)ModeDesiredY / 2 + haut / 2;
+
+    by0 = y1 + 2;
+    by1 = by0 + 4 * SizeChar;
+
+    DrawCadreConfig(x0, y0, x1, by1, FALSE);
+
+    BoxStaticAdd(x0, y0, x1, by1);
+
+    DetourGraphPrintf(FALSE, COUL_STATUS, x0 + 3 * SizeChar, y0 + 2 * SizeChar, ask);
+
+    CopyScreen(Log, Screen);
+
+    // ATTENTION: pas blindé si question trop petite ...
+    blen = ((x1 - x0) / 2) - 80;
+
+    InitWaitNoKey(); // attente de relache de touche dans la boucle
+
+    // on va dessiner en premier le bouton cancel (car oldselect==1)
+    ptr = cancel;
+
+    while (flag == -1) {
+        MyGetInput();
+
+        MyKey = MenuKey_NumpadToNav(MyKey);
+
+        switch (MyKey) {
+        case K_ESC:
+            flag = 1;
+            select = 1;
+            break;
+
+        case K_ENTER:
+            flag = select;
+            break;
+
+        // pave numerique
+        // touches de controle
+        case K_UP:
+        case K_DOWN:
+        case K_PAGE_UP:
+        case K_PAGE_DOWN:
+        case K_HOME:
+        case K_END:
+        case K_TAB:
+            select ^= 1;
+            break;
+        }
+
+        if (select != oldselect) {
+            DrawConfirmChoice(blen, by0 + (SizeChar + 4) * oldselect, ptr, FALSE);
+
+            if (select)
+                ptr = cancel;
+            else
+                ptr = ok;
+
+            oldselect = select;
+
+            InitWaitNoKey(); // attente de relache de touche dans la boucle
+        }
+
+        DrawConfirmChoice(blen, by0 + (SizeChar + 4) * select, ptr, TRUE);
+        BoxUpdate();
+    }
+
+    return (flag ^ 1); // ok=TRUE, cancel=FALSE
+}
+
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+S32 AskForCD(void) {
+    S32 ret;
+    char ask_txt[MULTI_TEXT_MAX];
+    char ok_txt[MULTI_TEXT_MAX];
+    char cancel_txt[MULTI_TEXT_MAX];
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    // ATTENTION: pour entrer là, le InitDial(0) doit etre fait avant !
+
+    InitPlasmaMenu();
+
+    switch (DistribVersion) {
+    case UNKNOWN_VERSION:
+    case EA_VERSION:
+        GetMultiText(7, ask_txt);
+        break;
+
+    default:
+        GetMultiText(6, ask_txt);
+    }
+
+    GetMultiText(8, ok_txt);
+    GetMultiText(9, cancel_txt);
+
+    ret = ConfirmMenu(ask_txt, ok_txt, cancel_txt);
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, SCREEN_HQR_NAME);
+    Image_LoadCentered(tmpFilePath, Log, PCR_CDROM);
+    BoxStaticFullflip();
+
+    return ret;
+}

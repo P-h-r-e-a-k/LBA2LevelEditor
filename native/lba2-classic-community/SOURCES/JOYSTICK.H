@@ -1,0 +1,75 @@
+/*--------------------------------------------------------------------------*/
+#ifndef JOYSTICK_H
+#define JOYSTICK_H
+
+#include <SYSTEM/ADELINE_TYPES.H>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*--------------------------------------------------------------------------*/
+extern S32 JoystickDeadzone; // GamepadDeadzone config, SDL axis units (0..32767)
+
+/*--------------------------------------------------------------------------*/
+void InitJoystick(void);
+void EndJoystick(void);
+void DetectJoys(void);
+void UpdateJoystick(void);
+void GetJoys(U32 *bitfield);
+void HandleEventsJoystick(const void *event);
+
+// True iff a gamepad is currently opened. Use this to gate gamepad-dependent
+// code paths; there is no separate enable flag — if a pad is connected, it's on.
+S32 JoystickIsPresent(void);
+
+// Raw right-stick axes (SDL units, -32767..32767), cached each frame by
+// UpdateJoystick. Writes 0,0 when no pad is open. Used by the analog camera
+// (EXTFUNC) when it owns the right stick.
+void JoystickGetRightStick(S16 *x, S16 *y);
+
+// Session recording and the `stick` console command: put the three values back that
+// UpdateJoystick derives and clears on every poll. Called between that clear and the
+// read, which is where the input poll's hooks sit.
+void Joystick_SetReplayState(U32 firstPressed, S16 rsx, S16 rsy);
+
+// Put the cached axes back after UpdateJoystick has cleared them, without touching the
+// first-pressed scancode: a stick is not a button and must not claim to be one.
+void Joystick_SetRightStick(S16 x, S16 y);
+
+// Report a pad as present without one being plugged in. The analog camera is the only
+// thing gated on presence, so this is what lets a replayed or injected right stick
+// reach it. A run with a real pad open reports present whatever this says.
+void Joystick_SetVirtualPad(S32 present);
+
+// Human-readable controller name for the boot log, or "not detected".
+const char *JoystickGetName(void);
+
+// Returns a scancode for menu navigation (K_ENTER / K_UP / K_DOWN / K_LEFT /
+// K_RIGHT), or 0 if no menu-relevant input is active. Used by CONFIG.CPP.
+S32 JoystickMenuAction(void);
+
+// D-pad + left stick arrows only (no face buttons). Used on the gamepad remap
+// screen so list navigation stays usable when movement is on triggers and
+// confirm/clear/exit come from player bindings instead.
+S32 JoystickMenuNavOnly(void);
+
+// Virtual scancode of the first gamepad button/stick/trigger pressed this
+// frame (edge-detected), or 0 if none. Used to feed MyKey so "press any key"
+// waits light up on any pad input without per-callsite changes.
+U32 JoystickFirstPressedScancode(void);
+
+// True if a gamepad *button* (face, Start/Back/Guide, shoulder, D-pad,
+// stick-click) was newly pressed this frame -- excludes the analog sticks and
+// triggers, which drift/rest past the deadzone. For "press any button" prompts
+// (e.g. the credits skip) that must not fire on stick drift. Poll the pad first.
+S32 JoystickButtonPressed(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+/*--------------------------------------------------------------------------*/
+#endif //JOYSTICK_H
+
+/*--------------------------------------------------------------------------*/

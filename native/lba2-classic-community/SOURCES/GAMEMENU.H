@@ -1,0 +1,187 @@
+#ifndef GAMEMENU_H
+#define GAMEMENU_H
+
+#include "MENU_LABELS.H"
+#include "UI_LAYOUT.H" /* UI_CENTER_X */
+
+#ifdef DEMO
+extern S32 FlagShowEndDemo;
+#endif
+
+/*--------------------------------------------------------------------------*/
+extern Func_Init3DView Init3DView;
+/*--------------------------------------------------------------------------*/
+extern void Init3DGame(void);
+/*--------------------------------------------------------------------------*/
+extern void SetDetailLevel(void);
+/*--------------------------------------------------------------------------*/
+extern void MessageTransp(char *mess, S32 coul, S32 moving);
+/*--------------------------------------------------------------------------*/
+extern void InitMenuIncrustText(const char *text, S32 sprite, S32 time);
+/*--------------------------------------------------------------------------*/
+extern void DrawFireBar(S32 xmin, S32 ymin, S32 xmax, S32 ymax, S32 coul);
+/*--------------------------------------------------------------------------*/
+/* Plasma/fire highlight bar on the active menu option. Sits horizontally
+   centred, LargeurMenu wide. The bar's x-range mirrors the
+   DrawOneString/DrawOneChoice box (x ± LargeurMenu/2), and those callers centre
+   on UI_CENTER_X, so this macro has to use the same anchor or the highlight
+   slides off the menu items. LargeurMenu is 550, so in the sub-640 modes both
+   ends of the bar hang off the screen and SetClip trims them. */
+#define DrawFire(y, coul) DrawFireBar(UI_CENTER_X - LargeurMenu / 2, \
+                                      y,                             \
+                                      UI_CENTER_X + LargeurMenu / 2, \
+                                      y + HAUTEUR_STANDARD,          \
+                                      coul)
+/*--------------------------------------------------------------------------*/
+extern int my_sort_function(const void *a, const void *b);
+/*--------------------------------------------------------------------------*/
+extern S32 PlayerGameList(char **ptrlistname, char *listname, S32 flagnew);
+/*--------------------------------------------------------------------------*/
+extern S32 FindPlayerFile(void);
+/*--------------------------------------------------------------------------*/
+extern void DrawOneString(S32 x, S32 y, char *playername, S32 draw);
+/*--------------------------------------------------------------------------*/
+extern void ClearOneString(S32 x, S32 y);
+/*--------------------------------------------------------------------------*/
+extern void DrawSingleString(S32 x, S32 y, char *string);
+/*--------------------------------------------------------------------------*/
+extern S32 InputPlayerName(S32 choice, char *name);
+/*--------------------------------------------------------------------------*/
+extern S32 ChoosePlayerName(S32 mess, S32 flagflip, S32 flagnew);
+/*--------------------------------------------------------------------------*/
+extern void ShowGameSavedConfirmation(void);
+/*--------------------------------------------------------------------------*/
+extern void DrawOneChoice(S32 x, S32 y, S32 type, S32 num, S32 select);
+/*--------------------------------------------------------------------------*/
+extern void DrawGameMenu(U16 *ptrmenu, S32 justone);
+/*--------------------------------------------------------------------------*/
+extern S32 DoGameMenu(U16 *ptrmenu);
+/*--------------------------------------------------------------------------*/
+extern S32 OptionsMenu(S32 flagflip);
+/* Harness hook: arm a one-shot screenshot inside the next DoGameMenu call.
+   After a countdown of iterations (long enough for the menu to fade in and
+   settle), SavePNG is called with the supplied path and DoGameMenu returns
+   1000 (the "ESC" sentinel) so the wrapping menu loop exits cleanly.
+   Pass NULL or "" to disarm.  Used by the console "ui menu-options <path>"
+   verb. */
+extern void Menu_RequestCapture(const char *path);
+/* Harness hook: capture the boot-time main game menu (Resume / New Game /
+   Load / Options / Quit -- the screen the player sees at launch).  Does
+   the minimal MainGameMenu setup (loads the PCR_MENU background bitmap,
+   InitPlasmaMenu, BuildGameMainMenu, InitDial(0)), arms Menu_RequestCapture,
+   then drives DoGameMenu(GameMainMenu) which captures and returns 1000.
+   Skips the surrounding MainGameMenu while-loop, fade transitions, and any
+   case-driven cinematic playback so the verb is non-blocking. */
+extern void Menu_MainCapture(const char *path);
+/* Harness hook: capture the Display submenu (Phase 2 runtime-resolution
+   UX). Mirrors Menu_MainCapture: does the minimal pre-pass the regular
+   OptionsMenu -> GereDisplayMenu path does (InitPlasmaMenu, palette
+   sync, dial bank), arms Menu_RequestCapture, drives DoGameMenu on the
+   DisplayMenu array. The capture site inside DoGameMenu fires and
+   returns 1000. Background pixels come from the caller's Log/Screen
+   state -- `ui --black-bg display` clears them first; the plain verb
+   composites over the live scene. */
+extern void Display_MainCapture(const char *path);
+/* Harness hook: capture the resolution sub-page (the list opened from the
+   Display submenu's Resolution row). Like Display_MainCapture but builds the
+   runtime ResolutionMenu first, then drives DoGameMenu on it. */
+extern void Resolution_MainCapture(const char *path);
+/*--------------------------------------------------------------------------*/
+extern void VolumeOptions(void);
+/*--------------------------------------------------------------------------*/
+extern void SavedGameManagement(void);
+/*--------------------------------------------------------------------------*/
+extern S32 DeleteSavedGame(void);
+/*--------------------------------------------------------------------------*/
+extern void ZoomSavedGame(S32 x, S32 y);
+/*--------------------------------------------------------------------------*/
+extern void DrawScreenSave(U8 *ptr, S32 x, S32 y);
+/*--------------------------------------------------------------------------*/
+extern void DrawCadreSave(S32 x, S32 y);
+/*--------------------------------------------------------------------------*/
+extern S32 IsFirstGameLaunched(void);
+/*--------------------------------------------------------------------------*/
+extern S32 MainGameMenu(S32 load, S32 resumeInGame);
+/*--------------------------------------------------------------------------*/
+extern void GameAskChoice(S32 nummess);
+/* Harness hook: drive GameAskChoice's two modal waits with held keys, so a
+   headless run can reach the state a player reaches by hand. `pick` is pressed
+   once the option list is up, past DoGameMenu's entry latch, which selects a row
+   and gives the verb a deterministic exit the way the capture hooks give the
+   other UI modals one. `press` is held from just after the chosen line starts
+   speaking, which is the only moment a Menus/Esc press can be a FRESH one during
+   playback -- the arm before Speak() masks anything already held, so an
+   externally scheduled key cannot land in that window on its own.
+
+   Scancodes, not input bits: this goes through Control_KeyHold, the only
+   injection point a modal loop reads. Either may be 0 for "leave that wait
+   alone". Disarmed on return. Used by the console `ui askchoice` verb. */
+extern void AskChoice_RequestDrive(U32 pickScancode, U32 pressScancode);
+/* Polls spent waiting on the chosen line in the last GameAskChoice, i.e. the skip loop
+   alone. The whole modal is dominated by MyDial speaking the QUESTION, so a caller
+   asking "did the press cut the line short" has to compare this and not the total:
+   whether the answer outlasts the question is a property of the dialogue bank. */
+extern U32 AskChoice_LastLinePolls(void);
+/*--------------------------------------------------------------------------*/
+extern void GameOver(void);
+/*--------------------------------------------------------------------------*/
+extern void Help(U8 flaggame);
+/*--------------------------------------------------------------------------*/
+extern void Credits(S32 mode);
+/*--------------------------------------------------------------------------*/
+extern S32 SlideShow(void);
+/*--------------------------------------------------------------------------*/
+/* Arm a one-shot SavePNG inside SlideShow's first frame and exit cleanly
+   after capturing. Mirrors Inv_RequestCapture / Menu_RequestCapture /
+   Dial_RequestCapture etc. Wire into the harness via `ui slideshow <path>`. */
+extern void SlideShow_RequestCapture(const char *path);
+/*--------------------------------------------------------------------------*/
+extern void SlideDemo(int argc, char *argv[]);
+/*--------------------------------------------------------------------------*/
+/* Enter canned-demo mode: set DemoSlide = TRUE so ChangeCube's Rnd_Seed is seeded
+   from the cube number via Demo_RngSeed (canonical per cube, host-independent).
+   See issue #176. */
+extern void BeginDemoSlide(void);
+/*--------------------------------------------------------------------------*/
+extern S32 AdelineLogo(void);
+/*--------------------------------------------------------------------------*/
+extern void DistribLogo(void);
+/*--------------------------------------------------------------------------*/
+extern S32 BumperLogo(void);
+/*--------------------------------------------------------------------------*/
+extern S32 ShowLogo(S32 numscr, S32 nsec);
+/*--------------------------------------------------------------------------*/
+#ifdef DEMO
+extern void DemoLogo(void);
+/*--------------------------------------------------------------------------*/
+extern void DemoBumper(void);
+#endif
+/*--------------------------------------------------------------------------*/
+extern void EffectPcx(U8 num, U8 *screen, U8 effect, U8 flagbcl);
+/*--------------------------------------------------------------------------*/
+extern void EffectPcxMess(U8 numpcx, U8 *screen, U8 effect, S32 mess);
+/*--------------------------------------------------------------------------*/
+extern void Introduction(void);
+/*--------------------------------------------------------------------------*/
+
+/* Localized labels for the runtime-resolution revert dialog (RES_SWITCH.CPP).
+   Kept as a numeric index so RES_SWITCH doesn't need to see the menu's full
+   label enum. The strings are sourced from the same 6-language table that
+   GAMEMENU's other UI text uses; format-string entries have %u/%d args
+   that the caller fills in via snprintf. */
+enum ResDialogLabel {
+    RES_DIALOG_TITLE = 0,      /* "Resolution changed" */
+    RES_DIALOG_NOW_AT,         /* "Now running at %ux%u." */
+    RES_DIALOG_KEEP_Q,         /* "Keep this resolution?" */
+    RES_DIALOG_BTN_KEEP,       /* "Keep" — right button label (no countdown) */
+    RES_DIALOG_BTN_REVERT_FMT, /* "Revert (%d)" — left button label, %d = seconds left */
+    RES_DIALOG_LABEL_COUNT
+};
+extern const char *GetLocalizedResDialogLabel(int which);
+
+/* The localized in-source menu string for `label`, in the current UI language.
+   Returns UTF-8: run it through CopyUtf8ToCp850 / FormatUtf8ToCp850 before
+   handing it to the font. See docs/TEXT.md. */
+extern const char *GetLocalizedMenuLabel(enum MenuLocalizedLabel label);
+
+#endif // GAMEMENU_H

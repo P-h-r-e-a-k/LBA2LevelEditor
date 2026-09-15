@@ -1,0 +1,337 @@
+# ASCII art catalog
+
+The original Adeline Software developers decorated their source files with elaborate ASCII art word banners. These are preserved here as artifacts of 1990s game development culture.
+
+**Attribution:** The banners documented here appear in the original Adeline / lba2-classic codebase: in C++ files that already existed there (e.g. SAVEGAME.CPP, SORT.CPP, GRILLE.CPP, BEZIER.CPP) or in ASM that has been ported to C++ in the community (e.g. the "FIRE" banner and "grossse optimisations" comment in FIRE.ASM are preserved in FIRE.CPP). They are historical, not community additions.
+
+Two distinct font styles were used throughout the codebase.
+
+## Style 1: box-drawing block letters
+
+This style uses full block characters (`██`) with box-drawing corners (`┐┌┘└│─`) to form large, bold letterforms. It appears in files that may have been written or refactored later in development.
+
+### CREDITS.CPP -- "CREDITS"
+
+```
+    ██████┐ ██████┐ ██████┐ █████┐  ██████┐ ██████┐ ██████┐
+    ██┌───┘ ██┌─██│ ██┌───┘ ██┌─██┐ └─██┌─┘ └─██┌─┘ ██┌───┘
+    ██│     ██████│ █████┐  ██│ ██│   ██│     ██│   ██████┐
+    ██│     ██┌██┌┘ ██┌──┘  ██│ ██│   ██│     ██│   └───██│
+    ██████┐ ██│└██┐ ██████┐ █████┌┘ ██████┐   ██│   ██████│
+    └─────┘ └─┘ └─┘ └─────┘ └────┘  └─────┘   └─┘   └─────┘
+```
+
+### BEZIER.CPP -- "BEZIER" + "(merci Time Commando !!!)"
+
+```
+    ██████┐ █┐   █┐ █████┐  ██████┐ ██████┐ ██████┐
+    ██┌─██│ ██┐ ██│ ██┌██│  ██┌─██│ ██┌───┘ ██┌───┘
+    ██│ ██│ ██████│ ██████┐ ██████│ █████┐  ██████┐
+    ██│ ██│ ██┌─██│ ██┌─██│ ██┌██┌┘ ██┌──┘  └───██│
+    ██████│ ██│ ██│ ██████│ ██│└██┐ ██████┐ ██████│
+    └─────┘ └─┘ └─┘ └─────┘ └─┘ └─┘ └─────┘ └─────┘
+
+               (merci Time Commando !!!)
+```
+
+A thank-you to Adeline Software's other game, Time Commando (1996), whose Bezier curve code was likely shared.
+
+### INTEXT.CPP -- "INTEXT.C"
+
+```
+    ██████┐ ██┐ ██┐ ██████┐ ██████┐ ██┐ ██┐ ██████┐         ██████┐
+    └─██┌─┘ ███┐██│ └─██┌─┘ ██┌───┘ ██│ ██│ └─██┌─┘         ██┌───┘
+      ██│   ██████│   ██│   █████┐  └████┌┘   ██│           ██│
+      ██│   ██┌███│   ██│   ██┌──┘  ██┌─██┐   ██│           ██│
+    ██████┐ ██│└██│   ██│   ██████┐ ██│ ██│   ██│     ██┐   ██████┐
+    └─────┘ └─┘ └─┘   └─┘   └─────┘ └─┘ └─┘   └─┘     └─┘   └─────┘
+```
+
+Followed by the note: *"Module commun aux mondes interieurs et exterieurs"* (Module shared between interior and exterior worlds).
+
+### EXTFUNC.CPP -- "3D-EXT"
+
+```
+    ████┐  █████┐          ██████┐ ██┐ ██┐ ██████┐
+    ██┌─██┐ ██┌─██┐         ██┌───┘ ██│ ██│ └─██┌─┘
+    └─┘██┌┘ ██│ ██│         █████┐  └████┌┘   ██│
+    ██┐└██┐ ██│ ██│         ██┌──┘  ██┌─██┐   ██│
+    └████┌┘ █████┌┘ ██████┐ ██████┐ ██│ ██│   ██│
+     └───┘  └────┘  └─────┘ └─────┘ └─┘ └─┘   └─┘
+```
+
+### HERCULE.CPP -- Three banners in one file
+
+**"CHANGES"** (line 66):
+```
+    ██████┐ ██┐ ██┐ ██████┐ ██████┐ ██┐ ██┐ ██████┐ ██████┐
+    ██┌───┘ ██│ ██│ ██┌─██│ └─██┌─┘ ███┐██│ ██┌───┘ ██┌───┘
+    ██│     ██████│ ██████│   ██│   ██████│ █████┐  ██████┐
+    ██│     ██┌─██│ ██┌─██│   ██│   ██┌███│ ██┌──┘  └───██│
+    ██████┐ ██│ ██│ ██│ ██│ ██████┐ ██│└██│ ██████┐ ██████│
+    └─────┘ └─┘ └─┘ └─┘ └─┘ └─────┘ └─┘ └─┘ └─────┘ └─────┘
+```
+
+**"GRAPHICS"** (line 245):
+```
+    ██████┐ ██████┐ ██████┐ ██████┐ ██┐ ██┐ ██████┐ ██████┐ ██████┐
+    ██┌───┘ ██┌─██│ ██┌─██│ ██┌─██│ ██│ ██│ └─██┌─┘ ██┌───┘ ██┌───┘
+    ██│███┐ ██████│ ██████│ ██████│ ██████│   ██│   ██│     ██████┐
+    ██│└██│ ██┌██┌┘ ██┌─██│ ██┌───┘ ██┌─██│   ██│   ██│     └───██│
+    ██████│ ██│└██┐ ██│ ██│ ██│     ██│ ██│ ██████┐ ██████┐ ██████│
+    └─────┘ └─┘ └─┘ └─┘ └─┘ └─┘     └─┘ └─┘ └─────┘ └─────┘ └─────┘
+```
+
+**"CAPTURE"** (line 280):
+```
+    ██████┐ ██████┐ ██████┐ ██████┐ ██┐ ██┐ ██████┐ ██████┐
+    ██┌───┘ ██┌─██│ ██┌─██│ └─██┌─┘ ██│ ██│ ██┌─██│ ██┌───┘
+    ██│     ██████│ ██████│   ██│   ██│ ██│ ██████│ █████┐
+    ██│     ██┌─██│ ██┌───┘   ██│   ██│ ██│ ██┌██┌┘ ██┌──┘
+    ██████┐ ██│ ██│ ██│       ██│   ██████│ ██│└██┐ ██████┐
+    └─────┘ └─┘ └─┘ └─┘       └─┘   └─────┘ └─┘ └─┘ └─────┘
+```
+
+## Style 2: half-block letters
+
+This style uses upper/lower half-block characters (`█▀▄`) for a more compact look. It appears in many of the game logic modules and was likely the earlier or more common style used by the team.
+
+### SAVEGAME.CPP -- "SAVE GAME"
+
+```
+     ██▀▀▀ █▀▀▀█ █   █ █▀▀▀▀       █▀▀▀▀ █▀▀▀█ █▄ ▄█ █▀▀▀▀
+     ▀▀▀▀█ ██▀▀█ ██ ▄▀ ██▀▀        ██ ▀█ ██▀▀█ ██▀ █ ██▀▀
+     ▀▀▀▀▀ ▀▀  ▀ ▀▀▀   ▀▀▀▀▀       ▀▀▀▀▀ ▀▀  ▀ ▀▀  ▀ ▀▀▀▀▀
+```
+
+### SAVEGAME.CPP -- "BUFFER FUNCS" (line 51)
+
+```
+    █▀▀█  █   █ █▀▀▀▀ █▀▀▀▀ █▀▀▀▀ █▀▀▀█       █▀▀▀▀ █   █ ██▄ █ █▀▀▀▀ ██▀▀▀
+    ██▀▀█ ██  █ ██▀▀  ██▀▀  ██▀▀  ██▀█▀       ██▀▀  ██  █ ██▀██ ██    ▀▀▀▀█
+    ▀▀▀▀▀ ▀▀▀▀▀ ▀▀    ▀▀    ▀▀▀▀▀ ▀▀  ▀       ▀▀    ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+### SAVEGAME.CPP -- "DISK FUNCS" (line 146)
+
+```
+      █▀▀▀▄  █    ██▀▀▀ █  ▄▀       █▀▀▀▀ █   █ ██▄ █ █▀▀▀▀ ██▀▀▀
+      ██  █  ██   ▀▀▀▀█ ██▀▄        ██▀▀  ██  █ ██▀██ ██    ▀▀▀▀█
+      ▀▀▀▀   ▀▀   ▀▀▀▀▀ ▀▀  ▀       ▀▀    ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+### SORT.CPP -- "INT SORT" + "Tri Interieur"
+
+```
+     █    ██▄ █ ▀▀█▀▀       ██▀▀▀ █▀▀▀█ █▀▀▀█ ▀▀█▀▀
+     ██   ██▀██   ██        ▀▀▀▀█ ██  █ ██▀█▀   ██
+     ▀▀   ▀▀  ▀   ▀▀        ▀▀▀▀▀ ▀▀▀▀▀ ▀▀  ▀   ▀▀
+
+                 Tri Intérieur
+```
+
+"Interior Sort" -- with the French label below the banner.
+
+### COMPORTE.CPP -- "COMPORTEMENT"
+
+```
+    █▀▀▀▀ █▀▀▀█ █▄ ▄█ █▀▀▀█ █▀▀▀█ █▀▀▀█ ▀▀█▀▀ █▀▀▀▀ █▄ ▄█ █▀▀▀▀ ██▄ █ ▀▀█▀▀
+    ██    ██  █ ██▀ █ ██▀▀▀ ██  █ ██▀█▀   ██  ██▀▀  ██▀ █ ██▀▀  ██▀██   ██
+    ▀▀▀▀▀ ▀▀▀▀▀ ▀▀  ▀ ▀▀    ▀▀▀▀▀ ▀▀  ▀   ▀▀  ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀  ▀   ▀▀
+```
+
+"Behaviour" -- the AI behaviour/scripting system.
+
+### BUGGY.CPP -- "BUGGY"
+
+```
+             █▀▀█  █   █ █▀▀▀▀ █▀▀▀▀ █  ▄▀
+             ██▀▀█ ██  █ ██ ▀█ ██ ▀█ ██▀
+             ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀
+```
+
+### FLOW.CPP -- "PARTICLES"
+
+```
+     █▀▀▀█ █▀▀▀█ █▀▀▀█ ▀▀█▀▀  █    █▀▀▀▀ █     █▀▀▀▀ ██▀▀▀
+     ██▀▀▀ ██▀▀█ ██▀█▀   ██   ██   ██    ██    ██▀▀  ▀▀▀▀█
+     ▀▀    ▀▀  ▀ ▀▀  ▀   ▀▀   ▀▀   ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+### DART.CPP -- "FLECHETTES"
+
+```
+      █▀▀▀▀ █     █▀▀▀▀ █▀▀▀▀ █   █ █▀▀▀▀ ▀▀█▀▀ ▀▀█▀▀ █▀▀▀▀ ██▀▀▀
+      ██▀▀  ██    ██▀▀  ██    ██▀▀█ ██▀▀    ██    ██  ██▀▀  ▀▀▀▀█
+      ▀▀    ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀   ▀▀    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+"Darts" in French -- the blowgun dart weapon system.
+
+### FIRE.CPP -- "FIRE" (in ASM comment style)
+
+```
+;                           █▀▀▀▀  █    █▀▀▀█ █▀▀▀▀
+;                           ██▀▀   ██   ██▀█▀ ██▀▀
+;                           ▀▀     ▀▀   ▀▀  ▀ ▀▀▀▀▀
+```
+
+Followed by: *"; grossse optimisations a faire ......"* ("big optimizations to do......" -- with a typo in "grossse").
+
+### GRILLE.CPP -- "GRILLE"
+
+```
+              █▀▀▀▀ █▀▀▀█  █    █     █     █▀▀▀▀
+              ██ ▀█ ██▀█▀  ██   ██    ██    ██▀▀
+              ▀▀▀▀▀ ▀▀  ▀  ▀▀   ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+"Grid" -- the brick/tile grid rendering system.
+
+### GERETRAK.CPP -- "GERE TRACK"
+
+```
+      █▀▀▀▀ █▀▀▀▀ █▀▀▀█ █▀▀▀▀       ▀▀█▀▀ █▀▀▀█ █▀▀▀█ █▀▀▀▀ █  ▄▀
+      ██ ▀█ ██▀▀  ██▀█▀ ██▀▀          ██  ██▀█▀ ██▀▀█ ██    ██▀▄
+      ▀▀▀▀▀ ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀   ▀▀  ▀▀  ▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀  ▀
+```
+
+"Manage Track" -- the track/path management system.
+
+### GERELIFE.CPP -- "DO LIFE"
+
+```
+           █▀▀▀▄ █▀▀▀█       █      █    █▀▀▀▀ █▀▀▀▀
+           ██  █ ██  █       ██     ██   ██▀▀  ██▀▀
+           ▀▀▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀  ▀▀   ▀▀    ▀▀▀▀▀
+```
+
+The "life script" interpreter -- the scripting engine that drives game logic.
+
+### GLOBAL.CPP -- "PERSO"
+
+```
+             █▀▀▀█ █▀▀▀▀ █▀▀▀█ ██▀▀▀ █▀▀▀█
+             ██▀▀▀ ██▀▀  ██▀█▀ ▀▀▀▀█ ██  █
+             ▀▀    ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+"Perso" -- short for "personnage" (character). Global character data.
+
+### MUSIC.CPP -- "CD"
+
+```
+                  █▀▀▀▀ █▀▀▀▄
+                  ██    ██  █
+                  ▀▀▀▀▀ ▀▀▀▀
+```
+
+The CD audio playback module -- charmingly minimal banner for a small module.
+
+### PATCH.CPP -- "PATCHES"
+
+```
+       █▀▀▀█ █▀▀▀█ ▀▀█▀▀ █▀▀▀▀ █   █ █▀▀▀▀ ██▀▀▀
+       ██▀▀▀ ██▀▀█   ██  ██    ██▀▀█ ██▀▀  ▀▀▀▀█
+       ▀▀    ▀▀  ▀   ▀▀  ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+### INCRUST.CPP -- "INCRUST DISP"
+
+```
+     █    ██▄ █ █▀▀▀▀ █▀▀▀█ █   █ ██▀▀▀ ▀▀█▀▀       █▀▀▀▄  █    ██▀▀▀ █▀▀▀█
+     ██   ██▀██ ██    ██▀█▀ ██  █ ▀▀▀▀█   ██        ██  █  ██   ▀▀▀▀█ ██▀▀▀
+     ▀▀   ▀▀  ▀ ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀   ▀▀  ▀▀▀▀▀ ▀▀▀▀   ▀▀   ▀▀▀▀▀ ▀▀
+```
+
+### FICHE.CPP -- "SCRIPT"
+
+```
+              ██▀▀▀ █▀▀▀▀ █▀▀▀█  █    █▀▀▀█ ▀▀█▀▀
+              ▀▀▀▀█ ██    ██▀█▀  ██   ██▀▀▀   ██
+              ▀▀▀▀▀ ▀▀▀▀▀ ▀▀  ▀  ▀▀   ▀▀      ▀▀
+```
+
+### DISKFUNC.CPP -- "DISK FUNC"
+
+```
+         █▀▀▀▄  █    ██▀▀▀ █  ▄▀       █▀▀▀▀ █   █ ██▄ █ █▀▀▀▀
+         ██  █  ██   ▀▀▀▀█ ██▀▄        ██▀▀  ██  █ ██▀██ ██
+         ▀▀▀▀   ▀▀   ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀    ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀
+```
+
+### 3DEXT/DECORS.CPP -- "DECORS"
+
+```
+              █▀▀▀▄ █▀▀▀▀ █▀▀▀▀ █▀▀▀█ █▀▀▀█ ██▀▀▀
+              ██  █ ██▀▀  ██    ██  █ ██▀█▀ ▀▀▀▀█
+              ▀▀▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀  ▀ ▀▀▀▀▀
+```
+
+### 3DEXT/TERRAIN.CPP -- "TERRAIN"
+
+```
+           ▀▀█▀▀ █▀▀▀▀ █▀▀▀█ █▀▀▀█ █▀▀▀█  █    ██▄ █
+             ██  ██▀▀  ██▀█▀ ██▀█▀ ██▀▀█  ██   ██▀██
+             ▀▀  ▀▀▀▀▀ ▀▀  ▀ ▀▀  ▀ ▀▀  ▀  ▀▀   ▀▀  ▀
+```
+
+### 3DEXT/MAPTOOLS.CPP -- "MAP TOOLS"
+
+```
+         █▄ ▄█ █▀▀▀█ █▀▀▀█       ▀▀█▀▀ █▀▀▀█ █▀▀▀█ █     ██▀▀▀
+         ██▀ █ ██▀▀█ ██▀▀▀         ██  ██  █ ██  █ ██    ▀▀▀▀█
+         ▀▀  ▀ ▀▀  ▀ ▀▀    ▀▀▀▀▀   ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀
+```
+
+### 3DEXT/VAR_EXT.CPP -- "VAR EXT.C"
+
+```
+             █   █ █▀▀▀█ █▀▀▀█       █▀▀▀▀ ▀▄ ▄▀ ▀▀█▀▀       █▀▀▀▀
+             ██ ▄▀ ██▀▀█ ██▀█▀       ██▀▀   ▄▀▄    ██   ▄▄   ██
+             ▀▀▀   ▀▀  ▀ ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀   ▀   ▀▀   ▀▀   ▀▀▀▀▀
+```
+
+Note the `▄▄` used as a period in "EXT.C".
+
+## Decorative separators
+
+Beyond word banners, the developers used several styles of decorative separator lines:
+
+### Upper half-block bars (`▀▀▀`)
+
+Used extensively in `WAGON.H`, `WAGON.CPP`, `VALIDPOS.H`, `VALIDPOS.CPP`, `SORT.H`, `SORT.CPP`:
+
+```
+//▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+```
+
+### Box-drawing lines (`───`)
+
+Used in `SCAN.H`, `SCAN.CPP`:
+
+```
+//──────────────────────────────────────────────────────────────────────────
+```
+
+### Double-line frames (`═══`)
+
+Used throughout the codebase to frame banners and section headers:
+
+```
+/*══════════════════════════════════════════════════════════════════════════*/
+```
+
+### Box-drawing documentation blocks
+
+Used in `LIB386/pol_work/` ASM files for function-level documentation:
+
+```
+; ╔═════════════════════════════════════════════════════════════════╗
+; ║ TestVisible : Tests the visibility of a poly                    ║
+; ╟─────────────────────────────────────────────────────────────────╢
+; ║ Call: ESI = Pointer on an array of STRUC_POINT                  ║
+; ╟─────────────────────────────────────────────────────────────────╢
+; ║ Return: EAX = TRUE if polygon visible                           ║
+; ╚═════════════════════════════════════════════════════════════════╝
+```

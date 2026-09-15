@@ -1,0 +1,696 @@
+#include "RES_DISCOVERY.H"
+
+#include "DIRECTORIES.H"
+
+#include <SYSTEM/ANDROID.H>
+#include <SYSTEM/ADELINE.H>
+#include <SYSTEM/BUNDLE.H>
+#include <SYSTEM/FILES.H>
+#include <SYSTEM/LIMITS.H>
+#include <SYSTEM/LOG.H>
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_filesystem.h>
+
+#include <dirent.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+namespace {
+
+const int kMaxTried = 160;
+const int kParentWalkMax = 8;
+const int kMaxSiblingEntries = 24;
+
+static const char *const kSiblingSubdirs[] = {
+    "CommonClassic",
+    "common",
+    "Common",
+    "Classic",
+};
+
+void EnsureTrailingSeparator(char *path, U16 maxLen) {
+    const size_t n = strlen(path);
+    if (n == 0 || n + 2 > (size_t)maxLen) {
+        return;
+    }
+    const char c = path[n - 1];
+    if (c != '/' && c != '\\') {
+        strncat(path, ADELINE_PATH_SEP, (size_t)maxLen - n - 1);
+        path[maxLen - 1] = '\0';
+    }
+}
+
+bool PathRemoveLastComponent(char *path) {
+    size_t len = strlen(path);
+    while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) {
+        path[--len] = '\0';
+    }
+    if (len == 0) {
+        return false;
+    }
+    for (size_t i = len; i > 0; i--) {
+        if (path[i - 1] == '/' || path[i - 1] == '\\') {
+            path[i - 1] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AlreadyTried(const char *norm, char tried[][ADELINE_MAX_PATH], int count) {
+    for (int i = 0; i < count; i++) {
+        if (!strcmp(tried[i], norm)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* allowImage widens the accept to a folder whose data is only inside a disc
+   image. Off by default and on only for a path somebody named, because the
+   check walks the directory: paying that across the speculative sweep below
+   turns discovery from a few stats into minutes of I/O. */
+bool NormalizeAndTry(const char *pathIn, char *outDir, U16 outMax,
+                     char tried[][ADELINE_MAX_PATH], int *triedCount,
+                     bool allowImage = false) {
+    char buf[ADELINE_MAX_PATH];
+
+    if (pathIn == NULL || pathIn[0] == '\0') {
+        return false;
+    }
+
+    strncpy(buf, pathIn, ADELINE_MAX_PATH);
+    buf[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(buf, ADELINE_MAX_PATH);
+
+    if (AlreadyTried(buf, tried, *triedCount)) {
+        return false;
+    }
+
+    if (*triedCount >= kMaxTried) {
+        return false;
+    }
+
+    strncpy(tried[*triedCount], buf, ADELINE_MAX_PATH);
+    tried[*triedCount][ADELINE_MAX_PATH - 1] = '\0';
+    (*triedCount)++;
+
+    if (!(allowImage ? IsValidResourceDirOrImage(buf) : IsValidResourceDir(buf))) {
+        return false;
+    }
+
+    strncpy(outDir, buf, outMax);
+    outDir[outMax - 1] = '\0';
+    return true;
+}
+
+void LogFailure(const char tried[][ADELINE_MAX_PATH], int triedCount) {
+    /* Quote the marker this build actually looks for. A demo build wants
+       RESS.HQR, and naming a file the reader's install cannot have is what
+       sends them renaming things. */
+    Log_Error("No valid game data directory (need %s). Tried %d path(s).",
+              Directories_GetResMarker(), triedCount);
+    for (int i = 0; i < triedCount; i++) {
+        Log_Error("  - %s", tried[i]);
+    }
+    /* This message reaches the reader who has the binary and no game data, which is exactly
+       the reader who cannot open a file in the source tree. Say the thing, and point at the
+       README that ships beside the binary. */
+    Log_Error("Hints: set LBA2_GAME_DIR to your install folder, or pass --game-dir <path>.");
+    Log_Error("The path is the folder holding the HQR files, often Common/.");
+    Log_Error("This is a source port: it needs the retail game files, which it does not ship. "
+              "See README.txt.");
+}
+
+void StripGameDirArgs(int *argc, char **argv) {
+    int writeIdx = 1;
+    for (int readIdx = 1; readIdx < *argc; readIdx++) {
+        if ((!strcasecmp(argv[readIdx], "--game-dir") ||
+             !strcasecmp(argv[readIdx], "--data-dir")) &&
+            (readIdx + 1) < *argc) {
+            readIdx++;
+            continue;
+        }
+        if (!strcasecmp(argv[readIdx], "--pick-game-dir")) {
+            continue;
+        }
+        argv[writeIdx++] = argv[readIdx];
+    }
+    argv[writeIdx] = NULL;
+    *argc = writeIdx;
+}
+
+bool ExtractGameDirFromArgv(int argc, char **argv, char *outPath, U16 outMax) {
+    outPath[0] = '\0';
+    for (int i = 1; i < argc; i++) {
+        if ((!strcasecmp(argv[i], "--game-dir") || !strcasecmp(argv[i], "--data-dir")) &&
+            (i + 1) < argc) {
+            strncpy(outPath, argv[i + 1], outMax);
+            outPath[outMax - 1] = '\0';
+            return true;
+        }
+    }
+    return false;
+}
+
+/* --pick-game-dir tells ResolveGameDataDir to skip the persisted-LastGameDir
+ * probe and the auto-discovery probe chain — go straight to the picker
+ * fallback regardless of what's been saved or what's adjacent. Useful for:
+ *
+ *   - Testing the first-launch UX repeatedly without rm-ing last_game_dir.txt
+ *   - Switching to a different LBA2 install without editing the persisted file
+ *   - Anyone whose current persisted/auto-discovered path resolves to the
+ *     wrong thing and wants a UI re-do
+ *
+ * Lower priority than --game-dir / LBA2_GAME_DIR (explicit user input wins),
+ * higher priority than persisted / auto-discovery / picker default behavior. */
+bool ExtractPickGameDirFlag(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) {
+        if (!strcasecmp(argv[i], "--pick-game-dir")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TryJoinBaseSub(const char *base, const char *sub, char *outDir, U16 outMax,
+                    char tried[][ADELINE_MAX_PATH], int *triedCount,
+                    bool allowImage = false) {
+    char buf[ADELINE_MAX_PATH];
+    char baseBuf[ADELINE_MAX_PATH];
+
+    if (base == NULL || base[0] == '\0') {
+        return false;
+    }
+    strncpy(baseBuf, base, ADELINE_MAX_PATH);
+    baseBuf[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(baseBuf, ADELINE_MAX_PATH);
+
+    if (sub == NULL || sub[0] == '\0') {
+        return NormalizeAndTry(baseBuf, outDir, outMax, tried, triedCount, allowImage);
+    }
+    int n = snprintf(buf, ADELINE_MAX_PATH, "%s%s%s", baseBuf, sub,
+                     ADELINE_PATH_SEP);
+    if (n < 0 || (size_t)n >= ADELINE_MAX_PATH) {
+        return false;
+    }
+    return NormalizeAndTry(buf, outDir, outMax, tried, triedCount, allowImage);
+}
+
+/**
+ * The layouts an install root can take, in one order, for a root that is a
+ * place somebody deliberately put the binary: the folder itself, then Common/
+ * where a retail install keeps the HQRs, then the two layouts people build by
+ * hand. \p rootName names the root in the banner and in the tried list.
+ *
+ * The bare folder accepts a disc image as well as extracted files. That costs a
+ * directory walk, which is why the speculative probes elsewhere in this file
+ * stay off it; here it is one folder somebody chose, and it is reached only
+ * before a game folder has ever been remembered.
+ */
+bool TryInstallRoot(const char *base, const char *rootName, char *outDir,
+                    U16 outMax, char tried[][ADELINE_MAX_PATH],
+                    int *triedCount) {
+    static const char *const kRootSubdirs[] = {"Common", "data", "game"};
+    char source[64];
+
+    if (base == NULL || base[0] == '\0') {
+        return false;
+    }
+
+    snprintf(source, sizeof(source), "next to the %s", rootName);
+    Res_SetDiscoverySource(source);
+    if (TryJoinBaseSub(base, "", outDir, outMax, tried, triedCount, true)) {
+        return true;
+    }
+
+    for (size_t i = 0; i < sizeof(kRootSubdirs) / sizeof(kRootSubdirs[0]); i++) {
+        snprintf(source, sizeof(source), "next to the %s, %s/", rootName,
+                 kRootSubdirs[i]);
+        Res_SetDiscoverySource(source);
+        if (TryJoinBaseSub(base, kRootSubdirs[i], outDir, outMax, tried,
+                           triedCount)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Under the parent of the current working directory, try each immediate
+ * subdirectory as a game root, then common distributor subfolders (e.g.
+ * CommonClassic). Bounded by kMaxSiblingEntries; only directories are
+ * considered. Success still requires lba2.hqr (IsValidResourceDir).
+ */
+bool TryParentSiblingScan(char *outDir, U16 outMax, char tried[][ADELINE_MAX_PATH],
+                          int *triedCount) {
+    char cwd[ADELINE_MAX_PATH];
+    GetCurrentRunningDir(cwd);
+    cwd[ADELINE_MAX_PATH - 1] = '\0';
+    if (cwd[0] == '\0') {
+        return false;
+    }
+    EnsureTrailingSeparator(cwd, ADELINE_MAX_PATH);
+    char parent[ADELINE_MAX_PATH];
+    strncpy(parent, cwd, ADELINE_MAX_PATH);
+    parent[ADELINE_MAX_PATH - 1] = '\0';
+    if (!PathRemoveLastComponent(parent)) {
+        return false;
+    }
+    EnsureTrailingSeparator(parent, ADELINE_MAX_PATH);
+
+    DIR *dirp = opendir(parent);
+    if (dirp == NULL) {
+        return false;
+    }
+
+    int n = 0;
+    int iter = 0;
+    struct dirent *ent;
+    while ((ent = readdir(dirp)) != NULL && iter < 256) {
+        iter++;
+        if (n >= kMaxSiblingEntries) {
+            break;
+        }
+        if (ent->d_name[0] == '.' &&
+            (ent->d_name[1] == '\0' ||
+             (ent->d_name[1] == '.' && ent->d_name[2] == '\0'))) {
+            continue;
+        }
+        char childPath[ADELINE_MAX_PATH];
+        int cn = snprintf(childPath, ADELINE_MAX_PATH, "%s%s", parent,
+                          ent->d_name);
+        if (cn < 0 || (size_t)cn >= ADELINE_MAX_PATH) {
+            continue;
+        }
+        if (!IsDirectory(childPath)) {
+            continue;
+        }
+        n++;
+        EnsureTrailingSeparator(childPath, ADELINE_MAX_PATH);
+        if (TryJoinBaseSub(childPath, "", outDir, outMax, tried, triedCount)) {
+            closedir(dirp);
+            return true;
+        }
+        for (size_t si = 0; si < sizeof(kSiblingSubdirs) / sizeof(kSiblingSubdirs[0]);
+             si++) {
+            if (TryJoinBaseSub(childPath, kSiblingSubdirs[si], outDir, outMax, tried,
+                               triedCount)) {
+                closedir(dirp);
+                return true;
+            }
+        }
+    }
+    closedir(dirp);
+    return false;
+}
+
+/* Persisted-LastGameDir helpers.
+ *
+ * Single-line text file at <prefPath>/last_game_dir.txt holding the
+ * absolute path the user picked via the first-launch folder dialog.
+ * Stored separately from lba2.cfg because it must be written immediately
+ * at picker-success time, before InitDirectories / InitAdeline have set
+ * up the lba2.cfg buffer machinery. Written via stdio; read via stdio.
+ *
+ * Asks GetDefaultUserDir rather than reaching for SDL_GetPrefPath itself, so
+ * this pointer lands in the same folder as the saves and cfg it belongs with:
+ * the demo SKU's own (ADELINE_PREF_ORG / ADELINE_PREF_APP in DIRECTORIES.H, so
+ * a demo build never reads a retail build's pick), and whatever --user-dir or
+ * LBA2_USER_DIR names. A second reader of the raw pref path would be a run
+ * whose remembered game folder sits outside the profile the rest of it writes
+ * to. One resolver, one answer. */
+bool BuildPersistedGameDirPath(char *outPath, size_t outMax) {
+    char userDir[ADELINE_MAX_PATH] = "";
+    GetDefaultUserDir(userDir);
+    if (userDir[0] == '\0') {
+        return false;
+    }
+    /* GetDefaultUserDir guarantees a trailing separator. */
+    int written = snprintf(outPath, outMax, "%slast_game_dir.txt", userDir);
+    return written > 0 && static_cast<size_t>(written) < outMax;
+}
+} // namespace
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+bool ReadPersistedGameDir(char *outPath, U16 outMax) {
+    char filePath[ADELINE_MAX_PATH];
+    if (!BuildPersistedGameDirPath(filePath, sizeof(filePath))) {
+        return false;
+    }
+
+    FILE *fp = fopen(filePath, "r");
+    if (fp == NULL) {
+        /* No persisted file — first launch or never picked. Silent. */
+        return false;
+    }
+
+    bool ok = (fgets(outPath, outMax, fp) != NULL);
+    fclose(fp);
+    if (!ok) {
+        return false;
+    }
+
+    /* Strip trailing CR/LF. */
+    size_t len = strlen(outPath);
+    while (len > 0 &&
+           (outPath[len - 1] == '\n' || outPath[len - 1] == '\r')) {
+        outPath[--len] = '\0';
+    }
+    return outPath[0] != '\0';
+}
+
+bool WritePersistedGameDir(const char *path) {
+    char filePath[ADELINE_MAX_PATH];
+    if (!BuildPersistedGameDirPath(filePath, sizeof(filePath))) {
+        return false;
+    }
+
+    FILE *fp = fopen(filePath, "w");
+    if (fp == NULL) {
+        Log_Warn("RES_DISCOVERY: could not write %s", filePath);
+        return false;
+    }
+
+    fprintf(fp, "%s\n", path);
+    fclose(fp);
+    return true;
+}
+
+/* The probe that won, for the boot banner. Set before each attempt rather than
+   on success: whatever was set last when a probe returns true is that probe's
+   label, and a failed attempt's label is overwritten by the next one before
+   anyone reads it. */
+static char s_discoverySource[64] = "";
+/* True when the resolved folder came from something the user typed this run,
+   rather than a remembered pick or a probe. See Res_ResolvedFromUserInput. */
+static bool s_resolvedFromUserInput = false;
+
+bool Res_ResolvedFromUserInput(void) { return s_resolvedFromUserInput; }
+
+void Res_SetDiscoverySource(const char *label) {
+    if (label == NULL) {
+        s_discoverySource[0] = '\0';
+        return;
+    }
+    strncpy(s_discoverySource, label, sizeof(s_discoverySource) - 1);
+    s_discoverySource[sizeof(s_discoverySource) - 1] = '\0';
+
+    /* Set here rather than at each call site so a label and its provenance
+       cannot drift apart. The two explicit forms are the flag and the
+       environment variable; a remembered pick, a probe or the picker are not
+       something the user typed this run. */
+    s_resolvedFromUserInput = (strncmp(s_discoverySource, "--game-dir", 10) == 0) ||
+                              (strncmp(s_discoverySource, "LBA2_GAME_DIR", 13) == 0);
+}
+
+const char *Res_GetDiscoverySource(void) { return s_discoverySource; }
+
+bool ResolveGameDataDir(char *outDir, U16 outMax, int *argc, char **argv) {
+    char tried[kMaxTried][ADELINE_MAX_PATH];
+    int triedCount = 0;
+    char cliPath[ADELINE_MAX_PATH];
+    char persisted[ADELINE_MAX_PATH];
+    char walk[ADELINE_MAX_PATH];
+    const char *basePath = NULL;
+
+    ExtractGameDirFromArgv(*argc, argv, cliPath, ADELINE_MAX_PATH);
+    const bool forcePicker = ExtractPickGameDirFlag(*argc, argv);
+    StripGameDirArgs(argc, argv);
+
+    if (cliPath[0] != '\0') {
+        /* The path itself, then the subfolder a retail install keeps its data in: people
+           point this at the install root (README says so, and the Makefile forwards
+           GAME_DIR straight through), and the HQRs live one level down in Common/. */
+        Res_SetDiscoverySource("--game-dir");
+        if (NormalizeAndTry(cliPath, outDir, outMax, tried, &triedCount, true)) {
+            return true;
+        }
+        Res_SetDiscoverySource("--game-dir, Common/");
+        if (TryJoinBaseSub(cliPath, "Common", outDir, outMax, tried, &triedCount, true)) {
+            return true;
+        }
+
+        /* Neither worked, so the path is a mistake, not a hint. Falling through to the env /
+           persisted / auto-discovery probes below would boot a DIFFERENT install than the one
+           asked for and say so only in the banner: a run against assets nobody asked for that
+           still exits 0. */
+        Log_Error("RES_DISCOVERY: --game-dir '%s' does not hold the game data: no %s "
+                  "in it, nor in a Common/ inside it.",
+                  cliPath, Directories_GetResMarker());
+        Log_Error("Point it at the folder with the HQR files, or at the install that "
+                  "contains it. Refusing to boot a different install instead.");
+        return false;
+    }
+
+    /* Same deal as --game-dir above, for the same reasons: the Common/ join,
+       because people point this at the install root too, and the refusal to
+       fall through, because an env var that names the wrong place should say so
+       rather than quietly boot whatever auto-discovery turns up.
+
+       That second half is the one that bites. LBA2_GAME_DIR gets exported in a
+       shell profile and forgotten, and without this the run continues down the
+       probe list and can land on a different install entirely: right-looking
+       boot, wrong assets, exit 0, and the only clue is the Assets path in the
+       banner. Returning false hands the caller its picker (or a clean error
+       when headless), which is loud and recoverable. */
+    const char *env = getenv("LBA2_GAME_DIR");
+    if (env != NULL && env[0] != '\0') {
+        Res_SetDiscoverySource("LBA2_GAME_DIR");
+        if (NormalizeAndTry(env, outDir, outMax, tried, &triedCount, true)) {
+            return true;
+        }
+        Res_SetDiscoverySource("LBA2_GAME_DIR, Common/");
+        if (TryJoinBaseSub(env, "Common", outDir, outMax, tried, &triedCount, true)) {
+            return true;
+        }
+
+        Log_Error("RES_DISCOVERY: LBA2_GAME_DIR '%s' does not hold the game data: no "
+                  "%s in it, nor in a Common/ inside it.",
+                  env, Directories_GetResMarker());
+        Log_Error("Point it at the folder with the HQR files, or unset it. Refusing to "
+                  "boot a different install instead.");
+        return false;
+    }
+
+    /* --pick-game-dir bails out of the implicit-discovery chain and
+     * forces the caller's picker fallback. Explicit --game-dir / env
+     * still win above (user passing both is asking for "use this path,
+     * but if it's bad show the picker"). */
+    if (forcePicker) {
+        Log_Info("RES_DISCOVERY: --pick-game-dir set; skipping persisted "
+                 "and auto-discovery probes.");
+        return false;
+    }
+
+    /* Persisted choice from a previous picker session. Higher priority
+     * than auto-discovery (the user explicitly picked it) but lower than
+     * explicit CLI/env overrides (someone passing --game-dir today wants
+     * today's path, not last week's).
+     *
+     * On success: silent. The existing "Paths used" log block in
+     * InitAdeline shows the resolved Assets path on every run; another
+     * log line here would just duplicate that.
+     *
+     * On stale fallthrough (path no longer valid — game folder moved or
+     * deleted, drive ejected): log explicitly. Without this, the picker
+     * silently re-appearing on a previously-persisted launch is hard
+     * to diagnose. */
+    if (ReadPersistedGameDir(persisted, ADELINE_MAX_PATH)) {
+        Res_SetDiscoverySource("last_game_dir.txt");
+        if (NormalizeAndTry(persisted, outDir, outMax, tried, &triedCount, true)) {
+            return true;
+        }
+        Log_Warn("RES_DISCOVERY: saved game-data path %s no longer "
+                 "valid, re-prompting via picker",
+                 persisted);
+    }
+
+    /* SDL_Init must be done by the caller before SDL_GetBasePath / cwd helpers
+     * (see main in PERSO.CPP). Do not SDL_Quit here — InitAdeline needs SDL.
+     *
+     * SDL3: SDL_GetBasePath() returns an internal cached pointer; do not SDL_free
+     * it (SDL_QuitFilesystem frees it). */
+
+    /* The folder the executable sits in, and the working directory, accept a
+       disc image as well as extracted files. Dropping the binary next to a rip
+       and running it is a thing people will reasonably do, and it should work
+       without flags.
+
+       These two are safe to probe where the rest of the sweep is not: each is a
+       single directory somebody deliberately put the binary in or ran from, so
+       the cost is one directory walk, not one per candidate. The parent walk and
+       the sibling scan below stay on the cheap check, because they are guesses
+       and there are a lot of them. */
+    basePath = SDL_GetBasePath();
+
+    /* Packagings that run the executable from somewhere other than where the
+       launched file lives, ahead of the binary's own folder because for those
+       the binary's folder is a read-only mount that cannot hold game data.
+
+       Without this, dropping an AppImage into the game folder works only when
+       the launcher happens to set a matching working directory. Steam does,
+       which is why the Steam Deck reports resolve once the working directory
+       is probed; a file manager does not, and neither does a terminal in any
+       other folder.
+
+       Which packaging this is, and how its folder is found, belongs in the
+       seam and not here: see Bundle_GetLauncherDir. No separate probe for the
+       directory the launch came from, either -- the working-directory probes
+       below already look exactly there. */
+    char bundleDir[ADELINE_MAX_PATH];
+    const char *bundleKind = NULL;
+    if (Bundle_GetLauncherDir(basePath, bundleDir, ADELINE_MAX_PATH, &bundleKind)) {
+        if (TryInstallRoot(bundleDir, bundleKind, outDir, outMax, tried,
+                           &triedCount)) {
+            return true;
+        }
+    }
+
+    if (TryInstallRoot(basePath, "binary", outDir, outMax, tried, &triedCount)) {
+        return true;
+    }
+
+    GetCurrentRunningDir(walk);
+    walk[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+    Res_SetDiscoverySource("working directory");
+    if (NormalizeAndTry(walk, outDir, outMax, tried, &triedCount, true)) {
+        return true;
+    }
+
+    /* The retail layout, one level down from where you ran the game. Without
+       this, an install whose HQRs sit in Common/ was only ever found by the
+       sibling scan below reaching it from the parent, which is capped at
+       kMaxSiblingEntries in readdir order: a Steam library with more folders
+       than that cap dropped the very directory the user was standing in. */
+    Res_SetDiscoverySource("working directory, Common/");
+    if (TryJoinBaseSub(walk, "Common", outDir, outMax, tried, &triedCount)) {
+        return true;
+    }
+
+    /* App-specific external files dir: /sdcard/Android/data/<pkg>/files/
+     * Always accessible on API 19+ without MANAGE_EXTERNAL_STORAGE (no-op
+     * off-Android). User pushes data here via:
+     * adb push file.hqr /sdcard/Android/data/<pkg>/files/ */
+    if (Android_GetExternalFilesDir(walk, ADELINE_MAX_PATH)) {
+        EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+        Res_SetDiscoverySource("Android app files dir");
+        if (NormalizeAndTry(walk, outDir, outMax, tried, &triedCount))
+            return true;
+    }
+
+    /* External storage roots: Android /sdcard/ (on API 30+ these paths
+     * may need MANAGE_EXTERNAL_STORAGE permission — see
+     * docs/ANDROID.md). Try /sdcard/lba2cc/ first so users can keep data in a
+     * subdirectory. Harmless no-op on non-Android. */
+    Res_SetDiscoverySource("/sdcard/lba2cc");
+    if (TryJoinBaseSub("/sdcard/", "lba2cc", outDir, outMax, tried, &triedCount,
+                       true)) {
+        return true;
+    }
+    Res_SetDiscoverySource("/storage/emulated/0/lba2cc");
+    if (TryJoinBaseSub("/storage/emulated/0/", "lba2cc", outDir, outMax, tried,
+                       &triedCount, true)) {
+        return true;
+    }
+    Res_SetDiscoverySource("/sdcard");
+    if (NormalizeAndTry("/sdcard/", outDir, outMax, tried, &triedCount)) {
+        return true;
+    }
+    Res_SetDiscoverySource("/storage/emulated/0");
+    if (NormalizeAndTry("/storage/emulated/0/", outDir, outMax, tried, &triedCount)) {
+        return true;
+    }
+
+    GetCurrentRunningDir(walk);
+    walk[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+    for (int depth = 0; depth < kParentWalkMax; depth++) {
+        if (!PathRemoveLastComponent(walk)) {
+            break;
+        }
+        EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+        Res_SetDiscoverySource("parent walk");
+        if (NormalizeAndTry(walk, outDir, outMax, tried, &triedCount)) {
+            return true;
+        }
+    }
+
+    GetCurrentRunningDir(walk);
+    walk[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+    {
+        char rel[ADELINE_MAX_PATH];
+        int n = snprintf(rel, ADELINE_MAX_PATH, "%s%s%s", walk, "data",
+                         ADELINE_PATH_SEP);
+        if (n > 0 && (size_t)n < ADELINE_MAX_PATH) {
+            Res_SetDiscoverySource("working directory, data/");
+            if (NormalizeAndTry(rel, outDir, outMax, tried, &triedCount)) {
+                return true;
+            }
+        }
+    }
+
+    GetCurrentRunningDir(walk);
+    walk[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+    {
+        char rel[ADELINE_MAX_PATH];
+        int n = snprintf(rel, ADELINE_MAX_PATH, "%s..%s%s%s", walk,
+                         ADELINE_PATH_SEP, "LBA2", ADELINE_PATH_SEP);
+        if (n > 0 && (size_t)n < ADELINE_MAX_PATH) {
+            Res_SetDiscoverySource("../LBA2/ beside the working directory");
+            if (NormalizeAndTry(rel, outDir, outMax, tried, &triedCount)) {
+                return true;
+            }
+        }
+    }
+
+    GetCurrentRunningDir(walk);
+    walk[ADELINE_MAX_PATH - 1] = '\0';
+    EnsureTrailingSeparator(walk, ADELINE_MAX_PATH);
+    {
+        char rel[ADELINE_MAX_PATH];
+        int n = snprintf(rel, ADELINE_MAX_PATH, "%s..%s%s%s", walk,
+                         ADELINE_PATH_SEP, "game", ADELINE_PATH_SEP);
+        if (n > 0 && (size_t)n < ADELINE_MAX_PATH) {
+            Res_SetDiscoverySource("../game/ beside the working directory");
+            if (NormalizeAndTry(rel, outDir, outMax, tried, &triedCount)) {
+                return true;
+            }
+        }
+    }
+
+    Res_SetDiscoverySource("sibling scan");
+    if (TryParentSiblingScan(outDir, outMax, tried, &triedCount)) {
+        /* Every other probe checks a place the caller implied: the folder they
+           ran from, one they named, a fixed relative path. This one enumerates
+           the parent and takes whatever install turns up, so a folder holding
+           no usable data boots the neighbour instead. Right-looking launch,
+           different distribution, exit 0, and the only tell is the Assets line.
+           A demo folder beside a retail one does exactly this.
+
+           The clone-beside-an-install layout it exists for is legitimate, so
+           this stays a fallback rather than becoming a refusal like the
+           --game-dir and LBA2_GAME_DIR mismatches. It just has to say so. */
+        Log_Warn("RES_DISCOVERY: no game data in the folder this was run from. "
+                 "Using a neighbouring install: %s",
+                 outDir);
+        Log_Warn("Name the one you want with --game-dir if that is not it.");
+        return true;
+    }
+
+    LogFailure(tried, triedCount);
+    return false;
+}
+
+#ifdef __cplusplus
+}
+#endif

@@ -1,0 +1,552 @@
+#include "C_EXTERN.H"
+
+#include "DIRECTORIES.H"
+
+#include <SYSTEM/LOG.H>
+#include "AMBIANCE.H"
+
+/*══════════════════════════════════════════════════════════════════════════*
+				  █▀▀▀▀ █▀▀▀▄
+				  ██    ██  █
+				  ▀▀▀▀▀ ▀▀▀▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+#ifdef CDROM
+const char *CDDrive = "Z"; // Z by default
+S32 CDVolume = DEF_CD_VOLUME;
+
+#ifndef LBA_EDITOR
+void InitTabTracks(void); // voir plus bas...
+#endif
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+S32 InitCD(char *name) {
+#ifndef LBA_EDITOR
+    InitTabTracks();
+#endif
+    CDDrive = OpenCD(name);
+
+    if (CDDrive) {
+        SetVolumeCD(CDVolume);
+
+        return TRUE;
+    }
+
+    return FALSE;
+}
+#endif // CDROM
+
+/*══════════════════════════════════════════════════════════════════════════*
+			  █  █    ██▄ █ █▀▀▀▀ █     █▀▀▀▀
+		      ▄▄  █  ██   ██▀██ ██ ▀█ ██    ██▀▀
+		      ▀▀▀▀▀  ▀▀   ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+S32 JingleVolume = DEF_JINGLE_VOLUME;
+
+#define FIRST_JINGLE 2
+#define LAST_JINGLE 26
+
+#define NB_JINGLE 26
+
+char ListJingle[NB_JINGLE][9] = {
+    "", // pour interfacer avec la music CD (car Track 0 == NO_TRACK)
+    "TADPCM1",
+    "TADPCM2",
+    "TADPCM3",
+    "TADPCM4",
+    "TADPCM5",
+    "JADPCM01",
+    "TADPCM6", // Track6.wav
+    "JADPCM02",
+    "JADPCM03",
+    "JADPCM04",
+    "JADPCM05",
+    "JADPCM06",
+    "JADPCM07",
+    "JADPCM08",
+    "JADPCM09",
+    "JADPCM10",
+    "JADPCM11",
+    "JADPCM12",
+    "JADPCM13",
+    "JADPCM14",
+    "JADPCM15",
+    "JADPCM16",
+    "JADPCM17",
+    "JADPCM18",
+    "LOGADPCM",
+};
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void InitJingle(void) {
+    OpenStream(); // init Stream System
+    SetVolumeJingle(JingleVolume);
+    InstallFocusAudioHooks(); // pause music/samples while the window is unfocused
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+S32 GetNumJingle(char *name) {
+    char filename[9];
+    S32 n;
+
+    if (name AND strcmp(name, "")) {
+        strcpy(filename, GetFileName(name));
+
+        for (n = 1; n < NB_JINGLE; n++) {
+            if (!strcasecmp(ListJingle[n], filename)) {
+                return (n + FIRST_JINGLE - 1); // -1 car 0==NO_TRACK
+            }
+        }
+    }
+
+    return 0;
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void PlayJingle(S32 num) {
+    if (num >= FIRST_JINGLE AND num <= LAST_JINGLE AND JingleVolume > 0) {
+        LockTimer();
+
+        num -= FIRST_JINGLE;
+        num++; // car track 0 == NO_TRACK
+
+        char jingleFilename[ADELINE_MAX_PATH];
+        snprintf(jingleFilename, ADELINE_MAX_PATH, "%s.WAV", ListJingle[num]);
+
+        char jinglePath[ADELINE_MAX_PATH];
+        GetJinglePath(jinglePath, ADELINE_MAX_PATH, jingleFilename);
+
+        const bool playingTheSame = (strcasecmp(jinglePath, StreamName()) == 0);
+        if (!playingTheSame) {
+            PlayStream(jinglePath);
+        }
+
+        UnlockTimer();
+    }
+}
+
+/*══════════════════════════════════════════════════════════════════════════*
+			 █▄ ▄█ █   █ ██▀▀▀  █    █▀▀▀▀
+			 ██▀ █ ██  █ ▀▀▀▀█  ██   ██
+			 ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀  ▀▀   ▀▀▀▀▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+// Tableau d'indirection au cas où l'ordre change sur le CD après la saisie
+// dans l'outil
+
+#define JINGLE 0x80 // flag indiquant une track streamée
+#define MUSIC 0x7F  // pour avoir le numero de musique
+
+#define FIRST_CD_TRACK 6
+#define FIRST_CD_TRACK_US 0
+
+U8 FirstCDTrack = FIRST_CD_TRACK;
+
+U8 TrackCD[] = {
+    JINGLE | 2,  // Track01.wav
+    JINGLE | 3,  // Track02.wav
+    JINGLE | 4,  // Track03.wav
+    JINGLE | 5,  // Track04.wav
+    JINGLE | 6,  // Track05.wav
+    JINGLE | 7,  // Jingle01.wav
+    JINGLE | 8,  // Track06.wav
+    JINGLE | 9,  // Jingle02.wav
+    JINGLE | 10, // Jingle03.wav
+    JINGLE | 11, // Jingle04.wav
+    JINGLE | 12, // Jingle05.wav
+    JINGLE | 13, // Jingle06.wav
+    JINGLE | 14, // Jingle07.wav
+    JINGLE | 15, // Jingle08.wav
+    JINGLE | 16, // Jingle09.wav
+    JINGLE | 17, // Jingle10.wav
+    JINGLE | 18, // Jingle11.wav
+    JINGLE | 19, // Jingle12.wav
+    JINGLE | 20, // Jingle13.wav
+    JINGLE | 21, // Jingle14.wav
+    JINGLE | 22, // Jingle15.wav
+    JINGLE | 23, // Jingle16.wav
+    JINGLE | 24, // Jingle17.wav
+    JINGLE | 25, // Jingle18.wav
+    JINGLE | 26, // LogAdpcm.wav
+};
+
+U8 TrackCDUS[] = {
+    2,           // Track01.wav
+    3,           // Track02.wav
+    4,           // Track03.wav
+    5,           // Track04.wav
+    6,           // Track05.wav
+    7,           // Jingle01.wav
+    8,           // Track06.wav
+    JINGLE | 9,  // Jingle02.wav
+    JINGLE | 10, // Jingle03.wav
+    JINGLE | 11, // Jingle04.wav
+    JINGLE | 12, // Jingle05.wav
+    JINGLE | 13, // Jingle06.wav
+    JINGLE | 14, // Jingle07.wav
+    JINGLE | 15, // Jingle08.wav
+    JINGLE | 16, // Jingle09.wav
+    JINGLE | 17, // Jingle10.wav
+    JINGLE | 18, // Jingle11.wav
+    JINGLE | 19, // Jingle12.wav
+    JINGLE | 20, // Jingle13.wav
+    JINGLE | 21, // Jingle14.wav
+    JINGLE | 22, // Jingle15.wav
+    JINGLE | 23, // Jingle16.wav
+    JINGLE | 24, // Jingle17.wav
+    JINGLE | 25, // Jingle18.wav
+    JINGLE | 26, // LogAdpcm.wav
+};
+
+U8 *PtrTrackCD;
+
+#define TEST_MUSIC_TEMPO (2 * 1000) // 2s
+
+S32 NextMusic = -1;
+S32 StopLastMusic = FALSE;
+S32 NextMusicTimer;
+
+/*──────────────────────────────────────────────────────────────────────────*/
+#if defined(CDROM) && !defined(LBA_EDITOR)
+/* Note before changing anything here: since PlayMusic routes both tables
+   through PlayJingle, this selection no longer changes what plays. The two
+   tables hold identical music numbers and differ only in the JINGLE flag, which
+   nothing reads any more, and FirstCDTrack now only feeds GetMusic's CD branch,
+   which cannot be reached because nothing sets cdPlaying.
+
+   Kept rather than deleted: they are original data recording which entries the
+   US disc pressed as Red Book audio, which is the fact CDTRACKS depends on and
+   tests/cdtracks reads this file to check. The selection becoming inert is a
+   consequence of moving "where do the bytes come from" below PlayMusic, not a
+   sign the tables are wrong. */
+void InitTabTracks(void) {
+    switch (DistribVersion) {
+    case UNKNOWN_VERSION:
+    case EA_VERSION:
+        PtrTrackCD = TrackCD;
+        FirstCDTrack = FIRST_CD_TRACK;
+        break;
+
+    default:
+        PtrTrackCD = TrackCDUS;
+        FirstCDTrack = FIRST_CD_TRACK_US;
+    }
+}
+#endif
+
+/*──────────────────────────────────────────────────────────────────────────*/
+// Cette fonction doit orienter la musique soit sur une Track Audio, soit
+// sur du Streaming ADPCM
+
+void PlayMusic(S32 num, S32 playit) {
+    if (MusicLogIsEnabled())
+        Log_Info("[MUSIC] PlayMusic num=%d playit=%d", (int)num, (int)playit);
+
+    NextMusic = -1;
+
+    if (num != -1) {
+        S32 cur;
+
+        LockTimer();
+
+        if (playit OR StopLastMusic)
+            cur = 0;
+        else
+            cur = GetMusic();
+
+        StopLastMusic = playit;
+
+        if (cur == 0) {
+            if (!playit
+                    OR GetMusic() != (PtrTrackCD[num] & MUSIC)) {
+                StopMusic();
+
+                /* Both tables hold the same music numbers; TrackCDUS differs only
+                   in clearing JINGLE on the first seven, to say "this one is CD
+                   audio on the original medium rather than a file". That was a
+                   real fork under MILES, where CD audio came off the drive and
+                   files came off disk. Here every source ends up in PlayStream,
+                   which already resolves a music name against the filesystem, a
+                   mounted disc image and the cue's CD tracks in turn, so the
+                   distinction belongs below this point, not here.
+
+                   Routing both through PlayJingle is therefore the same music
+                   either way, and it is what lets a retail disc reach its CD
+                   audio at all: PlayCD looked for Track<nn>.wav relative to the
+                   working directory, found nothing, and returned without ever
+                   calling PlayStream.
+
+                   No separate CD-volume gate here. The old branch skipped
+                   playback when CDVolume was 0, which made sense when starting a
+                   track meant spinning up a drive. CDVolume is now just the
+                   music slider (GAMEMENU moves it and calls SetVolumeJingle with
+                   it), so gating on it would mean a release identified as US
+                   never starts its themes at zero volume while one identified as
+                   EU starts them silently and recovers when the slider comes
+                   back up. Volume belongs to the stream, not to whether the
+                   music begins. */
+                PlayJingle(PtrTrackCD[num] & MUSIC);
+            }
+        } else {
+            //			if( PtrTrackCD[cur-1]&JINGLE )// on n'empile pas sur une track
+            if (cur != (PtrTrackCD[num] & MUSIC)) // on n'empile pas sur la meme
+            {
+                NextMusic = num; // empile musique à jouer +tard
+                                 //				NextMusicTimer = TimerRefHR+TEST_MUSIC_TEMPO ;
+            }
+        }
+
+        NextMusicTimer = TimerRefHR + TEST_MUSIC_TEMPO;
+
+        UnlockTimer();
+    }
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+S32 GetMusic(void) {
+    S32 num;
+
+#ifdef CDROM
+    num = IsCDPlaying();
+#else
+    num = 0;
+#endif
+
+    if (!num) // pas de music CD
+    {
+        num = GetNumJingle(StreamName());
+    } else
+        num += FirstCDTrack;
+
+    return num;
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void StopMusic(void) {
+    if (MusicLogIsEnabled())
+        Log_Info("[MUSIC] StopMusic");
+#ifdef CDROM
+    StopCD();
+#endif
+    StopStream();
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void PauseMusic(S32 fade) {
+    if (MusicLogIsEnabled())
+        Log_Info("[MUSIC] PauseMusic fade=%d", (int)fade);
+
+    SaveTimer();
+
+    if (fade)
+        FadeOutVolumeMusic();
+
+#ifdef CDROM
+    PauseCD();
+#endif
+    PauseStream();
+
+    if (fade) {
+#ifdef CDROM
+        SetVolumeCD(CDVolume);
+#endif
+        SetVolumeJingle(JingleVolume);
+    }
+
+    RestoreTimer();
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void ResumeMusic(S32 fade) {
+    if (MusicLogIsEnabled())
+        Log_Info("[MUSIC] ResumeMusic fade=%d", (int)fade);
+
+    SaveTimer();
+
+    if (fade) {
+#ifdef CDROM
+        SetVolumeCD(0);
+#endif
+        SetVolumeJingle(0);
+    }
+
+    // Pause/Resume is a reversible pair: PauseMusic() parked the CD/stream and
+    // ResumeMusic() unparks it. The matching backend Resume owns the playback
+    // position -- the SDL backend keeps the paused device stream alive, while a
+    // redbook/ISO backend re-seeks the saved sector. So the layer must NOT Stop
+    // here: a Stop is destructive on a streamed backend (it tears down the SDL
+    // stream, leaving ResumeCD/ResumeStream with nothing to resume) and buys
+    // nothing on redbook (PauseCD already halted the drive; ResumeCD replays
+    // from the saved position). The original Adeline code called StopMusic()
+    // first -- a harmless no-op on MILES redbook, but it silently killed the
+    // SDL stream, so music never came back after the in-game menu / dialogue.
+#ifdef CDROM
+    ResumeCD();
+#endif
+    ResumeStream();
+
+    if (fade)
+        FadeInVolumeMusic();
+
+    StopLastMusic = FALSE;
+
+    RestoreTimer();
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+#define FADE_MUSIC_TIME 100 // 1/5s
+
+void FadeOutVolumeMusic(void) {
+    S32 timer;
+    /* Signed to match JingleVolume and CDVolume, which these are compared and
+       assigned against. They were unsigned while those globals were, and the two
+       have to agree or the comparison converts one side behind the reader's
+       back. */
+    S32 startjvol, jvolume, oldjvol;
+#ifdef CDROM
+    S32 startcdvol, cdvolume, oldcdvol;
+#endif
+
+    ManageTime();
+    SaveTimer();
+
+    timer = TimerRefHR;
+
+    startjvol = oldjvol = jvolume = GetVolumeStream();
+
+#ifdef CDROM
+    startcdvol = oldcdvol = cdvolume = GetVolumeCD();
+#endif
+
+    while (
+#ifdef CDROM
+        cdvolume > 0 OR
+#endif
+                       jvolume > 0) {
+        Timer_FixedDtPump(); // non-presenting wait: step the virtual clock under fixed-dt
+        ManageTime();
+#ifdef CDROM
+        // volume du CD
+        cdvolume = BoundRegleTrois(startcdvol, 0, FADE_MUSIC_TIME, TimerRefHR - timer);
+
+        if (cdvolume != oldcdvol) {
+            SetVolumeCD(cdvolume);
+            oldcdvol = cdvolume;
+        }
+#endif
+        // volume des Jingles
+        jvolume = BoundRegleTrois(startjvol, 0, FADE_MUSIC_TIME, TimerRefHR - timer);
+
+        if (jvolume != oldjvol) {
+            ChangeVolumeStream(jvolume);
+            oldjvol = jvolume;
+        }
+    }
+
+#ifdef CDROM
+    SetVolumeCD(0);
+#endif
+    ChangeVolumeStream(0);
+
+    RestoreTimer();
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void FadeInVolumeMusic(void) {
+    S32 timer;
+    /* Signed to match JingleVolume and CDVolume, which these are compared and
+       assigned against. They were unsigned while those globals were, and the two
+       have to agree or the comparison converts one side behind the reader's
+       back. */
+    S32 startjvol, jvolume, oldjvol;
+#ifdef CDROM
+    S32 startcdvol, cdvolume, oldcdvol;
+#endif
+
+    ManageTime();
+    SaveTimer();
+
+    timer = TimerRefHR;
+
+#ifdef CDROM
+    startcdvol = oldcdvol = cdvolume = GetVolumeCD();
+#endif
+
+    startjvol = oldjvol = jvolume = GetVolumeStream();
+
+    while (
+#ifdef CDROM
+        cdvolume < CDVolume OR
+#endif
+                       jvolume < JingleVolume) {
+        Timer_FixedDtPump(); // non-presenting wait: step the virtual clock under fixed-dt
+        ManageTime();
+#ifdef CDROM
+        // volume du CD
+        cdvolume = BoundRegleTrois(startcdvol, CDVolume, FADE_MUSIC_TIME, TimerRefHR - timer);
+
+        if (cdvolume != oldcdvol) {
+            SetVolumeCD(cdvolume);
+            oldcdvol = cdvolume;
+        }
+#endif
+        // volume des Jingles
+        jvolume = BoundRegleTrois(startjvol, JingleVolume, FADE_MUSIC_TIME, TimerRefHR - timer);
+
+        if (jvolume != oldjvol) {
+            SetVolumeJingle(jvolume);
+            oldjvol = jvolume;
+        }
+    }
+
+#ifdef CDROM
+    SetVolumeCD(CDVolume);
+#endif
+    SetVolumeJingle(JingleVolume);
+
+    RestoreTimer();
+}
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void CheckNextMusic(void) {
+    if (NextMusic != -1) {
+        // Retail parity (#406): after the defer window elapses, don't hard-cut the
+        // current track -- let it play out and start the queued one only once it has
+        // finished. IsStreamPlaying() reports EOF (and detaches the spent stream), so
+        // the switch fires cleanly the moment the current track ends.
+        //
+        // Drain with playit=FALSE (soft), not TRUE. The gate already guarantees the
+        // current stream has ended, so GetMusic() is 0 and the soft path plays the
+        // queued track immediately instead of re-deferring -- it still takes over
+        // (the intent of #355). The point of FALSE is that it leaves StopLastMusic
+        // clear, marking the queued track as an ordinary (soft) cube jingle. That
+        // matters on the NEXT cube change: ChangeCube() does `if (StopLastMusic)
+        // StopMusic()` (OBJECT.CPP), so a forced (TRUE) drain would get the queued
+        // jingle hard-stopped almost immediately in the next area and the deferred
+        // "play out, then switch" chain would only ever work for the first hop.
+        //
+        // #355 forced here because a soft re-defer looped forever when GetMusic()
+        // could not observe EOF (the jingle-layout stale-StreamName bug: IsCDPlaying()
+        // short-circuits on cdPlaying==0, so the finished-stream teardown never ran and
+        // a spent jingle looked like it was still playing). The IsStreamPlaying() gate
+        // removes that reason, so FALSE is both sufficient (still plays) and correct
+        // (keeps the soft-jingle semantics ChangeCube depends on).
+        if (TimerRefHR > NextMusicTimer AND !IsStreamPlaying()) {
+            PlayMusic(NextMusic, FALSE);
+        }
+    }
+}

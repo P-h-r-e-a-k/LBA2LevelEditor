@@ -1,0 +1,1497 @@
+#!/usr/bin/env bash
+# Session recorder: a recording replays into the same simulation it captured.
+#
+# The recorder carries its own oracle. Every tick it stores an FNV-1a digest of scene,
+# hero, camera, the other actors and all 336 script variables, and a replay recomputes
+# that digest and says the first tick where the two stop matching. So this test does
+# not need goldens or a dump to compare: it records a session, replays it, and asks the
+# engine whether it reproduced.
+#
+# Two runs, because the interesting failures are asymmetric. `--tick` present is the
+# harness-driven case every fixture uses; `--tick` absent is the case a player takes,
+# and it has its own history: with no tick budget the run used to finalize on its first
+# tick and disarm the hook that steps the fixed-dt clock, so a tick that presented
+# nothing banked no time and the recording carried a stall its replay never reproduced.
+# A suite that only ever ran the bounded form could not see that.
+#
+# --fixed-dt is not a convenience here. A recording made on a host-sampled clock does
+# not replay exactly (docs/plan/RECORDING_RESEARCH.md), so the pinned step is part of
+# what is under test rather than a way to make the test quicker.
+#
+# One arm is not a record-and-replay at all. recordings/legacy-v10.rec was captured by
+# an older engine, in a format this build reads and does not write, and is replayed as it
+# stands: a same-binary round trip cannot see a change that breaks the writer and the
+# reader together.
+TESTNAME="record_replay"
+. "$(dirname "$0")/lib.sh"
+precheck
+need_save
+# Three arms read the recording back with the reader that needs no engine. A box without
+# an interpreter is not a recording defect, so skip rather than fail, as lib.sh does for
+# its own python steps.
+command -v python3 >/dev/null 2>&1 || skip "no python3 (needed to read a recording back)"
+
+rec="$(user_dir)/session.rec"
+
+# The replay must not be told anything the recording did not carry, so both runs get
+# the same --load and the recording supplies the rest.
+#
+# Reports through CHECKED rather than stdout, and is called directly rather than in a
+# command substitution, because `fail` ends the shell it runs in: inside $( ) that is
+# the subshell, and the caller carries on to print PASS over the top of a failure.
+CHECKED=""
+record_and_replay() { # record_and_replay <label> [extra record args...]
+    local label="$1"
+    shift
+
+    # The siblings too, which nothing writes: a recording is one file, and the check
+    # below would otherwise report a leftover from another build as this run having
+    # written one.
+    rm -f "$rec" "$rec".lba "$rec".end.lba
+
+    ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$rec" \
+        --exec-at 30 "key up 60 2" "$@" \
+        >/dev/null 2>&1 ||
+        fail "$label: recording run exited non-zero ($?) — hang or crash"
+
+    [ -s "$rec" ] || fail "$label: no recording written to $rec"
+
+    # One file, and it carries the savegames at both ends of the session. Both halves
+    # are checked because either alone passes for the wrong reason: a recorder that
+    # stopped writing snapshots altogether would leave no siblings either, and a
+    # recorder that wrote them beside the file as well would still carry them inside.
+    for sibling in "$rec".lba "$rec".end.lba; do
+        if [ -e "$sibling" ]; then
+            fail "$label: a recording is one file, but $sibling was written"
+        fi
+    done
+    local saves
+    saves="$(python3 "$REPO/scripts/dev/dump_recording.py" "$rec" |
+        grep -m1 '^savegames:')" ||
+        fail "$label: could not read the recording back"
+    case "$saves" in
+    *"start none"*) fail "$label: the recording carries no start savegame ($saves)" ;;
+    *"end none"*) fail "$label: the recording carries no end savegame ($saves)" ;;
+    esac
+
+    # The header has to declare the arithmetic the session ran on, because that is what
+    # lets a replay on another platform open by naming what it disagrees about instead
+    # of diverging in the middle. A missing line is silent: the reader treats an absent
+    # field as nothing to compare, so the warning disappears rather than failing.
+    # tr drops the NULs before the substitution sees them: the header is text but the
+    # records after it are not, and bash warns and discards on a null byte in command
+    # substitution, which puts a warning in the suite output for every run.
+    local head
+    head="$(head -c 2048 "$rec" | tr -d '\0')"
+    case "$head" in
+    *"numeric.rng="*) ;;
+    *) fail "$label: the header does not declare numeric.rng" ;;
+    esac
+    case "$head" in
+    *"numeric.long_double_bits="*) ;;
+    *) fail "$label: the header does not declare numeric.long_double_bits" ;;
+    esac
+    # Whether audio came up is a simulation input rather than a presentation detail: the
+    # ambience pan is drawn only `if (!IsSamplePlaying(...))`, from the one stream actor
+    # behaviour draws from, and a dialogue with the text off runs until the voice sample
+    # ends. Asserted as 0 rather than merely present, because every run in this file is
+    # headless and a line that reported the flag instead of the driver would say so.
+    case "$head" in
+    *"mode.audio=0"*) ;;
+    *) fail "$label: the header does not declare mode.audio=0, and this run is headless" ;;
+    esac
+
+    # More ticks than the recording holds, so the stream runs out and the summary
+    # prints. Ending on --tick first means no summary at all, and a run that reported
+    # nothing reads exactly like a run that passed.
+    local out
+    out="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$rec" --tick 400 --exit 2>&1)" ||
+        fail "$label: replay run exited non-zero ($?) — hang or crash"
+
+    case "$out" in
+    *"consistency failure"*)
+        fail "$label: $(printf '%s\n' "$out" | grep -m1 'consistency failure')"
+        ;;
+    esac
+
+    # A replay that never checked a tick is not a replay that matched. The summary is
+    # the only line that says how many were compared.
+    local summary
+    summary="$(printf '%s\n' "$out" | grep -m1 'replay ended')" ||
+        fail "$label: replay printed no summary; it cannot be said to have matched"
+
+    local checked
+    checked="$(printf '%s\n' "$summary" | sed -n 's/.*: \([0-9]*\) ticks checked.*/\1/p')"
+    [ -n "$checked" ] && [ "$checked" -gt 100 ] ||
+        fail "$label: only ${checked:-0} ticks checked — the oracle barely ran ($summary)"
+
+    case "$summary" in
+    *"first hash mismatch -1"*) ;;
+    *) fail "$label: $summary" ;;
+    esac
+
+    CHECKED="$checked"
+    POLLS="$(printf '%s\n' "$summary" | sed -n 's/.*replay ended at poll \([0-9]*\).*/\1/p')"
+}
+
+record_and_replay "with --tick" --tick 300 --exit
+bounded="$CHECKED"
+
+# Unbounded: the player's form. Nothing ends the run, so the recording is stopped by a
+# console command on a tick of its own and the run quits there. That command only
+# arrives if the tick hook is still armed, which is the property this arm exists for:
+# a run that finalizes on its first tick never reaches tick 300 and times out here.
+record_and_replay "without --tick" --exec-at 300 "rec stop; exit"
+unbounded="$CHECKED"
+
+# Across a video. PlayAcf paces its frames in a wait of its own, outside MainLoop, and
+# that wait polls input every iteration, so it is the one place in a session where the
+# number of polls between two ticks is settled by something other than the recording. It
+# is also the only thing moving the clock while a video is on screen. Timed against the
+# wall neither is the same twice: the same session recorded twice on one idle machine
+# held 888 ticks over 35328 polls and 859 over 35264, and each replay diverged on the
+# tick the video started, 1.8 and 1.3 seconds of clock drift apart. Under load the replay
+# ran out of stream inside the video and reported "first hash mismatch -1" over 51 of 901
+# ticks, which is the shape that makes this worth an arm rather than a note: the verdict
+# line said the recording reproduced.
+#
+# No fixture reached this loop's exit before. test_ui_video.sh plays a video, but its
+# capture fires on frame 25 and leaves through fin_play, so what had been covered was
+# decode and letterbox centring and not the pacing at all.
+#
+# 60 rather than 30 so the video starts after the input above has been consumed, and the
+# ticks either side of it are ordinary ones.
+record_and_replay "across a video" --tick 300 --exit --exec-at 60 "playvideo BALDINO.SMK"
+
+# That the video played, which nothing above establishes: PlayAcf returns quietly when
+# there is no movie bank (the demo ships none), and a session that skipped the cutscene
+# replays perfectly for the wrong reason. A session without one polls about once a tick;
+# this one spends thousands of polls inside the cinematic and none of them are ticks.
+[ -n "${POLLS:-}" ] && [ "$POLLS" -gt $((CHECKED * 2)) ] ||
+    fail "across a video: ${POLLS:-0} polls over $CHECKED ticks — no video played, so the arm proved nothing"
+vidchecked="$CHECKED"
+vidpolls="$POLLS"
+
+# A recording cut off mid-snapshot, which is what a process killed while writing one
+# leaves behind. The frame's refusal is the whole safety argument for keeping the
+# savegames inside the file, and tests/record_format proves it over a buffer through a
+# reader written for the test. This drives the engine's own reader over a real file, so
+# the two cannot drift: cut inside the start chunk, the replay has to say so and check
+# nothing, rather than hand the save loader a savegame that stops early.
+torn="$(user_dir)/torn.rec"
+
+# Two ways a chunk fails to close. `cut` stops inside the payload, which is what a
+# process killed mid-write leaves, and the reader has several ways to notice it: the
+# short payload, the missing tail, and the tail comparison all refuse it, so this arm
+# shows the behaviour rather than isolating one check. `magic` keeps every byte and
+# damages the word behind them, which nothing but the tail comparison can see -- that
+# one fails the moment the comparison is removed, which is what makes it the oracle for
+# the claim the single-file layout rests on.
+damage_recording() { # damage_recording <how> <src> <dst>
+    python3 - "$1" "$2" "$3" <<'EOF'
+import struct, sys
+how, src, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+d = open(src, "rb").read()
+at = d.find(b"\n\n") + 2
+length = struct.unpack_from("<I", d, at + 1)[0]
+if how == "cut":
+    out = d[:at + 5 + length // 2]
+else:
+    out = bytearray(d)
+    out[at + 5 + length + 7] ^= 0xFF  # the magic's top byte
+open(dst, "wb").write(bytes(out))
+EOF
+}
+
+for how in cut magic; do
+    damage_recording "$how" "$rec" "$torn" || fail "torn/$how: could not build the file"
+
+    tout="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$torn" --tick 300 --exit 2>&1)" ||
+        fail "torn/$how: replay run exited non-zero ($?) — hang or crash"
+
+    case "$tout" in
+    *"incomplete"*) ;;
+    *)
+        fail "torn/$how: a recording whose snapshot does not close was not refused; $(
+            printf '%s\n' "$tout" | grep -m1 'replay ended' || echo 'the replay said nothing')"
+        ;;
+    esac
+    # What "refused" costs the rest of the file, which is not the same answer for the two
+    # damages and is the reason they are both here.
+    #
+    # `cut` takes the bytes away, so the length in the chunk head points past the end and
+    # there is no stream behind it: the reader has to check nothing rather than read a
+    # savegame's bytes as input.
+    #
+    # `magic` keeps every byte and damages only the word behind them, so the chunk is
+    # stepped over by its own length and the records after it are intact. The refusal is
+    # of the snapshot, not of the file, and the ticks behind it check normally: measured,
+    # 301 of them with no mismatch. That is worth knowing rather than asserting away --
+    # a replay that has refused the state the recording started from is answering from a
+    # precondition it could not establish, which is the shape
+    # [RECORDER_OBSERVER_REVIEW.md]'s first item is about. It is not a regression: the
+    # same file checked the same 301 ticks before the verdict was printed from every exit,
+    # and the count was invisible rather than zero.
+    tchecked="$(printf '%s\n' "$tout" | sed -n 's/.*: \([0-9]*\) ticks checked.*/\1/p')"
+    case "$how" in
+    cut)
+        [ "${tchecked:-0}" = "0" ] ||
+            fail "torn/cut: the bytes are gone, but the reader checked $tchecked ticks out of them"
+        ;;
+    magic)
+        # The positive half, and it is the one that would catch a reader stepping over the
+        # chunk by anything other than its own length: every byte is present, so the stream
+        # behind the damage has to still be a stream. A reader that lost its place here
+        # would check a handful of ticks out of savegame bytes, or none, rather than the
+        # whole file. Bounded below rather than pinned to the recording's exact length, so
+        # the arm does not have to move when the runs above change their tick count.
+        [ -n "$tchecked" ] && [ "$tchecked" -gt 100 ] ||
+            fail "torn/magic: every byte is present, but the reader checked only ${tchecked:-0} ticks behind the damaged chunk — it did not step over it by its length"
+        ;;
+    esac
+done
+rm -f "$torn"
+
+# A replay that stops short must not print the success string. `replay ended ... first hash
+# mismatch -1` is what a caller greps to mean the recording reproduced, and a run that
+# covered a fraction of the file can carry a -1 honestly -- it matched every tick it reached
+# -- while not having replayed the session. #656 gave the stall and the menu their own
+# outcomes for exactly this reason; a stream that runs out early is the third way and was
+# still printing the verdict.
+#
+# Driven with a short --tick rather than by reproducing the original: that failure was a
+# busy machine desyncing the poll stream inside a video, which is load-dependent and cannot
+# be asked for. Coverage is the property under test and an under-budget run produces it
+# deterministically. Measured: this recording holds about 255 ticks, so a 100-tick budget
+# covers 39% of it and the check fires; the arms above run 300+ and stay clean.
+short="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$rec" --tick 100 --exit 2>&1)" ||
+    fail "short-replay: run exited non-zero ($?) — hang or crash"
+
+case "$short" in
+*"first hash mismatch -1"*)
+    fail "short-replay: a run that covered part of the recording printed the success string; $(
+        printf '%s\n' "$short" | grep -m1 'replay ended')"
+    ;;
+esac
+
+case "$short" in
+*"covered only part of the recording"*) ;;
+*)
+    fail "short-replay: the verdict was withheld but nothing said why; $(
+        printf '%s\n' "$short" | grep -m1 '\[rec\]' || echo 'the replay said nothing')"
+    ;;
+esac
+
+# The count survives in whatever line replaces the verdict. Every caller that reads a tick
+# count out of this output -- the torn arms above included -- parses it this way, so the
+# withheld form has to keep carrying it.
+schecked="$(printf '%s\n' "$short" | sed -n 's/.*: \([0-9]*\) ticks checked.*/\1/p')"
+[ -n "$schecked" ] && [ "$schecked" -gt 0 ] ||
+    fail "short-replay: the withheld verdict dropped the tick count callers parse (${schecked:-empty})"
+
+# And a full run over the same recording still gets its verdict, so the check discriminates
+# on coverage rather than just refusing everything.
+full="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$rec" --tick 400 --exit 2>&1)" ||
+    fail "short-replay: the full-coverage control exited non-zero ($?)"
+case "$full" in
+*"first hash mismatch -1"*) ;;
+*) fail "short-replay: full coverage over the same recording was denied its verdict; $(
+       printf '%s\n' "$full" | grep -m1 '\[rec\]')" ;;
+esac
+
+# The default home. A name with no directory in it is a name in <userDir>/recordings/,
+# and the point of that is symmetry: the name a session was recorded under is the name it
+# replays under, from whatever directory the run happens to start in. Recorded and replayed from
+# a directory that holds no recording of its own, so a pass cannot come from the working
+# directory answering instead of the folder.
+bare="bare-name.rec"
+recdir="$(user_dir)/recordings"
+rm -f "$recdir/$bare"
+# Removed by a trap rather than at the end of the arm: `fail` exits the shell, so every
+# assertion below is a way out of here that never reaches an inline rm.
+here="$(mktemp -d)"
+# Every temp directory this file makes goes on one list, and the trap reads the list.
+# The alternative, which this replaced, was a fresh trap per arm repeating every
+# directory before it: seven of them by the end, each a chance to drop one. One was
+# dropped, and the leak it left is invisible to every check the suite runs.
+# An array, and quoted in the trap. A plain string would word-split, so a TMPDIR with a
+# space in it would hand `rm -rf` the pieces rather than the path.
+CLEAN=("$here")
+clean_add() { CLEAN+=("$1"); }
+trap 'rm -rf "${CLEAN[@]}"' EXIT
+
+(cd "$here" && ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$bare" --tick 200 --exit) \
+    >/dev/null 2>&1 ||
+    fail "bare name: recording run exited non-zero ($?) — hang or crash"
+
+[ -s "$recdir/$bare" ] ||
+    fail "bare name: nothing at $recdir/$bare; a name with no directory in it belongs there"
+if [ -e "$here/$bare" ]; then
+    fail "bare name: written to the working directory instead of $recdir"
+fi
+
+bareout="$(cd "$here" && ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$bare" \
+    --tick 300 --exit 2>&1)" ||
+    fail "bare name: replay run exited non-zero ($?) — hang or crash"
+
+case "$bareout" in
+*"first hash mismatch -1"*) ;;
+*)
+    fail "bare name: $(printf '%s\n' "$bareout" |
+        grep -m1 -e 'replay ended' -e 'cannot open' || echo 'the replay said nothing')"
+    ;;
+esac
+
+# A recording this build does not write.
+#
+# Every arm above records and replays with the same binary, which cannot catch a change
+# that breaks both ends together -- and that is the class the format has already been
+# bitten by. legacy-v10.rec is a format-10 session, captured once and never regenerated;
+# tests/automation/recordings/README.md says why not.
+#
+# Two properties, and they fail differently. The tick count says the reader walked the
+# stream correctly, which is what a record whose layout moved would break. The clean
+# result says the sibling savegame was found and loaded, which is the only coverage the
+# pre-single-file snapshot path has: measured, the same file with its .rec.lba moved
+# away diverges at tick 0.
+legacy="$REPO/tests/automation/recordings/legacy-v10.rec"
+legacy_save="$REPO/tests/savegame/corpus/saves/steam_classic_2023/Anon1.LBA"
+if [ ! -f "$legacy" ] || [ ! -f "$legacy".lba ]; then
+    fail "the legacy recording is missing from $REPO/tests/automation/recordings"
+fi
+[ -f "$legacy_save" ] || skip "fixture save missing: $legacy_save"
+
+lout="$(ctl --fixed-dt 16 --load "$legacy_save" --replay "$legacy" --tick 300 --exit 2>&1)" ||
+    fail "legacy: replay run exited non-zero ($?) — hang or crash"
+
+case "$lout" in
+*"is format"*)
+    fail "legacy: $(printf '%s\n' "$lout" | grep -m1 'is format')"
+    ;;
+esac
+
+lsummary="$(printf '%s\n' "$lout" | grep -m1 'replay ended')" ||
+    fail "legacy: the replay printed no summary; it cannot be said to have read the file"
+
+lchecked="$(printf '%s\n' "$lsummary" | sed -n 's/.*: \([0-9]*\) ticks checked.*/\1/p')"
+[ "$lchecked" = "198" ] ||
+    fail "legacy: read ${lchecked:-0} ticks, the file holds 198 — the reader has lost the stream"
+
+case "$lsummary" in
+*"first hash mismatch -1"*) ;;
+*)
+    # Every differing mode line, not the first: a divergence from different retail data
+    # reads exactly like a reader bug, and the line that says so can sit behind an
+    # engine version that differs on any working tree.
+    fail "legacy: $lsummary; $(printf '%s\n' "$lout" | grep 'mode differs' | tr '\n' ';' ||
+        echo 'no mode line differed, so this is the format path')"
+    ;;
+esac
+
+# Verbose telemetry. A plain recording carries one digest a tick, which can say that a
+# tick stopped matching and never which of ~1300 values moved; --record-telemetry stores
+# them all. Only the recording run needs it: the replay's reporter reads the values out of
+# the file, so a replay that passed the flag would be arming nothing.
+# Recorded once and replayed twice: once expecting clean, and once with a variable
+# deliberately changed part-way through. The second run is the point. A reporter that
+# printed nothing would pass the first check exactly like one that works, and this is a
+# diagnostic whose whole job is to be believed on the day something real diverges.
+rm -f "$rec" "$rec".lba "$rec".end.lba
+
+ctl --record-telemetry --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$rec" \
+    --exec-at 30 "key up 60 2" --tick 300 --exit >/dev/null 2>&1 ||
+    fail "verbose: recording run exited non-zero ($?) — hang or crash"
+
+vout="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$rec" --tick 400 --exit 2>&1)" ||
+    fail "verbose: replay run exited non-zero ($?) — hang or crash"
+case "$vout" in
+*"consistency failure"*)
+    fail "verbose: $(printf '%s\n' "$vout" | grep -m1 'consistency failure')"
+    ;;
+esac
+
+# Changing a game variable under the replay is a divergence the recording cannot know
+# about, so the report has to come from comparing the stored values against the live
+# ones. The check is on the output and not on the exit code, because measured, a replay
+# that diverges under --tick still exits 0: the exit code carries the replay's verdict
+# only on the path that has no tick budget (SOURCES/RECORD.CPP, Record_PollHook). The
+# `|| true` is there for that path rather than this one.
+bout="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$rec" --tick 400 \
+    --exec-at 200 "vargame 77 42" --exit 2>&1 || true)"
+case "$bout" in
+*"var.game[77]"*) ;;
+*)
+    # Which half failed matters: a divergence reported but unnamed is the telemetry,
+    # no divergence at all is the injection.
+    fail "verbose: the replay did not name var.game[77]; $(printf '%s\n' "$bout" |
+        grep -m1 -e 'consistency failure' -e 'state differs' || echo 'no divergence reported')"
+    ;;
+esac
+
+# The other half of the mode.audio check above. That one shows the line is written; this
+# shows the replay acts on it, which is the half that decides whether a recording made
+# with sound is caught or reported as the simulation diverging. With no sample driver
+# `IsSamplePlaying` is an unconditional no rather than a differently timed yes, so the
+# two runs take different branches and the line is the only warning there is.
+#
+# Flipping the recorded answer is what shows the comparison can fail. One byte, so the
+# stream behind the header is untouched and the replay still runs to the end.
+flipped="$(user_dir)/audio-flipped.rec"
+python3 - "$rec" "$flipped" <<'EOF' || fail "audio: could not flip the recorded audio state"
+import sys
+d = open(sys.argv[1], "rb").read()
+n = d.replace(b"mode.audio=0", b"mode.audio=1", 1)
+assert len(n) == len(d) and n != d, "the flip has to be one byte and has to change something"
+open(sys.argv[2], "wb").write(n)
+EOF
+
+aout="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$flipped" \
+    --tick 400 --exit 2>&1)" ||
+    fail "audio: replay run exited non-zero ($?): hang or crash"
+rm -f "$flipped"
+
+case "$aout" in
+*"mode differs: mode.audio=1"*) ;;
+*)
+    fail "audio: a recording made with sound replayed silently without a word; $(
+        printf '%s\n' "$aout" | grep -m1 'mode differs' || echo 'no mode line differed at all')"
+    ;;
+esac
+
+# Neither arm above can tell the engine writes anything but 0. Every other run in this
+# file is headless, so `mode.audio=0` is also exactly what an accessor stuck at 0 would
+# produce, and the flip is an edit to a file rather than something the engine said. This
+# one opens a real sample device and asks for the other answer.
+#
+# Not `ctl`, which pins --headless, and --headless is the thing under test. SDL's dummy
+# drivers give a device without needing a screen or a speaker. A box that will not start
+# SDL with them is not a recording defect, so skip, and name the reason so a skip cannot
+# quietly become the normal outcome.
+withaudio="$(user_dir)/with-audio.rec"
+rm -f "$withaudio"
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+    timeout "$LBA2_TEST_TIMEOUT" "$LBA2_BIN" --no-autosave --load "$LBA2_TEST_SAVE" \
+    --record "$withaudio" --tick 60 --exit >/dev/null 2>&1 ||
+    skip "SDL would not start under its dummy video and audio drivers, so no recording can be made with a device up"
+[ -s "$withaudio" ] || skip "the run with a sample device wrote no recording"
+
+grep -aq 'mode.audio=1' "$withaudio" ||
+    fail "audio: a run with a sample device up still recorded mode.audio=0, so the line reports something other than the driver"
+
+# The case the line exists for, end to end. Only the mode line is asserted: this
+# recording pins no step, so what it diverges on afterwards is the clock rather than the
+# audio, and the warning is the part that has to arrive either way.
+wout="$(ctl --replay "$withaudio" --tick 200 --exit 2>&1 || true)"
+rm -f "$withaudio"
+case "$wout" in
+*"mode differs: mode.audio=1"*) ;;
+*)
+    fail "audio: a recording made with a device up replayed headless without a word; $(
+        printf '%s\n' "$wout" | grep -m1 'mode differs' || echo 'no mode line differed at all')"
+    ;;
+esac
+
+# --- the step's arming point, carried but not compared ---------------------------------
+#
+# Timer_EnableFixedDt seeds the virtual clock where it is called, so a session that armed
+# its step part-way through its own run spent the ticks before that on a different clock
+# from a replay that arms before its first. mode.fixed_dt cannot say so: it records that
+# the step was pinned and not when, and both runs write 16.
+#
+# Carried for the reader rather than compared, and the arm asserts both halves of that.
+# A difference here predicts nothing: measured, the mismatched pair replays exactly as
+# clean as the matched one, so reporting it would spend the mode warning on runs that
+# reproduce. What it records is that a window exists between the load and the arming which
+# the two runs spent differently, and that only matters to something writing into it.
+armdir="$(mktemp -d)"
+clean_add "$armdir"
+
+# Armed from the console part-way through the run, so the recorded tick is not 0.
+LBA2_USER_DIR="$armdir" ctl --load "$LBA2_TEST_SAVE" \
+    --exec-at 20 "rec start" --exec-at 120 "rec stop" --tick 200 --exit >/dev/null 2>&1 ||
+    fail "arming: the recording run exited non-zero ($?)"
+armrec="$(ls "$armdir"/recordings/*.rec 2>/dev/null | head -1)"
+[ -n "$armrec" ] || fail "arming: the run wrote no recording to $armdir/recordings"
+
+armtick="$(head -c 800 "$armrec" | tr -d '\0' | sed -n 's/.*mode\.step_armed_tick=\([0-9-]*\).*/\1/p' | head -1)"
+[ -n "$armtick" ] ||
+    fail "arming: the recording carries no mode.step_armed_tick, so nothing records when the step was armed"
+
+# Non-zero, because a field that wrote 0 everywhere would satisfy the quiet assertion
+# below by never differing rather than by working.
+[ "$armtick" -gt 0 ] ||
+    fail "arming: a session that armed its step from the console recorded mode.step_armed_tick=$armtick, which is where a run armed before its first tick would be"
+
+# And the replay, which arms before tick 0, must record the other value and say nothing
+# about the difference. Silence is the assertion: this is provenance, not a contract.
+armout="$(LBA2_USER_DIR="$armdir" ctl --load "$LBA2_TEST_SAVE" --replay "$armrec" \
+    --tick 300 --exit 2>&1 || true)"
+case "$armout" in
+*"step_armed_tick"*)
+    fail "arming: the arming point was reported as a difference on a replay that reproduces: $(
+        printf '%s\n' "$armout" | grep -m1 'step_armed_tick')"
+    ;;
+esac
+
+# The reason it may stay quiet, asserted rather than assumed: that replay reproduced.
+case "$armout" in
+*"first hash mismatch -1"*) ;;
+*)
+    fail "arming: the mismatched pair did not replay clean, so the field is withheld from a case that does diverge: $(
+        printf '%s\n' "$armout" | grep -m1 -e 'replay ended' -e 'consistency' || echo 'no verdict')"
+    ;;
+esac
+
+# The loop a player can drive: record in one session, replay in the next, with nothing
+# typed at either end and no flags at all.
+#
+# Two runs rather than one, and that is the whole point of the arm. In a single process
+# `rec play` inherits a step the earlier `rec start` already pinned and a scene it is
+# already in, so it cannot see either of the things this checks. A second process starts
+# with neither, which is what a player does and what every check below turns on.
+#
+# No --fixed-dt. Every arm above pins the step on the command line, so none of them can
+# see whether a session already in progress pins its own -- the difference between a
+# recorder a harness drives and one a player can reach, since a player is already playing
+# and cannot be sent back to a command line to relaunch.
+#
+# No path either. `rec start` names the session after the time of day, and `rec play` in
+# the second run has no recording of its own to remember, so it goes and finds the most
+# recent one in the folder. That is the cross-session half of the no-argument form, and
+# only a second process exercises it.
+#
+# Its own user directory, so the recordings folder starts empty: the arms above have
+# already put files in the suite's own, and "exactly one recording" is what says the
+# auto-name landed where it belongs rather than somewhere that already had a file.
+loopdir="$(mktemp -d)"
+clean_add "$loopdir"
+
+LBA2_USER_DIR="$loopdir" ctl --load "$LBA2_TEST_SAVE" \
+    --exec-at 20 "rec start" --exec-at 120 "key up 60 2" \
+    --exec-at 220 "rec stop" --tick 300 --exit >/dev/null 2>&1 ||
+    fail "console loop: the recording run exited non-zero ($?) — hang or crash"
+
+# Counted with -e per entry, because the shell hands back the pattern itself when nothing
+# matches it: an unmatched glob would otherwise count as one file named `session-*.rec`,
+# which is the case this assertion exists to catch.
+loopcount=0
+looprec=""
+for f in "$loopdir"/recordings/session-*.rec; do
+    if [ -e "$f" ]; then
+        loopcount=$((loopcount + 1))
+        looprec="$f"
+    fi
+done
+[ "$loopcount" -eq 1 ] ||
+    fail "console loop: expected one auto-named recording in $loopdir/recordings, found $loopcount"
+
+loopout="$(LBA2_USER_DIR="$loopdir" ctl --load "$LBA2_TEST_SAVE" \
+    --exec-at 20 "rec play" --tick 600 --exit 2>&1)" ||
+    fail "console loop: the replay run exited non-zero ($?) — hang or crash"
+
+case "$loopout" in
+*"first hash mismatch -1"*) ;;
+*)
+    fail "console loop: $(printf '%s\n' "$loopout" |
+        grep -m1 -e 'replay ended' -e 'cannot open' -e 'recordings in' ||
+        echo 'the replay said nothing')"
+    ;;
+esac
+
+# The replay pins its step and loads its scene after the file is opened, so a mode
+# comparison made at open time reports the step of the run that has not armed one yet --
+# a warning that this replay may not reproduce, on a replay that reproduces exactly, every
+# time. A warning is worth having only if it stays quiet when nothing is wrong, and this
+# is the run that can tell: the check above has already said the two agreed on every tick.
+case "$loopout" in
+*"mode differs"*)
+    fail "console loop: $(printf '%s\n' "$loopout" | grep -m1 'mode differs') — but the replay was clean"
+    ;;
+esac
+
+# Nothing to play. Reported rather than silent, and naming the folder it looked in:
+# without that the answer is indistinguishable from a replay that started and did nothing.
+emptydir="$(mktemp -d)"
+clean_add "$emptydir"
+emptyout="$(LBA2_USER_DIR="$emptydir" ctl --load "$LBA2_TEST_SAVE" \
+    --exec-at 20 "rec play" --tick 60 --exit 2>&1)" ||
+    fail "console loop: the empty-folder run exited non-zero ($?) — hang or crash"
+case "$emptyout" in
+*"no .rec recordings in"*) ;;
+*) fail "console loop: 'rec play' with no recordings to play said nothing about it" ;;
+esac
+
+# `rec start verbose`: the diagnostic recording, asked for from inside the game.
+#
+# --record-telemetry arms the same telemetry for a whole run, and that is the wrong shape
+# for the case that wants it. A player watching something go wrong cannot go back and
+# relaunch with the flag, and by the time they have, the session that showed it is gone.
+# The word on the command is the same telemetry from the middle of a session, and it has
+# one thing to prove: that the ask survives the snapshot-and-reload a mid-session start
+# goes through, which lands a couple of ticks after the command that made it.
+#
+# Read back with no engine in the loop, because the question is what the file carries.
+# The console saying it armed something and the stream holding the records are separate
+# claims, and only the second one is any use a week later.
+verbdir="$(mktemp -d)"
+clean_add "$verbdir"
+
+LBA2_USER_DIR="$verbdir" ctl --load "$LBA2_TEST_SAVE" \
+    --exec-at 20 "rec start verbose" --exec-at 120 "key up 60 2" \
+    --exec-at 220 "rec stop" --tick 300 --exit >/dev/null 2>&1 ||
+    fail "verbose console: the recording run exited non-zero ($?) — hang or crash"
+
+verbrec=""
+for f in "$verbdir"/recordings/session-*.rec; do
+    if [ -e "$f" ]; then verbrec="$f"; fi
+done
+[ -n "$verbrec" ] || fail "verbose console: nothing recorded under $verbdir/recordings"
+
+verbcounts="$(python3 "$REPO/scripts/dev/dump_recording.py" "$verbrec" | grep -m1 '^polls=')" ||
+    fail "verbose console: could not read $verbrec back"
+case "$verbcounts" in
+*"telemetry=0 "*) fail "verbose console: 'rec start verbose' recorded no telemetry ($verbcounts)" ;;
+esac
+
+# The control, and it is what makes the check above mean anything: the console loop
+# recorded the same scene without the word, so a recorder that wrote telemetry for every
+# session would pass the assertion above and fail here.
+loopcounts="$(python3 "$REPO/scripts/dev/dump_recording.py" "$looprec" | grep -m1 '^polls=')" ||
+    fail "verbose console: could not read $looprec back"
+case "$loopcounts" in
+*"telemetry=0 "*) ;;
+*) fail "verbose console: a plain 'rec start' recorded telemetry anyway ($loopcounts)" ;;
+esac
+
+# Did the session do anything?
+#
+# Every arm above asserts that a replay agrees with its recording, and none asserts that
+# there was anything to agree about. A recording of a hero who never moved replays clean
+# and says nothing, and that is not hypothetical here: LBA2_TEST_SAVE is the game opening,
+# where the scene's own script owns the hero and injected input is inert, so those arms
+# record a stationary session and the per-tick digest faithfully confirms that one
+# stationary session reproduces another. A bug that froze the game clock outright -- hero
+# unable to walk, game time not advancing at all -- passed every one of them.
+#
+# So this arm walks the hero and asks three separate questions: did he move while
+# recording, did the replay move him, and did it put him in the same place.
+#
+# The in-tree corpus save rather than LBA2_TEST_SAVE, because the answer has to come from
+# a scene where input reaches the hero and that cannot depend on which save a machine
+# happens to point at. No --fixed-dt either: the step the recorder pins for itself is the
+# path the frozen clock was on, and the flag hid it.
+#
+# DO NOT ADD --fixed-dt TO THE RECORDING RUN. It would make this arm green on the day it
+# is doing its job, and it is the only arm that can do it. Without the flag `rec start`
+# arms the step at tick 20, after the load; a --replay arms from the header before the
+# load. Both runs then declare mode.fixed_dt=16 and the header comparison reports no
+# difference, because the header records THAT the step was pinned and not WHEN, so the
+# two runs disagree about a window nothing compares. Anything that puts work into that
+# window diverges here and nowhere else.
+#
+# The loose arm below cannot cover this: it runs unpinned on purpose but asserts
+# termination only, and says why -- a comparison there is flaky by construction. So this
+# is the suite's only comparison across mismatched step arming, and adding the flag would
+# blind both arms at once while looking like a fix.
+movesave="$REPO/tests/savegame/corpus/saves/steam_classic_2023/Anon1.LBA"
+[ -f "$movesave" ] || fail "movement: the corpus save is missing from $movesave"
+
+movedir="$(mktemp -d)"
+clean_add "$movedir"
+
+# hero_xz <state.json> -- the engine's own dump, because `status` reports Nxw/Nyw/Nzw,
+# which are collision scratch and not the hero.
+hero_xz() {
+    python3 -c "
+import json, sys
+h = json.load(open(sys.argv[1]))['hero']
+print(h['x'], h['z'])" "$1"
+}
+
+# The control is the same command line with the input taken out, rather than a plain idle
+# run: `rec start` pins the step and a run without it free-runs on the host clock, so a
+# control missing both would be answering about two variables at once and could pass on
+# the wrong one. Here the only difference between the two runs is the key.
+#
+# `key` rather than `input`, and that is not interchangeable. `key` holds a raw scancode in
+# TabKeys, which is where a player's input arrives and what the recorder captures at the
+# poll hook. `input` is OR'd straight into Input by MainLoop and never touches TabKeys, so
+# a recording only reproduces it because the console command itself was recorded and runs
+# again -- which would leave this arm passing while testing command replay rather than
+# input replay.
+# Its own profile, so the folder the replay below reads holds exactly one recording and
+# `rec play` with no argument cannot pick the control's by accident.
+LBA2_USER_DIR="$movedir/control" ctl --load "$movesave" \
+    --exec-at 20 "rec start" --exec-at 620 "rec stop" \
+    --tick 700 --dump-state "$movedir/idle.json" --exit >/dev/null 2>&1 ||
+    fail "movement: the control run exited non-zero ($?) — hang or crash"
+
+LBA2_USER_DIR="$movedir" ctl --load "$movesave" \
+    --exec-at 20 "rec start" --exec-at 200 "key up 300" --exec-at 620 "rec stop" \
+    --tick 700 --dump-state "$movedir/rec.json" --exit >/dev/null 2>&1 ||
+    fail "movement: the recording run exited non-zero ($?) — hang or crash"
+
+idle_xz="$(hero_xz "$movedir/idle.json")" || fail "movement: could not read the control state dump"
+rec_xz="$(hero_xz "$movedir/rec.json")" || fail "movement: could not read the recorded state dump"
+
+if [ "$idle_xz" = "$rec_xz" ]; then
+    fail "movement: the hero is at $rec_xz with input and $idle_xz without it — the recorded session never moved, so a clean replay of it would prove nothing"
+fi
+
+# Replayed through --replay rather than the console `rec play`, because this arm asks
+# where the replay *left* the hero and `rec play` no longer leaves him there: a
+# console-driven playback saves the player's session first and puts it back when the
+# replay ends, so the state at exit would be the restore rather than the replay. The flag
+# path takes no return point -- that run exists to replay and exit -- so it is the one
+# that can still be asked this question. The restore has an arm of its own below.
+moverec="$(ls "$movedir"/recordings/*.rec 2>/dev/null | head -1)"
+[ -n "$moverec" ] || fail "movement: the recording run wrote no recording to $movedir/recordings"
+
+moveout="$(LBA2_USER_DIR="$movedir" ctl --load "$movesave" --replay "$moverec" \
+    --tick 900 --dump-state "$movedir/play.json" --exit 2>&1)" ||
+    fail "movement: the replay run exited non-zero ($?) — hang or crash"
+
+case "$moveout" in
+*"first hash mismatch -1"*) ;;
+*)
+    fail "movement: $(printf '%s\n' "$moveout" |
+        grep -m1 -e 'replay ended' -e 'cannot open' -e 'recordings in' ||
+        echo 'the replay said nothing')"
+    ;;
+esac
+
+play_xz="$(hero_xz "$movedir/play.json")" || fail "movement: could not read the replayed state dump"
+[ "$play_xz" = "$rec_xz" ] ||
+    fail "movement: the recording left the hero at $rec_xz and the replay left him at $play_xz — the digest matched every tick, so this is the replay ending somewhere else, not diverging"
+
+# Giving the step back.
+#
+# A mid-session `rec start` pins the simulation step, and a pinned step advances game time
+# by dt per rendered frame rather than by wall clock. The recorder paces frames to match
+# only while it is actually recording, so a session that kept the step afterwards ran at
+# whatever rate it rendered at: measured headless, 1.00x real time before a recording and
+# 3.12x after one. On a vsynced 60 Hz window that reads as roughly right and on a 144 Hz
+# one as more than twice too fast, which is the worse of the two -- it looks like the game,
+# only wrong.
+#
+# A run given --fixed-dt is the other case and must not be touched: there the step belongs
+# to the whole run and to whoever asked for it. So both directions are asserted here, and
+# the arm is the reason: a release that fired for everyone would silently unpin every
+# harness fixture in this file.
+#
+# `rec info` reports the live run's mode, which makes this a question about a printed
+# number rather than about elapsed time.
+stepdir="$(mktemp -d)"
+clean_add "$stepdir"
+
+# Through a file rather than a pipeline. The suite does not set `pipefail`, so a pipeline
+# carries the status of its last command -- `tr` here, which succeeds whatever the engine
+# did -- and a `|| fail ... exited non-zero` hung off one can never fire. Run, check, then
+# read.
+step_after_stop() { # step_after_stop <extra ctl args...>
+    LBA2_USER_DIR="$stepdir" ctl --load "$movesave" "$@" \
+        --exec-at 20 "rec start" --exec-at 300 "rec stop" --exec-at 320 "rec info" \
+        --tick 400 --exit > "$stepdir/out.txt" 2>&1 || return $?
+    # The last one: `rec stop` prints this same block itself, before it stops.
+    grep 'mode.fixed_dt=' "$stepdir/out.txt" | tail -1 | tr -d ' '
+}
+
+recarmed="$(step_after_stop)" ||
+    fail "step: the recorder-armed run exited non-zero ($?) — hang or crash"
+case "$recarmed" in
+*"mode.fixed_dt=0") ;;
+*)
+    fail "step: the recorder pinned the step and still held it after rec stop ($recarmed) — the session keeps running at frame rate instead of wall clock"
+    ;;
+esac
+
+flagarmed="$(step_after_stop --fixed-dt 16)" ||
+    fail "step: the flag-armed run exited non-zero ($?) — hang or crash"
+case "$flagarmed" in
+*"mode.fixed_dt=16") ;;
+*)
+    fail "step: --fixed-dt 16 was given and rec stop unpinned it anyway ($flagarmed) — the recorder is releasing a step it did not take"
+    ;;
+esac
+
+# Watching a recording must not cost the player their game.
+#
+# A playback loads the recording's world over the live one. Before this it was one-way:
+# the replay ended and the player was left standing wherever the recording finished, in
+# its world rather than theirs. Measured over the control socket, a player who walked away
+# from the recording's end point and then watched it back was put at the recording's end,
+# 1585 units from where they had been.
+#
+# The arm has to prove the two destinations are actually different, or it passes on a
+# coincidence. So the hero walks one way while recording and a different way afterwards,
+# and all three positions come out of one run: `dumpstate` at a chosen tick for the two
+# mid-run ones, `--dump-state` for the last.
+#
+# Not the flag path. `--replay` takes no return point by design -- that run exists to
+# replay and exit, and has no player session to protect -- so the question only means
+# something for a playback started from inside a session.
+retdir="$(mktemp -d)"
+clean_add "$retdir"
+
+LBA2_USER_DIR="$retdir" ctl --load "$movesave" \
+    --exec-at 20 "rec start" --exec-at 200 "key up 250" --exec-at 520 "rec stop" \
+    --exec-at 560 "dumpstate $retdir/recend.json" \
+    --exec-at 600 "key down 250" \
+    --exec-at 920 "dumpstate $retdir/before.json" \
+    --exec-at 960 "rec play" \
+    --tick 2000 --dump-state "$retdir/after.json" --exit >/dev/null 2>&1 ||
+    fail "return: the run exited non-zero ($?) — hang or crash"
+
+for f in recend before after; do
+    [ -s "$retdir/$f.json" ] || fail "return: no $f state dump was written"
+done
+recend_xz="$(hero_xz "$retdir/recend.json")" || fail "return: could not read the recording's end"
+before_xz="$(hero_xz "$retdir/before.json")" || fail "return: could not read the pre-playback state"
+after_xz="$(hero_xz "$retdir/after.json")" || fail "return: could not read the post-playback state"
+
+# Without this the arm below passes whenever the two happen to coincide, which is most of
+# the ways it could be broken.
+[ "$recend_xz" != "$before_xz" ] ||
+    fail "return: the hero is at $before_xz both at the recording's end and when playback started, so this arm cannot tell a restore from doing nothing"
+
+[ "$after_xz" = "$before_xz" ] ||
+    fail "return: playback started with the hero at $before_xz and left him at $after_xz (the recording ended at $recend_xz) — the player's session was not put back"
+
+# The return point is scratch and belongs to the recorder, not to the player's save folder,
+# and it has to be gone once it has been read.
+for leftover in "$retdir"/recordings/*.return.lba "$retdir"/recordings/*.staging.lba; do
+    if [ -e "$leftover" ]; then
+        fail "return: $leftover was left behind"
+    fi
+done
+
+# Stopping a playback early has to return the player too, and the narrow window is the one
+# that got this wrong: between `rec play` and the reload it asks for landing, two ticks
+# later. The load cannot be taken back once issued -- the engine changes cube either way --
+# so the player is standing in the recording's world with the session called off, and
+# Record_Stop cannot ask for the way back because that reload is still in flight when it
+# runs. Measured before it was handled: the hero was left at the recording's start.
+#
+# `rec stop` one tick after `rec play` lands in that window; the arm below it stops well
+# clear of it, so the two together cover the abort path and the ordinary one.
+for stopat in 961 1100; do
+    LBA2_USER_DIR="$retdir/early$stopat" ctl --load "$movesave" \
+        --exec-at 20 "rec start" --exec-at 200 "key up 250" --exec-at 520 "rec stop" \
+        --exec-at 600 "key down 250" \
+        --exec-at 920 "dumpstate $retdir/early$stopat-before.json" \
+        --exec-at 960 "rec play" --exec-at "$stopat" "rec stop" \
+        --tick 1600 --dump-state "$retdir/early$stopat-after.json" --exit >/dev/null 2>&1 ||
+        fail "return: the early-stop run (stop at $stopat) exited non-zero ($?) — hang or crash"
+
+    early_before="$(hero_xz "$retdir/early$stopat-before.json")" ||
+        fail "return: could not read the pre-playback state for stop at $stopat"
+    early_after="$(hero_xz "$retdir/early$stopat-after.json")" ||
+        fail "return: could not read the post-stop state for stop at $stopat"
+    [ "$early_after" = "$early_before" ] ||
+        fail "return: a playback stopped at tick $stopat started with the hero at $early_before and left him at $early_after — stopping a playback has to put the player back too"
+done
+
+# --- recording does not perturb the run -------------------------------------------
+#
+# The claim the recorder rests on, and until this arm nothing checked it. Every other arm
+# here runs --fixed-dt 16, and under a pinned step the question cannot even be asked: the
+# game advances 16 ms per tick whatever the frame cost, so a recorder that doubled the
+# frame time would show up as the run taking longer and not as the game behaving
+# differently.
+#
+# Asked as a rate rather than as a state diff, and that is not a shortcut. On a loose
+# clock two runs of the same scripted session legitimately part -- game time is a function
+# of how long each frame took -- so diffing their states would be flaky from the first run
+# and the obvious repair would be to pin the step, which is the thing the arm exists to
+# rule out.
+#
+# Two questions, because either alone passes for the wrong reason. Whether each run is
+# real time catches a step pinned when it should not be: --fixed-dt 16 with no recorder at
+# all runs 600 ticks of game time in a fraction of the wall time they describe, measured
+# at 3.49x. Whether the two runs agree catches the recorder costing time without changing
+# the clock it reports.
+ratedir="$(mktemp -d)"
+clean_add "$ratedir"
+
+rate_of() { # rate_of <label> [extra args...] -- game seconds per wall second, on stdout
+    local label="$1"
+    shift
+    local ud="$ratedir/$label"
+    mkdir -p "$ud"
+    local t0 t1
+    # python rather than `date +%s.%N`: %N is GNU-only, and a BSD date passes the literal
+    # N through to the arithmetic below, where the arm fails as though the run had hung.
+    t0="$(python3 -c 'import time; print(time.time())')"
+    LBA2_USER_DIR="$ud" ctl --load "$LBA2_TEST_SAVE" \
+        --exec-at 20 "dumpstate $ud/before.json" \
+        --exec-at 40 "key up 800" \
+        --tick 900 --dump-state "$ud/after.json" --exit "$@" >/dev/null 2>&1 || return 1
+    t1="$(python3 -c 'import time; print(time.time())')"
+    python3 -c "
+import json, sys
+b = json.load(open('$ud/before.json'))['timer_ref_hr']
+a = json.load(open('$ud/after.json'))['timer_ref_hr']
+game = (a - b) / 1000.0
+wall = $t1 - $t0
+if wall <= 0 or game <= 0:
+    sys.exit(1)
+print('%.3f' % (game / wall))"
+}
+
+# Not in a command substitution that swallows it: `fail` ends the shell it runs in, so a
+# failure inside $( ) would kill the subshell and let the caller print PASS over the top.
+rate_ctl="$(rate_of control)" ||
+    fail "rate: the control run exited non-zero or dumped no clock — hang, crash, or a stopped clock"
+rate_rec="$(rate_of recording --record "$ratedir/recording/s.rec")" ||
+    fail "rate: the recording run exited non-zero or dumped no clock — hang, crash, or a stopped clock"
+
+# The band is wide on purpose, and the floor especially. It has one job -- separate real
+# time from a pinned step, which reads about 3.5 -- and two reasons not to be tight: boot
+# sits inside the wall time while it is outside the game time, and this suite shares a
+# machine with whatever else is running on it. A tight floor would fail the control arm on
+# a busy host and say nothing about recording. The ratio check below is the part that is
+# actually about the recorder, and it is not affected by either.
+for pair in "control:$rate_ctl" "recording:$rate_rec"; do
+    lbl="${pair%%:*}"
+    val="${pair#*:}"
+    ok="$(python3 -c "print(1 if 0.25 <= $val <= 2.0 else 0)")"
+    [ "$ok" = 1 ] ||
+        fail "rate: the $lbl run advanced ${val}s of game time per wall second, which is not real time — a step pinned here would read about 3.5"
+done
+
+# Between the two, where the recorder is the only difference. Machine load moves both, so
+# the ratio is the part that is about recording.
+rate_gap="$(python3 -c "print('%.3f' % ($rate_rec / $rate_ctl))")"
+gap_ok="$(python3 -c "print(1 if 0.7 <= $rate_gap <= 1.3 else 0)")"
+[ "$gap_ok" = 1 ] ||
+    fail "rate: recording ran at $rate_rec game seconds a wall second against $rate_ctl without it (${rate_gap}x) — recording is costing the run time"
+
+# The claim above is conditional, and this is the condition. RECORD.CPP writes a 20-byte
+# analog block per poll whenever any of the stick, pad, mouse or click fields is non-zero,
+# and on a host where the mouse delta never drains to zero that gate is always true: a
+# contributed 90,692-tick session came back 96.7 MB, of which 89.5 MB was an analog block
+# on every one of 4.5 million polls, against about 7 MB without. So "recording is free" is
+# free on the cheap side of that gate, and a run that quietly crossed it would still pass
+# the rate checks on a fast enough machine while describing nothing. Assert the side we
+# are on rather than let it go unsaid.
+ratecounts="$(python3 "$REPO/scripts/dev/dump_recording.py" "$ratedir/recording/s.rec" |
+    grep -m1 '^polls=')" ||
+    fail "rate: could not read the recording back"
+ratepolls="$(printf '%s\n' "$ratecounts" | sed 's/.*polls=\([0-9]*\).*/\1/')"
+rateanalog="$(printf '%s\n' "$ratecounts" | sed 's/.*analog=\([0-9]*\).*/\1/')"
+# Counted rather than inferred from the file size: a short session is mostly header and
+# the two savegames it carries, so bytes a poll says more about those than about the
+# analog gate.
+analog_ok="$(python3 -c "print(1 if $rateanalog <= $ratepolls // 10 else 0)")"
+[ "$analog_ok" = 1 ] ||
+    fail "rate: $rateanalog of $ratepolls polls carry an analog block, so the gate at RECORD.CPP is firing on most of them — the rate result above is not describing an ordinary recording"
+
+# --- a modal loop is held to real time too -------------------------------------------
+#
+# The arm above asks the question over a whole run, and over a whole run it cannot see
+# this. A fade, a menu or a dialogue box advances the game clock inside its own loop, and
+# that loop is short: measured, FadeToBlack (SOURCES/AMBIANCE.CPP) took 208 ms of game
+# clock in 26 ms of wall, eight times real speed, inside a session whose overall rate read
+# 1.02x because the paced main loop averaged the spike away. Every figure averaged over a
+# session has that blind spot, so this one is asked over a window instead.
+#
+# Read from clock_src_ms and not timer_ref_hr: timer_ref_hr is accumulated play time and
+# moves backwards through a scene change -- measured -4096 ms across this very window --
+# so a bracket around a transition reads negative. clock_src_ms is what ManageTime would
+# read, which is the pinned clock while one is armed and the host clock otherwise.
+#
+# One-sided on purpose. A slow or loaded machine only ever pushes the rate down, so a
+# ceiling cannot fail for being busy; the failure it is looking for is the game running
+# faster than the player, which is the whole complaint.
+#
+# The ceiling is 1.15 because the two states it separates are 1.00 and 1.31, measured on
+# this window. Pacing can only ever sleep, never hurry, so the passing side is bounded
+# above by 1.00 and the 15% is headroom for timer granularity rather than a tolerance
+# anything is expected to use.
+modaldir="$(mktemp -d)"
+clean_add "$modaldir"
+
+ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$modaldir/s.rec" \
+    --exec-at 40 "key up 200" \
+    --exec-at 295 "dumpstate $modaldir/w0.json" \
+    --exec-at 300 "cube 154" \
+    --exec-at 340 "dumpstate $modaldir/w1.json" \
+    --tick 600 --exit >/dev/null 2>&1 ||
+    fail "modal pacing: the scene-change run exited non-zero ($?) — hang or crash"
+[ -s "$modaldir/w0.json" ] && [ -s "$modaldir/w1.json" ] ||
+    fail "modal pacing: the run dumped no window — it never reached the scene change"
+# Before the rate is read, and not merely for tidiness: pacing is armed by a recording
+# starting, so a run whose --record never opened is unpaced for a reason that has nothing
+# to do with modal loops. It would fail the rate check below with a message blaming them.
+[ -s "$modaldir/s.rec" ] ||
+    fail "modal pacing: the run wrote no recording, so nothing armed the pacing and the rate below would describe the wrong fault"
+
+# Two numbers out of one reader, so the window is described once.
+modalout="$(python3 -c "
+import json
+a = json.load(open('$modaldir/w0.json'))
+b = json.load(open('$modaldir/w1.json'))
+game = b['clock_src_ms'] - a['clock_src_ms']
+wall = b['wall_ms'] - a['wall_ms']
+ticks = b['tick'] - a['tick']
+if wall <= 0 or game <= 0 or ticks <= 0:
+    raise SystemExit(1)
+# The 16 is the --fixed-dt above. Written twice on one command, so it is the one thing
+# here that has to move in step if the arm is ever re-pinned.
+print('%.3f %d %d' % (game / wall, game, ticks * 16))")" ||
+    fail "modal pacing: the window dumped no usable clock — a stopped clock, or a bracket that caught nothing"
+
+modalrate="${modalout%% *}"
+modalgame="$(printf '%s\n' "$modalout" | cut -d" " -f2)"
+modalticks="$(printf '%s\n' "$modalout" | cut -d" " -f3)"
+
+# The condition the check rests on: that this window holds a modal at all. Ticks mint dt
+# each and nothing else in a quiet window does, so a window whose clock advanced no
+# further than its ticks account for never entered one -- and would pass the rate check
+# below by having nothing in it to fail. Without this the arm quietly stops testing the
+# moment the scripted scene change stops landing.
+[ "$modalgame" -gt "$modalticks" ] ||
+    fail "modal pacing: the window advanced ${modalgame} ms over ticks worth ${modalticks} ms, so no modal ran inside it — the scene change did not land and this arm tested nothing"
+
+modal_ok="$(python3 -c "print(1 if $modalrate <= 1.15 else 0)")"
+[ "$modal_ok" = 1 ] ||
+    fail "modal pacing: a window holding a scene change advanced ${modalrate}s of game time per wall second while recording — the modal loops are minting clock they do not pay for, which is the too-fast transitions players report"
+
+# --- a recording on a host-sampled clock survives a scene change ----------------------
+#
+# Every arm above pins the step, and the pin hides this one completely: under a generated
+# clock the engine mints time inside a wait loop itself, so a fade there ends whatever the
+# recorder is doing. On a host-sampled clock the recorder holds the clock at the last
+# input poll, and FadeToPalAndSamples (SOURCES/AMBIANCE.CPP) ends when that clock has
+# moved FADE_DELAY while never polling input. Held, it never ends: the run spins at a full
+# core presenting a frame an iteration, against 2.1s for the same run unrecorded.
+#
+# Termination is the whole assertion, deliberately. On a host-sampled clock two runs do
+# not reach identical state, so a replay comparison here would be flaky by construction,
+# and the way to settle it would be to pin the step -- the one thing this arm exists to
+# run without.
+loosedir="$(mktemp -d)"
+clean_add "$loosedir"
+
+ctl --load "$LBA2_TEST_SAVE" --record "$loosedir/s.rec" \
+    --exec-at 40 "cube 154" --tick 200 --exit >/dev/null 2>&1 ||
+    fail "loose clock: a recording across a scene change did not finish (exit $?) — a wait loop is reading a clock the recorder is holding still"
+[ -s "$loosedir/s.rec" ] ||
+    fail "loose clock: the run finished but wrote no recording, so nothing here was recorded and the run ended for its own reasons"
+
+# That the scene change actually landed, and not merely that the run ended. Without this
+# the arm keeps passing on the day the scripted `cube` stops arriving, having crossed no
+# fade and tested nothing. The keyframe records the cube it changed to, so the reader can
+# be asked rather than the exit code trusted.
+# Matched with `case` rather than counted with `grep -c`, which exits 1 on no match: the
+# `||` would then report the reader as broken on the one failure this check is here for.
+loosedump="$(python3 "$REPO/scripts/dev/dump_recording.py" "$loosedir/s.rec")" ||
+    fail "loose clock: could not read the recording back"
+case "$loosedump" in
+*"cube 3->154"*) ;;
+*) fail "loose clock: the recording carries no cube 3->154 keyframe, so the run never crossed a scene change and this arm tested nothing" ;;
+esac
+
+# --- a command runs where the recording ran it ----------------------------------------
+#
+# A command is written where it ran, so a replay has to run it there too. Both ends run
+# it on the same tick and from the same function, Control_TickHook; what differs is the
+# position inside it. The harness fires --exec-at below `Timer_FixedDtAdvance`
+# (SOURCES/CONTROL.CPP), and a replay that ran the line from the recorder's own tick hook
+# ran it above that advance -- one minted step earlier than the session had it.
+#
+# Which is why the verb here opens a modal, and that is not a claim about modals. A step
+# of clock is invisible to a verb that does not spend one: measured on this same shape,
+# `teleport actor 1`, `varcube 0 7` and `behaviour 2` all replay clean over 301 ticks with
+# the command a step out of position. A modal's inner loop presents, and every present is
+# a step, so it is the cheapest verb that can see the difference at all.
+#
+# command_position <label> <verb> [artifact] -- record with the verb fired mid-session,
+# replay past the end of the stream, and require no mismatch. The artifact, where the verb
+# writes one, is asserted after both runs: a clean digest says the two ends agree, and
+# only the file says the replay ran the command rather than skipping it.
+command_position() {
+    local label="$1" verb="$2" artifact="${3:-}" out summary checked
+
+    rm -f "$rec" "$rec".lba "$rec".end.lba "$artifact"
+    ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$rec" \
+        --exec-at 60 "$verb" --tick 150 --exit >/dev/null 2>&1 ||
+        fail "command position ($label): the recording run exited non-zero ($?) — hang or crash"
+    [ -s "$rec" ] || fail "command position ($label): the run wrote no recording"
+    if [ -n "$artifact" ] && [ ! -s "$artifact" ]; then
+        fail "command position ($label): '$verb' left nothing at $artifact, so the recording never ran it and this arm tested nothing"
+    fi
+
+    rm -f "$artifact"
+    out="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$rec" --tick 250 --exit 2>&1)" ||
+        fail "command position ($label): the replay run exited non-zero ($?) — hang or crash"
+    if [ -n "$artifact" ] && [ ! -s "$artifact" ]; then
+        fail "command position ($label): the replay left nothing at $artifact, so it never ran '$verb'"
+    fi
+
+    summary="$(printf '%s\n' "$out" | grep -m1 'replay ended')" ||
+        fail "command position ($label): the replay printed no summary; it cannot be said to have matched"
+    checked="$(printf '%s\n' "$summary" | sed -n 's/.*: \([0-9]*\) ticks checked.*/\1/p')"
+    [ -n "$checked" ] && [ "$checked" -gt 100 ] ||
+        fail "command position ($label): only ${checked:-0} ticks checked — the run ended before the command ($summary)"
+    case "$summary" in
+    *"first hash mismatch -1"*) ;;
+    *) fail "command position ($label): $summary" ;;
+    esac
+}
+
+# Its own short directory, and that is load-bearing rather than tidiness: a recorded
+# command line is stored in 96 bytes (`T_RecCmd`, SOURCES/RECORD.CPP) and clipped
+# to fit, so a capture path long enough to push the line past that replays as a verb
+# writing somewhere else -- the modal still runs and the digest still matches, and only
+# the missing file says so. Measured: a 137-character path came back clipped at 95.
+cmdposdir="$(mktemp -d)"
+clean_add "$cmdposdir"
+
+command_position "inline verb" "ui inventory $cmdposdir/ui.png" "$cmdposdir/ui.png"
+
+# The control, and it is what makes the arm above a measurement rather than an assertion.
+# `cube` sets NewCube and the work happens at the top of the next main-loop iteration
+# (SOURCES/PERSO.CPP), so it is re-synchronised to a tick boundary before it does
+# anything and a command a step out of position cannot move it. It was clean before the
+# position was fixed and has to stay clean after: a fix that moved execution somewhere
+# the deferred work no longer lands would show here and nowhere else.
+command_position "deferred verb" "cube 154"
+
+# --- a replay supplies its own starting state --------------------------------------
+#
+# Every recording carries the savegame its session began from, so a replay does not need
+# to be handed one. What makes this worth a test rather than a convenience note is the
+# way it used to fail: the staging was gated on `setup.reloaded=1`, so a --record file
+# carried the state it began from and the replay ignored it. Without a --load the run
+# then replayed the recording's input into whatever the fresh-start path had built, and
+# reported the divergence it had caused itself -- while exiting 0.
+#
+# So the assertion is on the verdict, not the exit code. Measured before the fix, with
+# no --load: `tick 0 differs: cube 3/0 hero.x 6619/10496 ...` and exit 0. An arm that
+# checked only the status passes on that.
+noloaddir="$(mktemp -d)"
+clean_add "$noloaddir"
+noloadrec="$noloaddir/noload.rec"
+
+ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$noloadrec" \
+    --exec-at 30 "key up 60 2" --tick 300 --exit >/dev/null 2>&1 ||
+    fail "no --load: the recording run exited non-zero ($?); it hung or crashed"
+[ -s "$noloadrec" ] || fail "no --load: no recording written to $noloadrec"
+
+# The whole point of the arm: no --load anywhere on this command line.
+#
+# The status is taken but not acted on yet. A replay's exit code is not its verdict --
+# a diverging run can leave by several doors and they do not agree on a number -- so the
+# summary is read first and the status only reported if nothing better was found. Without
+# that order this arm's failure on an engine that lacks the fix reads "hang or crash",
+# which is the one thing it is not.
+noloadrc=0
+noloadout="$(ctl --fixed-dt 16 --replay "$noloadrec" --tick 400 --exit 2>&1)" || noloadrc=$?
+
+# Said out loud, because a replay that quietly fell back to a fresh start would still
+# reach the checks below and could still match on a session that never left cube 0.
+case "$noloadout" in
+*"booting from the recording's own starting state"*) ;;
+*) fail "no --load: the run did not report booting from the recording's own starting state" ;;
+esac
+
+case "$noloadout" in
+*"consistency failure"*)
+    fail "no --load: $(printf '%s\n' "$noloadout" | grep -m1 'consistency failure')"
+    ;;
+esac
+
+noloadsummary="$(printf '%s\n' "$noloadout" | grep -m1 'replay ended')" ||
+    fail "no --load: replay printed no summary; it cannot be said to have matched"
+noloadchecked="$(printf '%s\n' "$noloadsummary" | sed -n 's/.*: \([0-9]*\) ticks checked.*/\1/p')"
+[ -n "$noloadchecked" ] && [ "$noloadchecked" -gt 100 ] ||
+    fail "no --load: only ${noloadchecked:-0} ticks checked, so the oracle barely ran ($noloadsummary)"
+case "$noloadsummary" in
+*"first hash mismatch -1"*) ;;
+*) fail "no --load: $noloadsummary" ;;
+esac
+
+# Last, so anything above gets to name the real fault first.
+[ "$noloadrc" -eq 0 ] ||
+    fail "no --load: replay run exited non-zero ($noloadrc) with a clean summary"
+
+# --- and the recording that began before there was a game ---------------------------
+#
+# The case above records from a save, so its session always had a cube. A session
+# recorded from a fresh boot has none: --record arms after InitGame, which sets
+# NumCube = -1 to force the first cube change. SaveGame writes NumCube and the load
+# reads it straight back into NewCube, so a snapshot written there is a savegame whose
+# scene is -1 -- and the loader does not refuse it, it walks ChangeCube off the end of
+# the scene arrays honouring it. A replay that boots into one dies of a SIGSEGV before
+# its first tick.
+#
+# Every recording checked in here was made from a save (setup.cube 3, 42 or 97), so
+# nothing in this file used to reach that path; it was test_cli_flag_contract.sh that
+# caught it, and only because a run that dies writes no config. Recorded here instead,
+# where the fault is, and against the exit status because that is what it costs.
+bootdir="$(mktemp -d)"
+clean_add "$bootdir"
+bootrec="$bootdir/fromboot.rec"
+
+ctl --fixed-dt 16 --record "$bootrec" --tick 60 --exit >/dev/null 2>&1 ||
+    fail "from boot: the recording run exited non-zero ($?); it hung or crashed"
+[ -s "$bootrec" ] || fail "from boot: no recording written to $bootrec"
+
+# The header is the contract the replay decides on, so it is asserted rather than
+# inferred from the replay agreeing. `-` is how a recording says it began where a fresh
+# boot begins; `(inline)` here means the husk is back.
+bootheader="$(head -c 4096 "$bootrec" | tr -d '\0')"
+case "$bootheader" in
+*"setup.cube=-1"*) ;;
+*) fail "from boot: the recording does not declare setup.cube=-1; this arm tested nothing" ;;
+esac
+case "$bootheader" in
+*"setup.snapshot=-"*) ;;
+*) fail "from boot: the recording carries a starting state its session never had:
+  $(printf '%s\n' "$bootheader" | grep -m1 'setup.snapshot=')" ;;
+esac
+
+bootrc=0
+bootout="$(ctl --fixed-dt 16 --replay "$bootrec" --tick 100 --exit 2>&1)" || bootrc=$?
+
+# The opposite of the case above: this one must NOT take the recording's own state,
+# because a fresh boot is the state it began from.
+case "$bootout" in
+*"booting from the recording's own starting state"*)
+    fail "from boot: the replay loaded a starting state from a session that had none" ;;
+esac
+case "$bootout" in
+*"carries no starting state"*)
+    fail "from boot: the replay refused a recording that only needed a fresh boot" ;;
+esac
+
+bootsummary="$(printf '%s\n' "$bootout" | grep -m1 'replay ended')" ||
+    fail "from boot: replay printed no summary (exit $bootrc); it cannot be said to have matched"
+case "$bootsummary" in
+*"first hash mismatch -1"*) ;;
+*) fail "from boot: $bootsummary" ;;
+esac
+[ "$bootrc" -eq 0 ] ||
+    fail "from boot: replay run exited non-zero ($bootrc) with a clean summary"
+
+# The staged snapshot is removed at exit, and a run that crashed ran no atexit handler.
+# So a file left here is the crash even on a build where the summary somehow read clean.
+bootleft="$(find "$(user_dir)/recordings" -name '*.boot.lba' 2>/dev/null | tr '\n' ' ')"
+[ -z "$bootleft" ] ||
+    fail "from boot: a staged boot snapshot was left behind: $bootleft"
+
+# The equivalence half, and it needs a file that does NOT replay clean.
+#
+# Everything above compares one -1 against another, which any change producing -1 passes
+# -- including one that ignored the snapshot and got clean runs because this save would
+# replay clean under anything. What distinguishes "the snapshot is being used" from
+# "these files are easy" is a replay with a known non-clean verdict coming out the SAME
+# with and without --load. Both diverging at the same tick is the passing result here.
+#
+# The divergence is manufactured rather than found, so the arm does not depend on a bug
+# staying unfixed: the recording ran under the config the engine defaults to and the
+# replay is given FollowCamera flipped, which docs/RECORDING.md's settings table records
+# as a tick 0 divergence because the camera is in the digest.
+eqdir="$(mktemp -d)"
+clean_add "$eqdir"
+eqrec="$eqdir/eq.rec"
+
+ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$eqrec" \
+    --exec-at 30 "key up 60 2" --tick 300 --exit >/dev/null 2>&1 ||
+    fail "equivalence: the recording run exited non-zero ($?); it hung or crashed"
+[ -s "$eqrec" ] || fail "equivalence: no recording written to $eqrec"
+
+# Out of the header region rather than the whole file: `settings.FollowCamera=` could
+# in principle occur inside the inline savegame, and a match there would be read as the
+# value the session ran under. tr drops the NULs, as the header check above does.
+eqcam="$(head -c 2048 "$eqrec" | tr -d '\0' | grep -o -m1 'settings.FollowCamera=[01]' | cut -d= -f2)"
+[ -n "$eqcam" ] || fail "equivalence: the recording does not declare settings.FollowCamera"
+eqflip=$((1 - eqcam))
+
+# Same replay twice, differing only in whether --load is passed.
+eqverdict() { # eqverdict <label> [--load ...]
+    local label="$1"
+    shift
+    local dir
+    dir="$(mktemp -d)"
+    clean_add "$dir"
+    printf 'FollowCamera=%s\n' "$eqflip" >"$dir/lba2.cfg"
+    local out
+    out="$(LBA2_USER_DIR="$dir" ctl --fixed-dt 16 "$@" --replay "$eqrec" \
+        --tick 400 --exit 2>&1)" ||
+        fail "equivalence/$label: replay run exited non-zero ($?); it hung or crashed"
+    EQ="$(printf '%s\n' "$out" | grep -m1 'replay ended' |
+        sed -n 's/.*\(first hash mismatch -\?[0-9]*\).*/\1/p')"
+    [ -n "$EQ" ] || fail "equivalence/$label: replay printed no verdict"
+
+    # The arm's self-description, checked. A one-line cfg leaves every other setting at
+    # its default, so the replay could be differing on more than the flip and the
+    # comparison would still pass -- saying nothing about the flip. The engine names what
+    # it disagrees about, so require that it named this.
+    case "$out" in
+    *"mode differs: settings.FollowCamera"*) ;;
+    *) fail "equivalence/$label: the run did not report differing on settings.FollowCamera; the arm is not testing what it says" ;;
+    esac
+}
+
+eqverdict "with --load" --load "$LBA2_TEST_SAVE"
+eqwith="$EQ"
+eqverdict "no --load"
+eqwithout="$EQ"
+
+# Teeth: a clean pair would mean the flip did not bite and the comparison proved nothing.
+case "$eqwith" in
+*" -1"*) fail "equivalence: the FollowCamera flip did not diverge ($eqwith); the arm cannot fail" ;;
+esac
+[ "$eqwith" = "$eqwithout" ] ||
+    fail "equivalence: --load changed the verdict ($eqwith with, $eqwithout without)"
+
+# A recording older than the format that carries its savegame inside it. legacy-v10.rec
+# names a sibling in `setup.snapshot=` instead, and the boot load has to find it there or
+# the run boots fresh and replays into a game the session was never made in -- the same
+# silent wrong answer, reached by the path that was supposed to have removed it. Measured
+# on an engine without the fallback: exit 124 having printed `first hash mismatch 0`, a
+# divergence report about a fault the run introduced itself.
+#
+# The sibling belongs to the recording, not to the run, so this also asserts it is still
+# there afterwards. Nothing else in the suite would notice it being consumed, and these
+# are the files with no second run to replace them.
+legdir="$(mktemp -d)"
+clean_add "$legdir"
+legsib="$REPO/tests/automation/recordings/legacy-v10.rec.lba"
+[ -e "$legsib" ] || fail "legacy no --load: the sibling savegame is missing from the repo"
+legsum_before="$(md5sum <"$legsib")"
+
+legout="$(LBA2_USER_DIR="$legdir" ctl --fixed-dt 16 \
+    --replay "$REPO/tests/automation/recordings/legacy-v10.rec" --tick 400 --exit 2>&1)" ||
+    fail "legacy no --load: replay run exited non-zero ($?); it hung or crashed"
+
+case "$legout" in
+*"consistency failure"*)
+    fail "legacy no --load: $(printf '%s\n' "$legout" | grep -m1 'consistency failure')"
+    ;;
+esac
+legsummary="$(printf '%s\n' "$legout" | grep -m1 'replay ended')" ||
+    fail "legacy no --load: replay printed no summary"
+case "$legsummary" in
+*"first hash mismatch -1"*) ;;
+*) fail "legacy no --load: $legsummary" ;;
+esac
+
+[ "$(md5sum <"$legsib")" = "$legsum_before" ] ||
+    fail "legacy no --load: the run modified or removed the recording's sibling savegame"
+
+# --- the artifact belongs to the recording, not to the tick budget -------------------
+#
+# --tick has to exceed what the recording holds or the replay is cut short (the engine
+# prints the number and says to exceed it), so over-budgeting is the direction a careful
+# caller errs in -- and every tick past the stream was the game running on with nothing
+# driving it. So --dump-state used to describe a state the recording never reached, and the
+# more headroom the caller left, the further past it went. Measured before the fix on an
+# 861-tick recording: --tick 1000 took 6.4 s and --tick 8000 took 15.3 s for the same
+# verdict.
+#
+# The property is that the artifact does not depend on the budget, so the arm takes two
+# dumps whose budgets differ by 10x and requires them to be identical. Wall time would test
+# the same fix and is not a fact about the build on a shared machine.
+#
+# Deliberately NOT asserted: that the run stops at the stream. It must not -- a harness run
+# may continue past a spent recording to read back what the replay left behind, which
+# test_record_input_device.sh does at tick 380 of a recording spent long before it.
+enddir="$(mktemp -d)"
+clean_add "$enddir"
+endrec="$enddir/end.rec"
+
+ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --record "$endrec" \
+    --exec-at 30 "key up 60 2" --tick 300 --exit >/dev/null 2>&1 ||
+    fail "budget: the recording run exited non-zero ($?); it hung or crashed"
+[ -s "$endrec" ] || fail "budget: no recording written to $endrec"
+
+endverdict() { # endverdict <label> <budget> <out>
+    local out
+    out="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" --replay "$endrec" \
+        --tick "$2" --dump-state "$3" --exit 2>&1)" ||
+        fail "budget/$1: replay run exited non-zero ($?); it hung or crashed"
+    case "$out" in
+    *"first hash mismatch -1"*) ;;
+    *) fail "budget/$1: $(printf '%s\n' "$out" | grep -m1 'replay ended')" ;;
+    esac
+    [ -s "$3" ] || fail "budget/$1: no state dump was written"
+}
+
+endverdict "tight" 400 "$enddir/tight.json"
+endverdict "loose" 4000 "$enddir/loose.json"
+
+# The actors, not the hero. Measured on an engine without the fix: over 3600 extra ticks the
+# HERO does not move -- nothing is driving him once the stream is spent -- so an arm keyed on
+# him passes on the bug. The scene keeps running around him: actor 6 travelled from x 3274 to
+# x 8719, actor 5 from 2140 to 1475, and vars_cube changed. That is the artifact describing a
+# state the recording never reached, and it is what this compares.
+#
+# The run's own bookkeeping (tick, timer_ref_hr, wall_ms, clock_src_ms, fps, poll counts) is
+# excluded deliberately: those differ between the two budgets by design and say nothing about
+# where the replay got to.
+actors_of() { grep -o '"index": [0-9]*, "x": [-0-9]*, "y": [-0-9]*, "z": [-0-9]*, "beta": [-0-9]*' "$1"; }
+end_tight="$(actors_of "$enddir/tight.json")"
+end_loose="$(actors_of "$enddir/loose.json")"
+[ -n "$end_tight" ] || fail "budget: no actors in the tight dump; the comparison would be vacuous"
+
+# Teeth: the scene has to be one where the world actually moves, or two identical dumps prove
+# nothing. Checked against the recording's own end rather than assumed.
+[ "$(printf '%s\n' "$end_tight" | wc -l)" -gt 2 ] ||
+    fail "budget: only $(printf '%s\n' "$end_tight" | wc -l) actors in this scene; the arm cannot tell a pinned dump from a drifting one"
+
+[ "$end_tight" = "$end_loose" ] ||
+    fail "budget: the state dump moved with the tick budget. The artifact is of the game running on past the recording with nothing driving it, not of where the replay ended. Differences:
+$(diff <(printf '%s\n' "$end_tight") <(printf '%s\n' "$end_loose") | head -8)"
+
+# --- a recording that opens a menu is replayed through it ----------------------------
+#
+# The in-game menu is a return from MainLoop (SOURCES/PERSO.CPP), and the harness used to
+# call MainLoop once, so a replay that reached an ESC ended there with its stream unread.
+# This fixture was written against that: it asserted the run exited non-zero and printed
+# no verdict, because exit 0 with `first hash mismatch -1` on a run that stopped at tick
+# 200 of 201 is the success-shaped lie.
+#
+# The harness now goes through the menu loop, so the same recording is replayed to its
+# last poll and the assertion inverts: this run reproduces the whole session and is
+# entitled to say so. The concern the old form protected has not gone away, it has moved
+# into the predicate: a run is short when it left for a menu AND the stream did not run
+# out, and the stall and short-stream prefixes carry the other ways of ending early.
+#
+# The recording is committed rather than made here because the ESC has to arrive through
+# the replay's own input path. `--exec-at "key esc"` reaches the same guard -- measured, it
+# does -- but driving it in this run would test the console verb, not the reader.
+escout="$(ctl --fixed-dt 16 --load "$LBA2_TEST_SAVE" \
+    --replay "$REPO/tests/automation/recordings/menu-esc.rec" \
+    --tick 500 --dump-state "$(user_dir)/menu-esc.json" --exit 2>&1)" && escrc=0 || escrc=$?
+
+# The status first, because it is the whole point: a run that stopped short must not pass.
+[ "$escrc" -eq 0 ] ||
+    fail "menu: the replay exited $escrc; a recording replayed to its last poll reproduced the session, whatever the player left through"
+
+# The verdict line, and it has to be the pass form: this run did replay the recording.
+escchecked="$(printf '%s\n' "$escout" | sed -n 's/.*replay ended at poll [0-9]*: \([0-9]*\) ticks checked.*/\1/p' | head -1)"
+[ -n "$escchecked" ] ||
+    fail "menu: the run printed no verdict line, so it did not say whether it reproduced: $(printf '%s\n' "$escout" | grep -m1 -e 'at the' -e 'replay ended' || echo 'nothing')"
+
+# Counted rather than merely present. The recording holds 201 ticks, and a run that
+# survived the menu but stopped anywhere before the end would still print a verdict.
+[ "$escchecked" -ge 201 ] ||
+    fail "menu: the replay checked $escchecked ticks of the 201 the recording holds, so it did not get through the menu"
+
+case "$escout" in
+*"at the menu:"*)
+    fail "menu: the run reported stopping at the menu, but it replayed the whole recording"
+    ;;
+esac
+
+# And the artifact is owed: it describes where the recording ended, which is what the
+# caller asked for. Withholding it was right only while the run died at the ESC.
+[ -e "$(user_dir)/menu-esc.json" ] ||
+    fail "menu: no --dump-state was written from a run that replayed its whole recording"
+
+pass "replayed clean: $bounded ticks checked with --tick, $unbounded without; a video played to its end and replayed ($vidchecked ticks over $vidpolls polls); a cut and a corrupted snapshot were both refused; a bare name went to the recordings folder; format 10 still reads ($lchecked ticks); telemetry named the injected change; mode.audio was written from the driver and reported both ways; a session recorded in one run replayed in the next with no flags and no paths; \
+'rec start verbose' carried telemetry and a plain one carried none; a recorded walk moved the hero and the replay walked it again; the recorder gave the step back and left the flag's alone; a playback put the player back where it found them, stopped early or run out; a window holding a scene change ran at ${modalrate}x real, not faster; a recording on a host-sampled clock crossed a scene change instead of wedging in the fade; \
+a command ran where the recording ran it, for an inline verb and for a deferred one; the state dump was the same at a 400 and a 4000 tick budget; a recording that opens a menu was replayed through it ($escchecked ticks); a replay with no --load booted from the recording's own starting state and still matched ($noloadchecked ticks); a session recorded from a fresh boot carried no starting state and replayed into one; a deliberately diverging replay reported '$eqwith' with and without --load; a pre-inline recording loaded its sibling savegame with no --load and left it intact; the step's arming point was carried ($armtick against a replay's 0) without being reported, on a pair that replays clean"

@@ -1,0 +1,77 @@
+name: Format
+#
+# Two whole-tree static checks over the C and C++ sources: how the code is
+# written, and which boundaries it is allowed to cross.
+#
+# The architecture check lives here rather than in lint.yml because lint.yml
+# filters on `paths` (shell, Python, workflows) so a C++ change spends no runner
+# there, and GitHub applies path filters per workflow rather than per job: adding
+# SOURCES/** would fire shellcheck, actionlint and ruff on every engine commit to
+# reach one job. This workflow is unfiltered, which also keeps it clear of the
+# skipped-workflow-reports-no-check trap that docs-gate.yml exists to work around.
+on: [push, pull_request, workflow_dispatch]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  check-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Install clang-format
+        # Keep this major version in sync with CLANG_FORMAT_MAJOR in
+        # scripts/ci/clang-format-select.sh (the single source of truth).
+        run: |
+          # Retries alone do not cover the failure that matters here: a mirror
+          # that accepts the connection and then stalls returns no error to
+          # retry on, and apt has no wall clock of its own. See docs/CI.md.
+          apt_opts=(
+            -o Acquire::Retries=5
+            -o Acquire::http::Timeout=15
+            -o Acquire::https::Timeout=15
+          )
+          for attempt in 1 2 3; do
+            # A killed apt leaves dpkg interrupted, and the next attempt would
+            # abort on that before fetching anything.
+            sudo dpkg --configure -a || true
+            if timeout -k 30 90 sudo apt-get "${apt_opts[@]}" update \
+              && timeout -k 30 240 sudo apt-get "${apt_opts[@]}" install -y clang-format-18; then
+              exit 0
+            fi
+            if [ "${attempt}" = 3 ]; then
+              echo "apt failed after 3 attempts" >&2
+              exit 1
+            fi
+            echo "apt attempt ${attempt} failed or timed out; retrying in 10s"
+            sleep 10
+          done
+
+      - name: Check formatting
+        run: bash ./scripts/ci/check-format.sh
+
+  # Standard-library Python over the tracked sources, so no toolchain to install
+  # and nothing to pin. Rules and their rationale: docs/plan/ARCH_RULES_PLAN.md.
+  check-arch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v5
+
+      - name: Check architecture boundaries
+        run: python3 ./scripts/ci/check-arch.py
+
+      # The control-harness fixtures cannot run here: they need retail game data, and
+      # run.sh reports a missing prerequisite as SKIP and exits 0, so a job that ran
+      # them would go green having run nothing. What can be checked without data is
+      # that the index of them is honest, which it was not: two docs quoted 60 and 59
+      # fixtures against an actual 62. Same job because this needs no toolchain either.
+      - name: Check the control-harness index is current
+        run: python3 ./scripts/ci/gen-automation-index.py --check

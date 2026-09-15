@@ -1,0 +1,1061 @@
+# Releasing
+
+Short maintainer recipe for cutting a release.
+
+## Versioning
+
+The engine uses [Semantic Versioning](https://semver.org/). The fork is
+pre-1.0 while crashes are still being ironed out.
+
+| Bump  | When                                                                |
+|-------|---------------------------------------------------------------------|
+| MAJOR | Save-format break, hard removal of a build option, or `1.0` itself  |
+| MINOR | New feature, new platform support, opt-in behavior change           |
+| PATCH | Bugfix or doc-only release                                          |
+
+### `1.0.0` bar
+
+`1.0.0` is reached when:
+
+- **All original features are implemented and working** — feature parity with
+  the retail game, no functional gaps.
+- The fork has had **at least a few rounds of community play-tests** to
+  surface remaining issues against a real playthrough.
+- Equivalence and host tests pass on Linux, macOS, and Windows in CI.
+
+Until then, MINOR releases ship features and platform progress; PATCH
+releases ship fixes. Don't wait for `1.0` to bump versions — there's
+plenty of new work in the fork already, and incremental `0.x` releases
+keep momentum.
+
+### Engine version vs `NUM_VERSION`
+
+These are independent:
+
+- **Engine version** (`v0.9.0`, `v1.0.0`, ...) — the semver tag this doc is about.
+- **`NUM_VERSION`** in `SOURCES/COMMON.H` — the save-file on-disk format
+  version (currently `36`). Bumping the engine version does not bump
+  `NUM_VERSION`, and vice versa. See
+  [issue #64](https://github.com/LBALab/lba2-classic-community/issues/64) for
+  the canonical save-format work tracked separately.
+
+## Cutting a release
+
+Before tagging, run the **pre-tag fact-check** in
+[docs/RELEASE_TEMPLATES.md](RELEASE_TEMPLATES.md) over the
+`[Unreleased]` section. Five-minute pass per release; catches the kind
+of claim-vs-reality discrepancies that are embarrassing once they hit
+the Releases page + Discussion + Discord (e.g. v0.10.0's "six weeks
+after v0.9.0" was actually eight days).
+
+The flow differs by what's already in `[Unreleased]`:
+
+| `[Unreleased]` shape       | Flow                                                       |
+|----------------------------|------------------------------------------------------------|
+| Empty / `_Nothing yet._`   | **Subsequent release** — `git cliff --prepend`             |
+| Hand-curated narrative     | **First-release-style promote** — rename the heading       |
+
+The "promote-heading" path is also right for any release where
+`[Unreleased]` has been hand-curated since the previous tag — cliff's
+auto-generated section would either duplicate or replace that work,
+and `commit.remote.username` returns the merge-commit author rather
+than the patch author, so external-contributor attribution is lost.
+v0.10.0 took this path.
+
+### First release (`v0.9.0`)
+
+The current `[Unreleased]` section in `CHANGELOG.md` is hand-curated — it
+narrates everything shipped since the fork was created and is the
+canonical content for `v0.9.0`. Do not run `git cliff -o` here; it
+would replace the narrative with a sparse auto-generated section (most
+pre-tag commits are not conventional-commit-formatted). Just promote the
+heading.
+
+The version number itself lives in the `VERSION` file at the repo
+root. CMake reads it, embeds it in the binary, and writes it to
+`build/VERSION.txt` for release pipelines (PR #74) to consume. So a release
+cut also bumps that file: `0.9.0-dev` → `0.9.0` for the release commit,
+then `0.10.0-dev` for the next development cycle.
+
+```bash
+VERSION=v0.9.0
+DATE=$(date +%Y-%m-%d)
+
+# 1. In CHANGELOG.md, change:
+#      ## [Unreleased]
+#    to:
+#      ## [Unreleased]
+#      _Nothing yet._
+#
+#      ## [0.9.0] - YYYY-MM-DD
+#
+#    Update the compare link at the bottom of the file:
+#      [Unreleased]: .../compare/main...HEAD
+#    becomes:
+#      [Unreleased]: .../compare/v0.9.0...HEAD
+#      [0.9.0]:      .../compare/<initial-commit-sha>...v0.9.0
+
+# 2. Bump VERSION file: 0.9.0-dev -> 0.9.0
+echo "0.9.0" > VERSION
+
+# 3. Review, commit, tag, push.
+#
+# Use the GitHub noreply form for user.email — otherwise GitHub rejects
+# the push with GH007 ("would publish a private email address") on
+# repos with email-privacy enabled. Find your form at
+# https://github.com/settings/emails.
+git diff CHANGELOG.md VERSION
+git add CHANGELOG.md VERSION
+git -c user.email=<id>+<user>@users.noreply.github.com \
+    commit -m "chore(release): $VERSION"
+git tag -a "$VERSION" -m "Release $VERSION"
+#
+# The push to main will print a "Bypassed rule violations for
+# refs/heads/main" warning — expected, release commits skip the PR
+# gate by design.
+git push origin main
+git push origin "$VERSION"
+
+# 4. Sanity-check the binary picks it up.
+#
+# If --version still reports "<version>-dirty" after this rebuild on
+# a clean working tree, delete the cached header and rebuild:
+#
+#     rm build/VERSION_GENERATED.h build/VERSION.txt
+#     cmake --build build
+#
+# The generator's DEPENDS list doesn't include .git/HEAD or .git/index,
+# so a fresh commit doesn't invalidate the cached header on its own.
+# Tracked as #156; once that lands this note can be removed.
+cmake --build build
+./build/SOURCES/lba2cc --version    # expect: 0.9.0
+cat build/VERSION.txt                  # expect: 0.9.0
+
+# 5. Bump VERSION for next development cycle: 0.9.0 -> 0.10.0-dev
+echo "0.10.0-dev" > VERSION
+git add VERSION
+git commit -m "chore: bump VERSION to 0.10.0-dev"
+git push origin main
+```
+
+`git-cliff` is not required for the first release.
+
+### Subsequent releases
+
+From the second release on, `git cliff --prepend` adds a new versioned
+section to the top of `CHANGELOG.md`, generated from PR titles since the
+previous tag. Existing content (including the hand-curated v0.9.0
+narrative) stays untouched.
+
+```bash
+VERSION=v0.10.0
+
+# 1. Prepend the new section. NOTE: --prepend, not -o (which would
+#    overwrite the entire file). GITHUB_TOKEN is required: the body
+#    template renders one entry per PR using the PR title resolved from
+#    the GitHub API. Without a token, no entries render.
+GITHUB_TOKEN="$(gh auth token)" git cliff --tag "$VERSION" --prepend CHANGELOG.md
+
+# 2. Review the new section at the top. Hand-curate if useful (group
+#    highlights, link to docs).
+git diff CHANGELOG.md
+
+# 3. Add a compare link at the bottom of the file:
+#      [v0.10.0]: .../compare/v0.9.0...v0.10.0
+
+# 4. Commit, tag, push.
+git add CHANGELOG.md
+git commit -m "chore(release): $VERSION"
+git tag -a "$VERSION" -m "Release $VERSION"
+git push origin main
+git push origin "$VERSION"
+```
+
+**Why `GITHUB_TOKEN` is required.** The template renders one entry per
+PR using `commit.remote.pr_title` and `commit.remote.pr_number`, which
+cliff fetches from the GitHub API for each commit. This is what gives a
+single clean entry per PR regardless of merge mode (squash, merge-commit,
+or rebase). Without a token, those fields are empty and no entries
+render. Use a token with public read scope only.
+
+## GitHub release
+
+A git tag is just a pointer to a commit. A GitHub Release is a
+separate object layered *on top of* a tag — it adds the user-facing
+Releases-page entry (`/releases/tag/v0.9.0`), a title and rendered
+release notes, optional binary attachments, and an RSS feed (`/releases.atom`)
+that auto-update tools watch. Pushing the tag without creating a Release
+means it shows up under "Tags" but not "Releases" — most browsers and
+tools only look at the latter.
+
+### Drafting the release
+
+Pushing the tag auto-creates the GitHub Release: the five per-platform
+release workflows
+(`release-{linux-appimage,linux-tarball,macos,windows,android}.yml`)
+each fire on `push: tags: ['v*']`, attach their artifact, and trigger
+`softprops/action-gh-release@v2` which materialises the Release. No
+manual `gh release create` is needed.
+
+Two things still need maintainer action after the workflows finish:
+
+**1. Replace the auto-generated body with the CHANGELOG section.** The
+per-platform workflows each set `generate_release_notes: true`, which
+re-appends the PR-title dump on every run, so the body lands duplicated
+several times over and has to be replaced wholesale. Don't expect one
+copy per workflow: the runs interleave, and v0.12.0's five runs left
+four copies (a 54 KB body against the 30 KB the CHANGELOG section
+actually needs)
+([#153](https://github.com/LBALab/lba2-classic-community/issues/153);
+until that lands, dedup is a manual step). Extract the
+`## [<version>]` section from `CHANGELOG.md`, wrap it in a short
+header + Full Changelog footer, un-wrap to single-line bullets, and
+publish via `gh release edit --notes-file`.
+
+The extraction, un-wrap script, and wrapper template are in
+[docs/RELEASE_TEMPLATES.md](RELEASE_TEMPLATES.md). Worked example:
+the v0.10.0 body —
+<https://github.com/LBALab/lba2-classic-community/releases/tag/v0.10.0>.
+
+**2. Run the [post-release smoke test](#post-release-smoke-test)**
+before announcing. 30-second sanity check that confirms the artifacts
+GitHub serves are actually runnable on a clean box.
+
+## Post-release smoke test
+
+After a tag-driven release publishes its artifacts, run:
+
+```bash
+bash scripts/dev/verify-release.sh v0.9.0   # or `latest` for rolling
+```
+
+The script downloads every artifact the release serves and checks each as
+far as the host allows. The Linux tarballs and AppImages are extracted and
+run in a clean `debian:stable-slim` container with no SDL3 / X11 / audio
+deps installed. That is the signal CI doesn't cover: the artifact GitHub
+*serves* (post-upload, post-download) actually runs on a fresh system,
+executable bit preserved and static-linking claim holding. Cross-arch
+tarballs are checked via qemu-user-static binfmt (auto-registered);
+cross-arch AppImages are skipped because qemu doesn't handle the AppImage
+type-2 runtime stub reliably.
+
+Metadata checks ride along, each covering a failure mode that stays
+invisible until someone hits it:
+
+- **`--version` agrees with the filename.** A mislabelled artifact fails
+  here rather than on the Releases page.
+- **The AppImage's self-update channel matches the release it hangs off**:
+  `latest-pre` on the rolling release, `latest` on a versioned tag. Reading
+  it needs no container, so this one also covers the cross-arch AppImages
+  the run check has to skip. See [Rolling latest
+  pre-release](#rolling-latest-pre-release) for what a wrong channel does.
+- **The AppImage carries its AppStream metainfo**, which is what software
+  centres and the AppImageHub catalog read.
+- **The `.zsync` still describes the AppImage beside it** (name, length,
+  SHA-1). If they drift, self-update quietly stops working for everyone who
+  already has the file, and nothing else here would notice.
+
+The other three platforms are checked as far as a Linux host reaches:
+
+- **Windows** runs. Under WSL the kernel has a binfmt handler for PE
+  images, so the shipped `.exe` executes as a Windows process and answers
+  `--version` with no wine and no VM. Its VERSIONINFO block is read too,
+  which needs nothing but `grep` and works off WSL. If another handler
+  claims the `MZ` magic first the run reports SKIP, so check
+  `update-binfmts --display cli` before believing the host can't do it.
+- **macOS** is read, not run. `7z` opens the DMG, the bundle's
+  `Info.plist` has to name the right version and carry a copyright line,
+  the Mach-O header has to be the right architecture, and every library in
+  its load commands has to be a system one, which is how the static SDL3
+  link is checked without a Mac. Needs `7z`, `python3` and `llvm-otool`.
+- **Android** is read with the SDK build-tools: manifest `versionName` and
+  ABI against the filename, a signature that verifies under v2 or better,
+  and 16 KB page safety on the arm64 APK via
+  [check-16k-align.sh](../scripts/dev/check-16k-align.sh). Resolved from
+  `ANDROID_HOME`, reported as SKIP when the SDK isn't installed.
+
+Anything the host can't do reports SKIP rather than failing, so the table
+says what was actually checked.
+
+**Without a container runtime** the script still runs the metadata checks
+and exits 2 rather than 0. The channel is read straight out of the file, and
+`--version` is taken by running same-arch artifacts on the host, marked
+`(host run; clean-system NOT verified)` in the row. Cross-arch artifacts are
+not run at all. What a host run cannot show is the part only a container
+can: that the artifact executes on a machine with none of the build deps
+installed. So exit 2 means "a mislabelled artifact would have been caught,
+but this was not a release gate".
+
+**Docker Desktop under WSL.** If the script dies at `registering
+qemu-user-static binfmt` with `docker-credential-desktop.exe: Invalid
+argument` and exit 125, the culprit is `"credsStore": "desktop.exe"` in
+`~/.docker/config.json`: it shells out to a Windows helper that fails
+under WSL, so any Docker Hub *pull* errors out. Already-cached images
+still run, which makes it look like Docker is healthy. Point
+`DOCKER_CONFIG` at a throwaway config for the run rather than editing
+the real one:
+
+```bash
+tmpcfg=$(mktemp -d); echo '{}' > "$tmpcfg/config.json"
+DOCKER_CONFIG="$tmpcfg" bash scripts/dev/verify-release.sh v0.12.0
+```
+
+Use this as a pre-publicize gate: a tagged release that passes the
+local verifier is safe to announce on Discord.
+
+## After the release
+
+Don't announce until the [smoke test](#post-release-smoke-test) passes.
+Then post to two surfaces, in order:
+
+1. **GitHub Discussions, under Announcements** — long-form post that
+   players can link to and that the Releases page can be referenced
+   from. Template + `gh api graphql createDiscussion` mutation in
+   [docs/RELEASE_TEMPLATES.md](RELEASE_TEMPLATES.md). Worked examples:
+   [v0.9.0](https://github.com/LBALab/lba2-classic-community/discussions/121),
+   [v0.10.0](https://github.com/LBALab/lba2-classic-community/discussions/154).
+2. **Discord, in the LBALab community channel** — brief post pointing
+   at the Discussion. Template in
+   [docs/RELEASE_TEMPLATES.md](RELEASE_TEMPLATES.md).
+
+### Natural follow-ups
+
+These become unblocked once `v0.9.0` is tagged:
+
+- **Linux AppImages**
+  ([PR #74](https://github.com/LBALab/lba2-classic-community/pull/74))
+  and macOS/Windows release pipelines. They consume `build/VERSION.txt`
+  to name artifacts.
+- **Optional GitHub repo setting:** Settings → General → "Default to
+  PR title for merge commits". Turning it on makes merge-commit
+  subjects in the git log match the PR title. Cosmetic — cliff handles
+  both formats already.
+
+## How the binary knows its version
+
+The `VERSION` file at the repo root is the single source of truth.
+CMake reads it at build time and produces:
+
+- **`build/VERSION.txt`** — plain text, the resolved version. Release
+  pipelines (PR #74) `cat` this to name artifacts.
+- **`LBA2_VERSION_STRING` macro** in `build/VERSION_GENERATED.h`,
+  pulled in via `BUILD_INFO.h`. The game banner (`Version` in
+  `SOURCES/VERSION.CPP`) and `./lba2cc --version` both read it.
+
+If git is available and the working tree has uncommitted changes, the
+resolved version is suffixed with `-dirty`. So:
+
+| Build context | `./lba2cc --version` |
+|---|---|
+| Tarball (no `.git`) | `0.9.0-dev` (whatever the file says) |
+| Clean dev clone | `0.9.0-dev` |
+| Dev clone with uncommitted changes | `0.9.0-dev-dirty` |
+| At a release commit (file says `0.9.0`) | `0.9.0` |
+
+The maintainer bumps the `VERSION` file as part of cutting a release
+(see step 2 in the recipe above). After the bump-and-commit lands on
+`main`, `./lba2cc --version` reports the real semver.
+
+## Product metadata overrides
+
+Release-facing strings (executable name, runtime window title,
+`.desktop` entry, AppImage label) all flow from one place: the `LBA2_*`
+cache variables in the root `CMakeLists.txt`. Override any of them at
+configure time and every surface follows.
+
+| Cache variable             | Default                         | Used by                                                    |
+|----------------------------|---------------------------------|------------------------------------------------------------|
+| `LBA2_EXECUTABLE_NAME`     | `lba2cc`                        | binary name, `.desktop` `Exec=` / `StartupWMClass`         |
+| `LBA2_PRODUCT_NAME`        | `LBA2 Classic Community`        | window title (with version), `.desktop` `Name`, AppImage   |
+| `LBA2_PRODUCT_NAME_DEMO`   | `LBA2 Twinsen's Odyssey Demo`   | window title when built with `-DDEMO`                      |
+| `LBA2_PRODUCT_DESCRIPTION` | (one-line fork description)     | `.desktop` `Comment`, AppStream `<summary>`                |
+| `LBA2_DESKTOP_ID`          | `lba2cc`                        | `.desktop` filename stem and `Icon=` value                 |
+| `LBA2_BUNDLE_IDENTIFIER`   | `org.lbalab.lba2cc`             | macOS bundle ID, AppStream component ID and filename       |
+
+Example — produce an alternate-branded build:
+
+```bash
+cmake -B build \
+      -DLBA2_PRODUCT_NAME="LBA2 Anniversary Build" \
+      -DLBA2_EXECUTABLE_NAME=lba2-anniv
+cmake --build build
+```
+
+The window title bar reads `LBA2 Anniversary Build <version>`, the
+binary lands at `build/SOURCES/lba2-anniv`, and the generated
+`build/packaging/lba2cc.desktop` carries the matching `Name=` and
+`Exec=` entries. The AppImage script (`scripts/packaging/make-appimage.sh`)
+sources `build/packaging/appimage_env.sh` so its outputs follow too.
+
+The same variables generate `build/packaging/<bundle-id>.metainfo.xml`,
+the AppStream description of the app. `make-appimage.sh` installs it to
+`usr/share/metainfo/` inside the AppDir, which is where AppImageHub, Gear
+Lever and software centres look. Categories are declared twice, in
+`packaging/lba2cc.desktop.in` and in `packaging/lba2cc.metainfo.xml.in`,
+and need to agree. The `Validate packaging metadata` step in `linux.yml`
+runs `desktop-file-validate` and `appstreamcli validate` over both
+generated files on every push.
+
+> **Note on `LBA2_DESKTOP_ID`.** Icon assets are committed under
+> `packaging/lba2cc.{png,ico}`. If you override `LBA2_DESKTOP_ID` (say
+> to `lba2-anniv`), the AppImage script looks for `packaging/<id>.png`,
+> the Windows resource for `packaging/<id>.ico`, and the macOS bundle
+> for an `<id>.icns` generated from `<id>.png`; all three require a
+> matching source file in `packaging/`. The binary, window title, and
+> `.desktop` entry don't need an icon and follow overrides cleanly on
+> their own.
+
+### Renaming the default binary (rare)
+
+Overriding `LBA2_EXECUTABLE_NAME` per-build (above) is the common case.
+Bumping the cache *default* — actually changing the project's shipped
+binary name — has happened once (`lba2` → `lba2cc` for retail-collision
+reasons; see [PR #94](https://github.com/LBALab/lba2-classic-community/pull/94)).
+The CMake change is one line; the doc and CI sweep is most of the work,
+and easy to underestimate.
+
+If it ever happens again, run **three** greps — each catches a different
+class of reference, and a single combined grep will leave stale mentions
+behind:
+
+```bash
+OLD=lba2 NEW=lba2new   # adjust
+
+# 1. Build/output paths in CI workflows, scripts, READMEs.
+grep -rnE "build/SOURCES/$OLD|out/build/.+/SOURCES/$OLD" .
+
+# 2. Bare invocations in docs (./lba2 --version, ./lba2 42).
+#    Most error-prone because the token also appears in lba2.cfg,
+#    lba2.hqr, LBA2_* env vars, and brand mentions — filter the
+#    false positives, don't skip the grep.
+grep -rnE "(\./|\s)$OLD( |\$|\.exe)" --include="*.md" --include="*.sh" .
+
+# 3. CMake target references in workflows, Makefiles, scripts.
+grep -rnE "target $OLD" .github/workflows scripts/ Makefile
+```
+
+Don't forget the `Verify Binary` step in `.github/workflows/{linux,macos,windows}.yml`
+— it's a separate `test -f` line that pattern (1) catches but is
+easy to miss visually because it lives outside the build step.
+
+After substituting, rebuild with `make build` to confirm the binary
+lands at the new path, then re-run all three greps with the **new**
+name to catch typos and partial substitutions.
+
+## Release workflow conventions
+
+Every per-platform release workflow under `.github/workflows/release-*.yml`
+follows the same shape so artifacts land predictably regardless of which
+platform fires first, and adding a new platform is a copy-and-fill exercise:
+
+| Concern | Convention |
+|---|---|
+| **Triggers** | `push: tags: ['v*']` + `workflow_dispatch:`. Tags do real releases; dispatch is for validation runs. |
+| **Job structure** | Two jobs: `build` (matrix, even if 1×1) → `release`. The `build` job is a `uses:` call into `.github/workflows/reusable-build-<platform>.yml` — all toolchain setup, configure, build, and bundle steps live there so `release-latest.yml` can share them. Reusables live at the top level of `.github/workflows/`; GitHub Actions rejects `workflow_call` files in subdirectories. `fail-fast: false` so one arch failing doesn't drop others. |
+| **Artifact handoff** | Reusable build legs use `actions/upload-artifact@v7` with `name: <artifact-prefix>-<arch>`, where `artifact-prefix` is a workflow input. Tag callers leave it at the default (`AppImage`, `LinuxTarball`, `Windows`, `macOS`, `Android`); `release-latest.yml` overrides to `latest-*`. The release job downloads via `pattern: '<prefix>-*' merge-multiple: true`. |
+| **Release upload** | `softprops/action-gh-release@v2` with `generate_release_notes: true`. Asset attach is idempotent across the four per-tag workflows; body is **not** — the action appends the regenerated notes on every run, so the body lands duplicated 4× and is replaced post-tag by the CHANGELOG extraction in [Drafting the release](#drafting-the-release). Tracked as [#153](https://github.com/LBALab/lba2-classic-community/issues/153). |
+| **Tag-only upload** | Release job is gated by `if: startsWith(github.ref, 'refs/tags/')`. `workflow_dispatch` produces downloadable artifacts via the build job's upload step but does not touch the Releases page (avoids creating a "release" named after a branch). |
+| **Artifact naming** | `<exe>-<version>-<platform>-<arch>.<ext>`, e.g. `lba2cc-0.11.0-windows-x64.zip`, `lba2cc-0.11.0-linux-x86_64.tar.gz`, `lba2cc-0.11.0-macos-arm64.dmg`, `lba2cc-0.11.0-android-arm64-v8a.apk`. The AppImage's platform label is `anylinux` (`lba2cc-0.11.0-anylinux-x86_64.AppImage`) and it ships a `.zsync` companion alongside it for delta self-update. Each artifact self-updates within its own channel: the tag field in `gh-releases-zsync` is a reserved keyword rather than a tag name, so tagged AppImages carry `latest` ("newest non-prerelease") and rolling ones carry `latest-pre` ("newest prerelease"). See [Rolling latest pre-release](#rolling-latest-pre-release) for why the rolling build cannot be left on the default. |
+| **Version source** | `build/VERSION.txt`, generated by `cmake/git_version.cmake` from the canonical `VERSION` file. Read once after configure. |
+| **Packaging logic** | Lives under `scripts/packaging/` (`make-appimage.sh`, `bundle-linux-tarball.sh`, `bundle-windows.sh`, `bundle-macos.sh`). One script per platform; the workflow is glue. |
+| **Symbols** | Every leg configures with `-DLBA2_RELEASE_SYMBOLS=ON` and bundles with `--split-symbols`, which moves the debug info into `<exe>-<version>-<platform>-<arch>-symbols.tar.xz` (the AppImage's platform label is `appimage`) and ships the binary without it. The archive is uploaded as its own artifact, `<artifact-prefix>-<arch>-symbols`, kept 90 days, and tag releases attach it with `*-symbols.tar.xz`. The rolling release does not, because it deletes the previous build's assets on every push. See [Crash report symbols](#crash-report-symbols). |
+
+When adding a new platform, copy the closest existing workflow, swap the
+runner / toolchain / packaging script, and the rest of the shape carries
+over. The next section spells the steps out.
+
+## Android signing key
+
+Android identifies an app by package name and signing certificate. Two APKs
+signed with different keys are two different apps, so installing one over the
+other is refused with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, which the package
+installer shows as "App not installed as package conflicts with an existing
+package". The only way past it is to uninstall, and that erases everything the
+app wrote.
+
+So the key is not a formality: it is the thing that decides whether a player
+can update without losing their saves. It has to stay the same for the life of
+the app, and it cannot be recovered if it is lost.
+
+A second reason applies once something has already gone wrong. A build signed
+with the app's own certificate installs over it, so a debuggable build of the
+version a player is stuck on is a rescue tool: `adb backup` includes app-private
+data for a debuggable app and excludes it for a release one, and `run-as` works
+on the same condition. Holding the key is what makes it possible to get
+somebody's saves off a device you cannot otherwise reach. A key that no longer
+exists closes that door for good.
+
+Four repository secrets drive it. `ANDROID_KEYSTORE_BASE64` is a base64 copy of
+the keystore file; the rest name how to open it.
+
+```bash
+keytool -genkeypair -v \
+    -keystore lba2cc-release.jks \
+    -alias lba2cc \
+    -keyalg RSA -keysize 4096 -validity 10000 \
+    -dname "CN=LBA2 Classic Community, O=LBALab, C=GB"
+
+base64 -w0 lba2cc-release.jks > lba2cc-release.jks.b64
+```
+
+```
+ANDROID_KEYSTORE_BASE64   contents of lba2cc-release.jks.b64
+ANDROID_KEYSTORE_PASS     the -storepass you chose
+ANDROID_KEY_ALIAS         lba2cc
+ANDROID_KEY_PASS          the -keypass you chose (omit if it matches the store)
+```
+
+Keep `lba2cc-release.jks` and its passwords somewhere they will outlive the
+machine that made them, and keep them out of the repository. `-validity 10000`
+is about 27 years, which is the usual choice for an app that is meant to be
+updatable indefinitely.
+
+Both release callers pass `secrets: inherit`, so the reusable Android workflow
+sees them. Without the secrets (a fork's pull request, or before they are set)
+the build still succeeds and debug-signs, and both the workflow log and
+the bundler say the result must not be published.
+
+**Rotating the key is not possible without a break.** A new key means every
+player uninstalls once more and loses whatever the old build held. Treat a
+rotation as a last resort, and if one ever happens, say so in the release
+notes in those words, and update the expected fingerprint recorded below.
+
+### Who holds the key
+
+**Copy it to somebody else before you sign anything with it.** A key becomes
+irreplaceable the moment a release goes out signed by it, so the gap between
+creating it and sharing it is the only period in which losing it is cheap.
+Custody comes before first use, not after.
+
+**GitHub Actions secrets are write-only.** Once `ANDROID_KEYSTORE_BASE64` is
+set, nobody can read it back, through the UI or the API. If the only copy of
+the keystore is that secret, the key is gone the moment the secret is deleted,
+the repository is transferred, or the account that set it goes away. There is no
+recovery: the app's identity would have to change, and every player would pay
+another uninstall.
+
+So the key is a project asset, not a person's:
+
+- **Keep an offline copy with at least two maintainers**, or in a vault the
+  project shares. It is the only copy that survives a deleted secret, a
+  transferred repository, or a closed account.
+- **Hold it as an environment secret, never an organization or repository one.**
+  An environment restricts which branches may run a job that names it. It does
+  not hide organization or repository secrets from jobs that do not name it, and
+  those are readable by any job on any branch. So a copy at either scope does not
+  add a second way in, it removes the restriction: anyone with write access
+  pushes a workflow that omits `environment:` and reads the key. Durability is
+  not the argument for organization scope it appears to be either, since the copy
+  that survives a rename, a transfer, or GitHub itself is the offline one above.
+- **Treat it like the domain name**, not like a credential you rotate on a
+  schedule. Rotation is the thing that cannot be done cheaply.
+
+The trade-off: a key held by CI means anyone who can push a tag signs with it.
+The alternative is a human signing each release locally, which is worse for a
+community project, because it makes every release wait on one person being
+available.
+
+To check afterwards that a release really can update the one before it, compare
+the certificates rather than trusting the pipeline:
+
+```bash
+apksigner verify --print-certs lba2cc-<old>-android-arm64-v8a.apk | grep SHA-256
+apksigner verify --print-certs lba2cc-<new>-android-arm64-v8a.apk | grep SHA-256
+```
+
+Equal digests mean an update; different digests mean an uninstall. Every APK
+published before `0.13.0` has its own digest, including the two ABIs of a
+single release, because each CI job generated a throwaway key.
+
+`versionCode`, the integer Android orders builds by, is derived from the
+version by `bundle-android.sh` (`0.12.0` becomes `1200`) and substituted into
+the staged manifest. The manifest in the tree keeps a literal `1` so it stays
+readable and buildable by hand; the bundler fails the build if it cannot find
+the attribute to substitute.
+
+### Onboarding without handing over the key
+
+Most people need nothing. A fork's pull request cannot read secrets, so a
+contributor's build is debug-signed and says so in its own output. None of this
+gates contributing.
+
+For everyone else there are two roles, and only one of them involves possessing
+the file:
+
+| role | needs | granted by |
+|---|---|---|
+| Contributor | nothing | nothing to do |
+| Release-cutter | to be able to run a signed release | access to the environment below |
+| Custodian | an offline copy of the keystore | deliberate handover, kept small |
+
+A release-cutter never holds the key. That separation only exists if the secrets
+sit behind a **GitHub Environment** rather than plain repository secrets: any job
+on any branch of the repository can read a plain secret, and log masking stops
+accidents rather than intent. Without an environment, the people who
+effectively hold the key are everyone with write access, whatever the
+custodian list says.
+
+To set it up:
+
+1. Create an environment named `android-release`.
+2. Restrict its deployment branches to `main` and the release tag pattern, so a
+   workflow pushed to a feature branch cannot reach the secrets.
+3. Hold the four secrets on that environment, not at repository or
+   organization scope.
+4. Add `environment: android-release` to the signing job in
+   `reusable-build-android.yml`.
+
+Step 4 has to accompany the rest. A job naming an environment that does not
+exist fails, and an environment that no job names protects nothing.
+
+### Handing a copy to a custodian
+
+One file, every custodian, and adding another later is a re-encrypt rather than a
+fresh hand-off:
+
+```bash
+gpg --import maintainer-2.pub maintainer-3.pub
+
+gpg --batch --yes --trust-model always \
+    -r maintainer-1 -r maintainer-2 -r maintainer-3 \
+    --output lba2cc-release.jks.gpg --encrypt lba2cc-release.jks
+```
+
+Check it reached everyone rather than assuming, because a missing `-r` fails
+silently and leaves a bundle only one person can open:
+
+```bash
+gpg --batch --list-packets lba2cc-release.jks.gpg | grep -c "pubkey enc packet"
+```
+
+The count must equal the number of custodians. The result is safe to keep in a
+private repository; the keystore password belongs somewhere else, since storing
+both together makes them one secret.
+
+### Verifying a copy is the real one
+
+A custodian should be able to check what they were handed without trusting
+whoever handed it over. The two tools disagree on formatting, so normalise
+before comparing:
+
+```bash
+keytool -list -v -keystore lba2cc-release.jks -storepass "$PASS" \
+  | sed -n 's/.*SHA256: //p' | tr -d ':' | tr 'A-Z' 'a-z'
+
+apksigner verify --print-certs lba2cc-<version>-android-arm64-v8a.apk \
+  | sed -n 's/.*SHA-256 digest: //p'
+```
+
+`keytool` prints colon-separated uppercase and `apksigner` prints neither, so
+comparing the raw output always disagrees and tells you nothing.
+
+The release certificate's fingerprint is recorded here. It lets a custodian
+check their copy before there is any published APK to compare against, and it
+lets a player confirm an APK is genuinely this project's.
+
+```
+release certificate SHA-256: f735d16efceefd0c99ca4da618f93ee08c9655ca457e00b866c257cc433780d2
+```
+
+The release build checks every signed APK against that value and fails on a
+mismatch, so a wrong keystore, a wrong alias or a truncated secret stops at CI
+rather than at a player's update. The value is in
+`reusable-build-android.yml` as well, and rotating the key means changing it in
+both places.
+
+### When a maintainer moves on
+
+**Other people have it.** Actions secrets are write-only, so CI is not a store
+anything can be recovered from: if the only copies are that secret and one
+laptop, the project is one disk failure away from a new identity.
+
+**The fingerprint is published**, so a successor can verify what they inherited
+rather than believe it.
+
+**Rotation covers a departure, not a loss.** Signing-scheme v3 proof-of-rotation
+needs the old key to sign the lineage. It answers "a custodian left and should no
+longer be able to publish" and says nothing at all about "nobody can find the
+file".
+
+**The worst case is survivable.** If every copy is lost, the recovery is a new
+key and one more forced uninstall. The user directory lives outside app-private
+storage, so that uninstall costs a player their time rather than their saves,
+which is what keeps a lost key an expensive inconvenience instead of the end of
+the app's identity.
+
+**One recurring task.** Once a year, confirm at least two custodians still hold
+the file and can still open it, by having one of them sign a throwaway APK from
+their own copy. Confirming somebody has a file is not the same as confirming
+they can use it, and a forgotten password is discovered on the day it is needed.
+
+## Adding a new release target
+
+The release infra is split so adding a platform is mechanical: a packaging
+script + a reusable build workflow + a thin caller + one matrix leg in
+`release-latest.yml`. Concrete order:
+
+1. **Packaging script** — `scripts/packaging/bundle-<platform>.sh` (or a
+   monolithic `make-<platform>.sh` for AppImage-style targets that do
+   their own configure+build inside the script). Takes built artifact,
+   version, arch, build-dir, and output-dir as `--flag` arguments;
+   produces the release artifact under the output dir. Naming:
+   `lba2cc-<version>-<platform>-<arch>.<ext>`. The existing scripts are
+   the templates — Windows is the cleanest split-bundle pattern, AppImage
+   is the monolithic pattern, macOS shows bundle-with-platform-metadata,
+   tarball is the simplest pure-cmake bundle.
+2. **Configured templates** *(optional)* — `scripts/packaging/<platform>-readme.txt.in`
+   for an in-archive README, `packaging/<template>.in` for `Info.plist`-
+   style configure-time substitution. Wire via `configure_file()` in
+   CMake.
+3. **Local dry-run** *(optional but recommended)* —
+   `scripts/dev/build-<platform>-release.sh` that runs the same configure
+   + build + bundle locally without GitHub Actions. Lets contributors
+   exercise the artifact path without pushing a branch.
+4. **Reusable build workflow** —
+   `.github/workflows/reusable-build-<platform>.yml`. Must live at the
+   top level of `.github/workflows/`; GHA rejects `workflow_call`
+   workflows in subdirectories. Copy the nearest sibling and swap
+   runner / preset / toolchain setup / bundle script invocation. Keep
+   the `workflow_call` trigger, the `artifact-prefix` input, and the
+   `upload-artifact` step using
+   `name: ${{ inputs.artifact-prefix }}-${{ matrix.arch }}` — that's the
+   contract the release jobs rely on. Configure with
+   `-DLBA2_RELEASE_SYMBOLS=ON`, bundle with `--split-symbols`, and upload the
+   symbol archive as `${{ inputs.artifact-prefix }}-${{ matrix.arch }}-symbols`
+   the way the other legs do, excluding it from the main artifact.
+
+   If your target needs SDL3 from source, use
+   `uses: ./.github/actions/setup-sdl3` with `link: static` for a release
+   build, and pass its `prefix` output to `CMAKE_PREFIX_PATH`. It reads
+   the tag from `.github/sdl3-version.txt` and keys its cache on
+   `runner.arch`, so a multi-arch matrix needs nothing extra. (The
+   targets that don't use it take SDL3 from a distro package: AppImage
+   from the Arch container, Windows from MSYS2 pacman.)
+5. **Thin caller** — `.github/workflows/release-<platform>.yml`:
+   `on: push: tags: ['v*'] + workflow_dispatch`, a `build` job that just
+   `uses:` the reusable, and a `release` job gated by
+   `if: startsWith(github.ref, 'refs/tags/')` that downloads via
+   `pattern: '<Platform>-*'` and runs `softprops/action-gh-release@v2`
+   with the artifact's glob and `*-symbols.tar.xz`.
+   ~25 lines total — `release-windows.yml` is the cleanest example.
+
+   **Build steps belong in the reusable, never in the thin caller.** Any
+   configure/build/bundle step you add only to `release-<platform>.yml`
+   will not run when `release-latest.yml` builds the rolling pre-release,
+   so the tagged and rolling artifacts will diverge silently. If you
+   need a step for one caller only, gate it inside the reusable on a
+   `workflow_call` input rather than splitting it across files.
+6. **`release-latest.yml`** — add a `build-<platform>` job that calls the
+   reusable with `with: artifact-prefix: latest-<platform>`. Add to the
+   `release.needs:` list and the file glob to the `release.files:` block.
+7. **Conventions table** — add an artifact-name row to the table above
+   showing the exact `<exe>-<version>-<platform>-<arch>.<ext>` for the
+   new target.
+8. **CHANGELOG** — entry under `[Unreleased]`.
+
+What CMake might need touching: configure-time templates
+(`configure_file(... Info.plist.in ...)`), per-target properties
+(`MACOSX_BUNDLE`-style), or a new flag if the platform needs a build
+mode the existing `LBA2_LINK_STATIC` toggle doesn't cover. Keep platform
+specifics behind a `CMAKE_SYSTEM_NAME` check, not a new option.
+
+**Testing the new target before tagging:**
+
+- Local dry-run produces an artifact identical in shape to what CI will.
+- `gh workflow run release-<platform>.yml --ref <branch>` triggers a
+  `workflow_dispatch` validation run. Build job runs, artifact uploads,
+  release job is skipped by the tag gate. Download the artifact from the
+  run page and exercise it.
+- For the rolling-release leg: push a no-op commit to a fork's `main`
+  and confirm `release-latest.yml` picks up the new leg and includes its
+  glob in the rolling release.
+- Cut a `v0.X.Y-rc1` pre-release tag once dispatch validation passes —
+  exercises the full tag path end-to-end without committing to a stable
+  version.
+
+## Rolling latest pre-release
+
+`.github/workflows/release-latest.yml` is a deliberate exception to the
+"tags only" convention above. It triggers on every `push: branches: [main]`
+and force-overwrites a `latest` GitHub Release with the just-built
+artifacts. Marked `prerelease: true` and `make_latest: false` so the most
+recent stable tag (e.g. `v0.9.0`) keeps GitHub's "Latest" badge — the
+rolling release sits below it, clearly labeled.
+
+| Aspect | Difference from the per-tag releases |
+|---|---|
+| **Trigger** | `push: branches: [main]` (vs `push: tags: ['v*']`) |
+| **Tag** | Static `latest`, force-moved to current commit on every push |
+| **Pre-release flag** | Always `true` (vs always `false` for versioned tags) |
+| **`make_latest`** | `false` (vs default — versioned tags get GitHub's "Latest" promotion) |
+| **Concurrency** | Single `release-latest` group, `cancel-in-progress: true`. Back-to-back commits don't queue; newest wins. |
+| **Partial release on failure** | `if: always() && !cancelled()` on the release job. If one platform's build leg fails, the rolling release still updates with the platforms that succeeded. Tag releases are stricter (`if: startsWith(github.ref, 'refs/tags/')`) because a tagged release is meant to be complete. |
+| **Asset pruning** | Assets not produced by the current run are deleted after upload. Filenames embed the version, so uploads never overwrite the previous build and would otherwise pile up indefinitely. Tag releases need no pruning: each has its own tag. Consequence: a failed build leg drops that platform's download rather than leaving an older version sitting there looking current. Skipped entirely when a run produces no artifacts at all, so a total build failure cannot empty the release. |
+
+Same packaging scripts (`make-appimage.sh`, `bundle-linux-tarball.sh`,
+`bundle-windows.sh`, `bundle-macos.sh`), same artifact shape, same
+naming. The rolling release is functionally a tag-release at HEAD-of-main
+with a moving tag instead of a fixed semver.
+
+**Read the name, not the timestamp.** A release's `published_at` is stamped
+once, when it is first published; updating a release in place never advances
+it. The rolling release's date on the Releases page therefore reads as the
+day this workflow first ran, however recent the build. The release *name*
+carries the short commit and build date instead:
+
+```
+Latest (rolling pre-release) - 9d91ab9, 2026-08-10
+```
+
+The body repeats both, with a link to the commit.
+
+**The tag moves, so plain `git fetch` won't follow it.** Once you hold an
+older `latest`, git rejects the update rather than clobbering your copy. Use
+`git fetch --force --tags origin`. Nothing rebuilds when the tag moves: the
+per-tag release workflows filter `v*`, and ref updates authored by
+`GITHUB_TOKEN` don't trigger workflows.
+
+**Each AppImage self-updates within its own channel.** The update information
+baked in by `make-appimage.sh` is
+`gh-releases-zsync|<owner>|<repo>|<channel>|*<arch>.AppImage.zsync`, and the
+channel field is a reserved keyword rather than a tag name: `latest` means
+"newest non-prerelease", `latest-pre` means "newest prerelease". The rolling
+release is tagged `latest` *and* flagged `prerelease: true`, so there is no
+spelling that means "the tag named `latest`": the keyword always wins.
+
+A rolling build left on the default `latest` therefore resolves to the newest
+**stable** tag and overwrites itself with it on first run. `appimageupdatetool
+-Or` overwrites in place, so the file keeps its rolling filename while the
+payload becomes the stable build: `lba2cc-0.13.0-dev-anylinux-x86_64.AppImage`
+whose banner reads `0.12.0`, reporting "up to date" forever after because it
+genuinely matches the stable release it was silently moved to.
+
+`release-latest.yml` therefore passes `update-channel: latest-pre` to the
+reusable AppImage build; tag releases take the default and stay on stable.
+The keyword is implemented by the Rust `appimageupdatetool` that
+`self-updater.hook` downloads (`src/update_info/forge.rs` in
+`pkgforge-dev/AppImageUpdate`).
+
+Both keywords select on GitHub's prerelease flag, not on the tag name, and
+`release-latest.yml` is the only workflow that sets it. A `v0.X.Y-rc1` tag
+therefore publishes as an ordinary release: it would take GitHub's "Latest"
+badge and become the target of the **stable** channel, not the rolling one.
+Set `prerelease: true` on the release step when cutting one.
+
+**When to point users at it:** for community testers who want to
+verify a fix on `main` without building from source, or for "does this
+reproduce on the latest main?" bug-report triage. Otherwise prefer
+linking to a versioned release (stable, immutable, won't change under
+their feet between two clicks).
+
+## Crash report symbols
+
+What each release build publishes so a player's crash report can be turned
+into functions, files and lines. Using it is in
+[CRASH_INVESTIGATION.md](CRASH_INVESTIGATION.md#starting-from-a-crash-report).
+
+A crash block's `module` lines carry each module's identity: the GNU build ID
+on Linux and Android, `LC_UUID` on macOS, and the link timestamp with the image
+size on Windows. The shipped binaries keep their symbol table, which names the
+functions. Files, lines and inlined frames need the debug info of that exact
+build, so every leg keeps it:
+
+| Where | What | Kept |
+|---|---|---|
+| Tag release assets | `<exe>-<version>-<platform>-<arch>-symbols.tar.xz`, the AppImage's labelled `appimage` | with the release |
+| Workflow artifacts | `<artifact-prefix>-<arch>-symbols`, from every release build, the rolling one included | 90 days |
+| The rolling release | nothing: it deletes the previous build's assets on every push | |
+
+An archive holds a `.debug` file per ELF or PE binary, or a dSYM for the macOS
+app; the Android one covers every library the APK ships. `--fetch` in
+`symbolize_crash.py` finds them by the version and commit in a block's `build`
+line, so the names above are a contract with that script.
+
+The debug info does not change the code, so a symbolized frame is the frame
+that ran: `-g` left `.text` and `.data` byte-identical on Apple clang with thin
+LTO, on GCC with LTO, and on a Windows CI-style build, as recorded in the
+[crash report plan](plan/CRASH_REPORT_PLAN.md), sections 3.5 and 7.5.
+MinGW needs `-g` on the link as well, since with LTO the code is generated
+there. On macOS the link keeps its LTO objects
+(`-object_path_lto`), without which `dsymutil` writes an empty dSYM;
+`split-symbols.sh` fails the build rather than publish one.
+
+On Windows the split changes `SizeOfImage`, because a PE image maps its debug
+sections: stripped, the image is smaller than the one the debug file
+describes. `symbolize_crash.py` recovers the shipped size from the debug file's
+sections, so the match still holds. objcopy would also write the time it runs
+into both files' timestamp; `split-symbols.sh` pins it to the link's with
+`SOURCE_DATE_EPOCH`.
+
+## Linux tarball release artifact (local dry-run)
+
+The Linux tarball is the static-binary alternative to the AppImage —
+same binary contents, no AppImage runtime, no desktop integration. For
+users on distros where AppImage friction matters (no FUSE, immutable
+distros, packagers wrapping the binary), and for "is this a clean-binary
+issue?" triage.
+
+```bash
+bash scripts/dev/build-linux-tarball.sh
+```
+
+Configures the `linux` preset with `-DLBA2_LINK_STATIC=ON` and
+`-DLBA2_RELEASE_SYMBOLS=ON`, builds, and calls
+`scripts/packaging/bundle-linux-tarball.sh --split-symbols` to produce
+`dist/lba2cc-<version>-linux-<arch>.tar.gz` and its
+[symbol archive](#crash-report-symbols) beside it. Arch label comes from
+`uname -m`, so x86_64 hosts produce `x86_64` artifacts and aarch64 hosts
+produce `aarch64`.
+
+Tarball layout:
+
+```
+lba2cc-<version>-linux-<arch>/
+    lba2cc            ← statically linked: no libSDL3.so, no libsmacker.so
+    README.txt        ← LF line endings, populated from
+                        scripts/packaging/linux-readme.txt.in
+    LICENSE.txt       ← GPL-2.0 from repo root
+```
+
+Three files, deliberately. No icon, no `.desktop`, no install script —
+users who want desktop integration grab the AppImage. The bundle
+script's `ldd` audit flags any non-glibc-family shared dependency that
+slipped through static linking.
+
+**Local SDL3 caveat.** Most distros ship SDL3 as a shared library only,
+and `-DLBA2_LINK_STATIC=ON` requires the SDL3-static target — so with
+only a shared SDL3 installed, `find_package(SDL3)` fails outright. To
+produce a truly static binary locally, build SDL3 from source with the
+same flags CI uses and pass its prefix via `CMAKE_PREFIX_PATH` (CMake
+picks it up natively from the environment):
+
+```bash
+git clone --depth 1 --branch "$(cat .github/sdl3-version.txt)" \
+    https://github.com/libsdl-org/SDL /tmp/SDL
+cmake -S /tmp/SDL -B /tmp/SDL/build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DSDL_STATIC=ON -DSDL_SHARED=OFF \
+      -DCMAKE_INSTALL_PREFIX=/tmp/sdl3-static-prefix
+cmake --build /tmp/SDL/build && cmake --install /tmp/SDL/build
+
+CMAKE_PREFIX_PATH=/tmp/sdl3-static-prefix \
+    bash scripts/dev/build-linux-tarball.sh
+```
+
+CI does the same dance via `.github/actions/setup-sdl3` with `link:
+static` (see `.github/workflows/reusable-build-linux-tarball.yml`).
+A genuinely-static tarball's `ldd` output shows only `linux-vdso`,
+`libc`, `libm`, and the loader — no SDL3, no libsmacker.
+
+## macOS release artifact (local dry-run)
+
+On a macOS box (Apple Silicon or Intel):
+
+```bash
+bash scripts/dev/build-macos-release.sh
+```
+
+Auto-detects host arch and picks the matching CMake preset (`macos_arm64`
+or `macos_x86_64`), configures with `-DLBA2_LINK_STATIC=ON` and
+`-DLBA2_RELEASE_SYMBOLS=ON`, builds, and calls
+`scripts/packaging/bundle-macos.sh --split-symbols` to produce
+`dist/lba2cc-<version>-macos-<arch>.dmg` and its
+[symbol archive](#crash-report-symbols).
+Override the auto-detection with `--preset macos_x86_64` if you want to
+build x86_64 on Apple Silicon (Rosetta-friendly Xcode required).
+
+Requires macOS host — uses `hdiutil` (DMG creation), `sips` (icon resampling),
+and `iconutil` (`.icns` packaging). All three ship with Xcode CLI tools.
+
+SDL3 needs to be discoverable. The simplest setup: `brew install sdl3`. The
+script auto-detects the Homebrew prefix and prepends it to `CMAKE_PREFIX_PATH`
+so `find_package(SDL3)` resolves cleanly on both Apple Silicon (`/opt/homebrew`)
+and Intel (`/usr/local`). CI uses `.github/actions/setup-sdl3` instead and
+points at its own prefix: different machinery, same outcome.
+
+DMG mounts as volume "LBA2 Classic Community <version>" with the items
+at the volume root (no wrapping directory):
+
+```
+LBA2 Classic Community.app
+Applications -> /Applications   (drag-to-install symlink)
+README.txt
+LICENSE.txt
+```
+
+Bundle directory carries `LBA2_PRODUCT_NAME` (the Finder display name).
+The inner Mach-O at `Contents/MacOS/lba2cc` and the DMG filename both
+follow `LBA2_EXECUTABLE_NAME` — kept space-free for CLI use and to match
+the cross-platform artifact naming (`<exe>-<version>-<platform>-<arch>`).
+
+The first-launch Gatekeeper friction (right-click → Open) is documented
+in the README inside the DMG. Code signing + notarization are deferred
+until the project gets an Apple Developer Program account.
+
+## Windows release artifact (local dry-run)
+
+Iterate on the Windows release ZIP locally without burning CI minutes:
+
+```bash
+bash scripts/dev/build-windows-release.sh
+```
+
+The script auto-detects the build environment:
+
+- **MSYS2 (UCRT64 / MINGW64)** — uses the matching native preset, produces an `x64` artifact. This is the recommended local path because it's bit-for-bit the same toolchain the CI release workflow (B2) uses, and SDL3 is straightforward (`pacman -S mingw-w64-ucrt-x86_64-SDL3`).
+- **Linux (incl. WSL)** — falls back to the `cross_linux2win` preset, produces an `i686` (32-bit) artifact. Cheap if you have `mingw-w64` already installed, but **also requires SDL3 for the i686 cross-arch**, which most distros don't ship by default. No CI job takes this path, since the Windows release leg builds natively under MSYS2, so on a dev box you'd typically just use MSYS2 too.
+
+Override the preset explicitly with `--preset windows_ucrt64`, `--preset windows_mingw64`, etc. if you want to test a specific configuration regardless of host environment.
+
+Both paths configure with `-DLBA2_RELEASE_SYMBOLS=ON` and invoke the same `scripts/packaging/bundle-windows.sh --split-symbols`, so the ZIP layout and its [symbol archive](#crash-report-symbols) cannot drift between local dry-run and CI. The cross path splits with `i686-w64-mingw32-objcopy`, since a Linux host's own objcopy may not read PE. The CI release workflow (B2, separate PR) calls the same script.
+
+Prerequisites:
+
+- `cmake`, `ninja` — both paths.
+- Either `zip` or `python3` for the archive step (script falls back to `python3 -m zipfile` if `zip` isn't installed).
+- **MSYS2 path**: a working MSYS2 UCRT64 dev environment (the same one used for native dev builds).
+- **Linux/WSL path**: `mingw-w64` (`apt install mingw-w64` on Debian/Ubuntu, `pacman -S mingw-w64-gcc` on Arch) plus SDL3 built or installed for i686.
+
+ZIP layout:
+
+```
+lba2cc-<version>-windows-<arch>/
+    lba2cc.exe        ← static-linked: no SDL3.dll, no MSYS2 runtime DLLs
+    README.txt        ← CRLF line endings, populated from
+                        scripts/packaging/windows-readme.txt.in
+    LICENSE.txt       ← GPL-2.0 from repo root, CRLF
+```
+
+`-arch` is `i686` for the local cross-compile dry-run, `x64` for the
+native MSYS2 UCRT64 release workflow. The bundle script's DLL audit
+flags any non-system DLL dependency that slipped through static linking.
+
+To produce a *non-static* dev build that matches the day-to-day MSYS2
+workflow, use the regular preset and skip this script — it's purely a
+release-packaging path.
+
+## What `git-cliff` reads
+
+- Commit messages on `main` since the previous tag.
+- Conventional-commit prefixes (`feat:`, `fix:`, `port:`, `docs:`, ...) drive
+  the section grouping. See `cliff.toml` and the
+  [Commit & PR conventions](../AGENTS.md#commit--pr-conventions) section in
+  AGENTS.md.
+- One entry per PR. Cliff queries the GitHub API for each commit on `main`
+  to resolve its associated PR (number + title) and renders one line per
+  PR. Works identically for squash-merge, merge-commit, and rebase modes —
+  the merge mode doesn't matter, the PR title does. The PR-title CI check
+  (`.github/workflows/pr-title.yml`) is what keeps the log clean enough.
+- A small `commit_preprocessors` rule rewrites GitHub's default merge
+  subject (`Merge pull request #N from owner/branch`) into the
+  conventional-commit-formatted PR title that GitHub puts on the third
+  line of the body. This lets the type-based grouping (Added / Fixed /
+  ...) work correctly for merge-commit-mode PRs.
+- **`chore:` is the explicit "skip from changelog" prefix.** Use it for
+  housekeeping PRs (formatting, internal refactors that aren't worth
+  surfacing to readers, tooling fixes). Cliff drops them entirely.
+- The `[remote.github]` block in `cliff.toml` enables author handle
+  lookup via the GitHub API (`commit.remote.username`). Each entry then
+  ends with ` — by @handle` linking to the author's profile. If the API
+  call is unauthenticated and rate-limited, cliff falls back to the git
+  author name — exporting `GITHUB_TOKEN` (above) avoids that.

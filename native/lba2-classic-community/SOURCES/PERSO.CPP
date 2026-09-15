@@ -1,0 +1,3091 @@
+#include "C_EXTERN.H"
+
+#include <SYSTEM/INPUT_FLOW.H>
+#include <POLYGON/POLYFILT.H>
+
+extern S32 GfxDitherShading;
+#include "IMAGE_LOAD.H"
+
+#include "BUILD_INFO.h" /* LBA2_VERSION_STRING (for --version flag) */
+#include "INITADEL.H"
+#include "DIRECTORIES.H"
+#include "DISTRIB.H"
+#include "HQR_NAMES.H"
+#include "RES_DISCOVERY.H"
+#include "RES_PICKER.H"
+#include "INPUT.H"
+#include "CLI_ARGS.H"
+#include "CONFIG_FILE.H"
+#include "CONTROL.H"
+#include "RES_SWITCH.H"
+#include "CONSOLE/CONSOLE.H"
+#include "EXIT_SCREEN.H"
+#include "PERFTRACE.H"
+#include "TOUCH_INPUT.H"
+#include <SYSTEM/CUE.H>
+#include <SYSTEM/DISCIMG.H>
+#include <SYSTEM/LOG.H>
+#include <SYSTEM/LOGPRINT.H> /* CreateLog (boot log brought up in main) */
+#include <SYSTEM/CRASH.H>    /* Crash_Install, right after the log */
+#include "ASSET_PREFLIGHT.H"
+#include <SYSTEM/EVENTS.H>
+#include <SVGA/VIDEO.H>
+#include <FILEIO/SAVEPNG.H>
+
+#include <SVGA/SCREEN.H>
+#include <SYSTEM/KEYBOARD_KEYS.H>
+#include "FOLLOWCAM.H"
+#include "FOLLOWCAM_CFG.H" /* the *_DEFAULT tunables, read and written by the cfg below */
+#include "BOOT_EXIT.H"
+#include "UI_LAYOUT.H" /* UI_VCENTER_OFS */
+#include <SYSTEM/STRING.H>
+#include <SYSTEM/WINDOW.H>
+
+#ifdef DEBUG_TOOLS
+static inline U32 DosAvailableMem(void) { return 0; }
+#endif
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+#include <SYSTEM/ANDROID.H>
+#include <ctype.h>
+#include <stdarg.h>
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "AMBIANCE.H"
+
+/*#ifndef DEMO
+#define THOMAS  1
+#endif
+*/
+
+#ifdef DEMO
+extern char *Version;
+#else
+extern const char *Version;
+#endif
+
+extern T_OBJ_3D InvObjTwinsen[];
+
+extern S32 PersoFlashTimer; // pour quand le perso eh ben y meurt !!!
+
+S32 EscTimer;
+
+/*══════════════════════════════════════════════════════════════════════════*/
+char NamePcxSave[ADELINE_MAX_PATH];
+S32 NumPcxSave = 0;
+
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+/*══════════════════════════════════════════════════════════════════════════*/
+
+U32 MemoMemory;
+U32 MemEnd;
+U32 MemoDosMemory;
+U32 MemoMinDosMemory;
+
+S32 MinNbf = 1000;
+S32 MaxNbf = 0;
+
+S32 NbNbf = 0;
+S32 TotalNbf = 0;
+
+/*══════════════════════════════════════════════════════════════════════════*/
+
+void AffDebugMenu() {
+    S32 lig = 0;
+
+    CoulText(LBAWHITE, 0);
+
+    GraphPrintf(FALSE, 0, lig += 9, "Island: %d", Island);
+    GraphPrintf(FALSE, 0, lig += 9, "Cube: %d", NumCube);
+    GraphPrintf(FALSE, 0, lig += 9, "Chapter: %d", ListVarGame[FLAG_CHAPTER]);
+
+    GraphPrintf(FALSE, 0, lig += 9, "CmptMemoTimer: %d", CmptMemoTimerRef);
+    GraphPrintf(FALSE, 0, lig += 9, "Nb Objs: %d", NbObjets);
+    GraphPrintf(FALSE, 0, lig += 9, "Nb Zones: %d", NbZones);
+    GraphPrintf(FALSE, 0, lig += 9, "Nb Tracks: %d", NbBrickTrack);
+
+    GraphPrintf(FALSE, 0, lig += 10, "NbFPS: %d", NbFramePerSecond);
+
+    GraphPrintf(FALSE, 0, lig += 9, "Free(K): %d", (AvailableMem()) / 1024);
+    GraphPrintf(FALSE, 0, lig += 10, "Memory at start: %d Ko", MemoMemory / 1024);
+
+    GraphPrintf(FALSE, 0, lig += 9, "Total Extend Memory used: %d Ko", (MemoMemory - (AvailableMem())) / 1024);
+
+    lig += 9;
+
+    GraphPrintf(FALSE, 0, lig += 9, "CameraY     : %d", CameraY);
+
+    lig += 9;
+
+    GraphPrintf(FALSE, 0, lig += 9, "AlphaCam     : %d", AlphaCam);
+    GraphPrintf(FALSE, 0, lig += 9, "VueDistance  : %d", VueDistance);
+}
+#endif
+
+/*══════════════════════════════════════════════════════════════════════════*/
+
+// Pour eviter d'ecraser les anciennes copies d'ecran !!!!
+void GetNumPcxSave() {
+    struct dirent *file;
+    DIR *dir;
+    S32 num;
+    char shootDirPath[ADELINE_MAX_PATH];
+    char pathname[ADELINE_MAX_PATH];
+
+    GetShootPath(shootDirPath, ADELINE_MAX_PATH, NULL);
+    dir = opendir(shootDirPath);
+    if (dir != NULL) {
+        while ((file = readdir(dir)) != NULL) {
+            bool startsLBA = (ade_strcasestr(file->d_name, "LBA") == file->d_name);
+            bool hasPCX = (ade_strcasestr(file->d_name, ".PCX") != NULL);
+            if (startsLBA && hasPCX) {
+                GetShootPath(pathname, ADELINE_MAX_PATH, file->d_name);
+
+                struct stat st = {};
+                stat(pathname, &st);
+                if (S_ISREG(st.st_mode)) {
+                    num = atoi(&file->d_name[3]);
+                    if (num >= NumPcxSave) {
+                        NumPcxSave = num + 1;
+                    }
+                }
+            }
+        }
+        closedir(dir);
+    }
+}
+
+void CheckSavePcx() {
+    if (Key == K_F9) {
+        S32 saveflagfade;
+
+        SaveTimer();
+        MemoClipWindow();
+        UnsetClipWindow();
+
+        BackupScreen(FALSE);
+        CopyScreen(Log, Screen);
+
+        GetNumPcxSave();
+
+        char PCXFilename[ADELINE_MAX_PATH];
+        snprintf(PCXFilename, sizeof(PCXFilename), "LBA%05d.PCX", NumPcxSave);
+        GetShootPath(NamePcxSave, ADELINE_MAX_PATH, PCXFilename);
+
+        CoulText(LBAWHITE, 0);
+        GraphPrintf(TRUE, 50, 0, "Saving Screen into %s", NamePcxSave);
+
+        SavePCX(NamePcxSave, Screen, ModeDesiredX, ModeDesiredY, PtrPal);
+
+        WaitNoInput();
+
+        // RestoreScreen without BoxUpdate()
+        CopyScreen(ScreenAux, Screen);
+        CopyScreen(ScreenAux, Log);
+
+        RestoreTimer();
+        SaveTimer();
+
+        saveflagfade = FlagFade;
+        FlagFade = FALSE;
+
+        RestoreClipWindow();
+
+        BoxReset();
+        BoxStaticAdd(0, 0, ModeDesiredX - 1, ModeDesiredY - 1);
+
+        AffScene(AFF_OBJETS_NO_FLIP);
+        FixeCinemaMode(FALSE);
+
+        FlagFade = saveflagfade;
+        GraphPrintf(FALSE, 50, 0, "Saving Screen into %s", NamePcxSave);
+        BoxBlit();
+        RestoreTimer();
+    }
+}
+
+void CheckSaveLogPcx(U8 *pal) {
+    if (Key == K_F9) {
+        SaveTimer();
+
+        GetNumPcxSave();
+
+        char PCXFilename[ADELINE_MAX_PATH];
+        snprintf(PCXFilename, sizeof(PCXFilename), "LBA%05d.PCX", NumPcxSave);
+        GetShootPath(NamePcxSave, ADELINE_MAX_PATH, PCXFilename);
+
+        SavePCX(NamePcxSave, Log, ModeDesiredX, ModeDesiredY, pal);
+
+        CoulText(LBAWHITE, 0);
+        GraphPrintf(TRUE, 50, 0, "Saving Screen into %s", NamePcxSave);
+
+        WaitNoInput();
+
+        RestoreTimer();
+    }
+}
+
+//****************************************************************************
+/*══════════════════════════════════════════════════════════════════════════*
+                          █    ██▄ █  █    ▀▀█▀▀ ██▀▀▀
+                          ██   ██▀██  ██     ██  ▀▀▀▀█
+                          ▀▀   ▀▀  ▀  ▀▀     ▀▀  ▀▀▀▀▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+void LoadListAnim3DS(void) {
+    U32 handle, buffer;
+    S32 n;
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    // recupere nombre d'anim dans la banque
+    handle = OpenRead(HQRPtrAnim3DS->Name);
+    if (handle) {
+        Read(handle, &buffer, 4);
+        Close(handle);
+        n = (buffer / 4) - 2;
+    }
+
+    // Charge table de description des anims
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, ANIM3DS_HQR_NAME);
+    ListAnim3DS = (T_ANIM_3DS *)LoadMalloc_HQR(tmpFilePath, n);
+    if (!ListAnim3DS)
+        TheEndCheckFile(tmpFilePath);
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+void InitGameLists() {
+    T_INCRUST_DISP *ptrdisp = ListIncrustDisp;
+    S32 i;
+
+    // Peut-etre inutile car fait ailleurs (a verifier ?)
+    ClearExtra();
+
+    for (i = 0; i < MAX_INCRUST_DISP; i++, ptrdisp++) {
+        ptrdisp->Num = -1;
+    }
+
+    memset(ListVarCube, 0, MAX_VARS_CUBE * sizeof(ListVarCube[0]));
+    memset(ListVarGame, 0, MAX_VARS_GAME * sizeof(ListVarGame[0]));
+
+    ResetBuggy();
+    ResetArdoise();
+
+    // Init VarGames
+    InitInventory();
+
+    for (i = 0; i < 4; i++) {
+        SampleAmbiance[i] = -1;
+        SampleRepeat[i] = 1;
+        SampleRnd[i] = 1;
+    }
+
+    NbObjets = 0;
+    NbZones = 0;
+    NbBrickTrack = 0;
+}
+
+/*══════════════════════════════════════════════════════════════════════════*/
+
+void InitGame(int argc) {
+    /*-------------------------------------------------------------------------*/
+    UnsetClip();
+
+    AlphaLight = 896 * MUL_ANGLE;
+    BetaLight = 950 * MUL_ANGLE;
+
+    PtrInit3DGame();
+
+    InitGameLists();
+
+    InitPerso();
+    InitHoloMap();
+
+    SceneStartX = 16 * SIZE_BRICK_XZ;
+    SceneStartY = 24 * SIZE_BRICK_Y;
+    SceneStartZ = 16 * SIZE_BRICK_XZ;
+
+    /*-------------------------------------------------------------------------*/
+    /* init FIRST scene files */
+
+    NewCube = 0;
+    NumCube = -1;
+
+    FlagTheEnd = -1;
+    MagicLevel = 0;
+    MagicPoint = 0;
+    NbGoldPieces = 0;
+    NbZlitosPieces = 0;
+    NbLittleKeys = 0;
+    ListVarGame[FLAG_CHAPTER] = 0;
+    Weapon = FLAG_BALLE_MAGIQUE;
+    Island = 0;
+    ListVarGame[FLAG_CLOVER] = NB_CLOVER_DEFAULT;
+    NbCloverBox = NB_CLOVER_BOX_DEFAULT;
+    FlagWater = FALSE;
+    NumObjFollow = NUM_PERSO;
+    SaveComportement = Comportement = C_NORMAL;
+
+    // Mettre a jour ici pour commencer le jeu directement en mode cinema
+    CinemaMode = FALSE;
+
+    if (argc == -1) {
+        FlagLoadGame = TRUE;
+        LoadGameNumCube();
+    } else {
+        FadeToBlack(PtrPal);
+        Cls();
+        BoxUpdate();
+    }
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+void GamePaused(U32 flags) {
+    T_INCRUST_DISP *ptrdisp = NULL;
+    S32 n;
+    S32 endtimer;
+    S32 fin = FALSE;
+
+    SaveTimer();
+
+    if (flags & PAUSE_CLOVER) {
+        n = InitIncrustDisp(INCRUST_OBJ | INCRUST_YCLIP,
+                            BODY_3D_CLOVER,
+                            0, 0,
+                            0, 0, 3);
+
+        if (n != -1) {
+            ptrdisp = &ListIncrustDisp[n];
+        }
+
+        PersoFlashTimer = TimerRefHR;
+    }
+
+    if (flags & PAUSE_MESSAGE) {
+        ColorFont(LBAWHITE);
+        Font(5, ClipWindowYMax - 33, "Pause");
+
+        BoxMovingAdd(5, ClipWindowYMax - 33, 100, ClipWindowYMax);
+        BoxBlit();
+    }
+
+    InitWaitNoInput(ALL_INPUTS);
+    InitWaitNoKey();
+
+    MyGetInput();
+
+    endtimer = TimerRefHR + 1000 * 5; // Wait 5 sec
+
+    // Magouille pour ne pas avoir la gestion des extras, pof ...
+    FlagAnimWhoSpeak = TRUE;
+
+    while (!fin) {
+        ManageTime();
+
+        if (ptrdisp) {
+            ptrdisp->TimerEnd = TimerRefHR + 3 * 1000; // 3 s
+            AffScene(AFF_OBJETS_NO_FLIP);
+            BoxUpdate();
+        }
+
+        MyGetInput();
+
+        if (MyKey OR Input)
+            fin = TRUE;
+
+        if (flags & PAUSE_CLOVER AND TimerRefHR > endtimer)
+            fin = TRUE;
+    }
+
+    FlagAnimWhoSpeak = FALSE;
+
+    RestoreTimer();
+
+    if (ptrdisp) {
+        ptrdisp->TimerEnd = TimerRefHR + 1000;
+    }
+
+    PersoFlashTimer = 0;
+
+    ClearWaitNoInput();
+}
+
+/*══════════════════════════════════════════════════════════════════════════*
+             █▄ ▄█ █▀▀▀█  █    ██▄ █       █     █▀▀▀█ █▀▀▀█ █▀▀▀█
+             ██▀ █ ██▀▀█  ██   ██▀██       ██    ██  █ ██  █ ██▀▀▀
+             ▀▀  ▀ ▀▀  ▀  ▀▀   ▀▀  ▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀ ▀▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+// en attendant les Input 64 bits (Watcom 11 ?)
+U8 WaitNoKey32 = FALSE;
+U8 WaitNoKey33 = FALSE;
+U8 WaitNoKey34 = FALSE;
+U8 WaitNoKey35 = FALSE;
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+// True if the keyboard (DefKeys) OR gamepad (GamepadKeys) binding for input
+// slot n is held. The four spell/gadget slots (32-35) sit outside the Input
+// bitfield (INPUT_TABLE_SLOTS == 32, and a 1<<i mask can't reach them), so both
+// sources are polled directly here. Reading GamepadKeys too is what lets the
+// pad's D-pad bindings actually cast, now that the D-pad is its own input
+// source rather than an alias of the left stick (issue #360).
+static S32 SpellKeyDown(S32 n) {
+    return CheckKey(DefKeys[n].Key1) OR CheckKey(DefKeys[n].Key2)
+        OR CheckKey(GamepadKeys[n].Key1) OR CheckKey(GamepadKeys[n].Key2);
+}
+
+/*──────────────────────────────────────────────────────────────────────────*/
+
+S32 MainLoop() {
+    /* The exit reason belongs to this entry. See Control_NoteMainLoopEntered. */
+    Control_NoteMainLoopEntered();
+    S32 xm, ym, zm;
+    T_OBJET *ptrobj;
+    U8 i;
+    S32 pansample;
+
+    // Cap on sub-steps per rendered frame (spiral-of-death guard). Below ~8 fps the sim
+    // stops fully catching up and slows in a bounded way rather than freezing on catch-up.
+    const S32 FIXED_TIMESTEP_MAX_STEPS = 8;
+
+    SetDetailLevel(); // prise en compte des différentes options
+
+restartloop:
+
+    FirstTime = AFF_ALL_FLIP;
+    FlagLoadGame = FALSE;
+
+    InitWaitNoKey();
+    ClearWaitNoInput();
+    InitWaitNoInput(I_FIRE | I_MENUS | I_OPTIONS | I_SAVE | I_LOAD);
+
+    /*-------------------------------------------------------------------------*/
+
+    if (EscTimer) {
+        SetTimerHR(EscTimer);
+        ResumeMusic(FALSE);
+    }
+
+    EscTimer = 0;
+
+    /*-------------------------------------------------------------------------*/
+
+    /* vitesse de chute propor pour tous les objets */
+    InitMove(&RealFalling, -2560);
+    /* vitesse de decalage propor tapis roulant */
+    InitMove(&RealShifting, 640);
+
+    /* frequence de paning des samples always */
+    InitMove(&SampleAlwaysMove, 2);
+
+    /*-------------------------------------------------------------------------*/
+
+    FirstSave = TRUE;
+
+    while (TRUE) {
+    startloop:
+
+        Perftrace_FrameBegin();
+
+        /* Runtime resolution-switch keep/revert dialog. Pending whenever
+           cmd_resolution (or a future menu path) fires a switch; runs once
+           per pending arming, then clears itself. Drives its own modal tick
+           loop, so by the time control returns the user has chosen Keep or
+           Revert (or the 15 s timeout fired). No-op when nothing is pending. */
+        Res_RunRevertDialogIfPending();
+
+        /*#ifdef  THOMAS
+		if( DefKeys[0].Key1==0 )
+		{
+			PalOne( LBAWHITE, 255, 255, 255 ) ;
+			CoulText( LBAWHITE, 0 ) ;
+			GraphPrintf( TRUE, 0, 0, "STOP: Patch Inputs trouvé !!!", TRUE ) ;
+			while( Key ) ;
+			while( !Key ) ;
+		}
+#endif
+*/
+        ptrobj = &ListObjet[NUM_PERSO];
+
+        // DEBUG pour trouver bug Alpha
+
+        // debug patch Gamma
+        if (ptrobj->Obj.Alpha != 0 OR ptrobj->Obj.Gamma != 0) {
+            Message("STOP: 'j'ai trouvé le Patch_Alpha' !", TRUE);
+        }
+
+        /*-------------------------------------------------------------------------*/
+
+        if (NewCube != -1) {
+#ifdef DEMO
+            if (NewDemoSave != CurrentDemoSave) {
+                FlagChgCube = 0;
+
+                DemoLogo();
+
+                if (NewDemoSave > NB_DEMOSAVE - 1) {
+                    return 1;
+                } else {
+                    SetDemoSaveGame(NewDemoSave);
+
+                    StopMusic();
+
+                    InitGame(-1);
+                    ChangeCube();
+
+                    CopyScreen(Log, ScreenAux);
+
+                    RestoreTimer();
+                    SaveTimer();
+                    AffScene(AFF_ALL_NO_FLIP);
+                    FixeCinemaMode(FALSE);
+                    CopyScreen(Log, Screen);
+
+                    // au cas ou le mec meurre avant de faire <ESC>
+                    if (!Save_AutoDisabled())
+                        CurrentSaveGame();
+
+                    BoxReset(); // pas de flip
+
+                    // In-game save zoom. Float to match the menu-driven sibling
+                    // (GAMEMENU MainGameMenu): 80 = SCREEN_SAVE_WIDTH/2 so X tracks
+                    // SAVE_THUMB_X, and Y floats with the rest of the UI. No-op at 640x480.
+                    ZoomSavedGame((S32)ModeDesiredX / 2 - 80, 10 + UI_VCENTER_OFS);
+
+                    FlagFade = FALSE;
+                    RestartRainSample = TRUE;
+                    HQ_ResumeSamples();
+
+                    ClearPlasmaMenu();
+
+                    RestoreTimer();
+
+                    goto restartloop;
+                }
+            } else
+#endif
+            {
+                ChangeCube();
+            }
+
+            FirstLoop = TRUE; // premiere boucle d'un cube
+                              // ATTENTION: a verifier si
+                              // cela ne pose pas de probleme !
+            FlagReajustPosTwinsen = TRUE;
+        }
+
+        /* CLI control harness seam: no-op until armed. Runs --exec on the first tick
+         * (scene is loaded by the block above) and finalizes after N ticks. */
+        Control_TickHook();
+
+/*-------------------------------------------------------------------------*/
+#ifdef DEBUG_TOOLS
+        UnsetClip();
+
+        if (CmptMemoTimerRef != 0) {
+            CoulText(LBAWHITE, 0);
+            GraphPrintf(FALSE, 0, 10, "Warning, SaveTimer & RestoreTimer Decale!!!");
+            GraphPrintf(FALSE, 0, 20, "Valeur CmptMemoTimerRef = %d", CmptMemoTimerRef);
+        }
+#endif
+
+        /*-------------------------------------------------------------------------*/
+
+        // en attendant une methode propre de gestion de memoire
+        // des samples !
+        if (RestartRainSample) {
+            StartRainSample();
+            LaunchAmbiance();
+        }
+
+        /*-------------------------------------------------------------------------*/
+
+        LastInput = Input;
+
+        MyGetInput();
+
+        // Harness input timeline (docs/plan/INPUT_SIM_PLAN.md): OR the currently-held injected bits into
+        // this frame's Input so the harness drives the hero without a keyboard. A `seq` hold is
+        // metered in SIM ticks (Control_InputAdvance below, once per sim-running frame) so the
+        // throttle cannot gobble it; an `fseq` event is metered in RENDERED frames (the frame clock
+        // advances here, every frame) so a press can be placed on a skipped frame to reproduce the
+        // throttle edge-drop.
+        if (Control_InputPending()) {
+            Input |= Control_InputCurrentMask();
+            Control_InputFrameTick();
+        }
+
+        ManageTime();
+
+        if (DemoSlide) {
+            // Stuck-cube watchdog (interactive play only). The attract reel is a scripted
+            // showcase, but some scenes (cube 201's Desert Island bat sequence in particular)
+            // can derail per-host: RNG-driven wandering creatures push Twinsen off his
+            // authored track and the SET_CUBE opcode that ends the scene never fires. Bound
+            // the worst-case "stuck hero on screen" exposure by ending the reel gracefully
+            // if any one cube runs longer than CUBE_TIMEOUT_MS. Skipped under the CLI
+            // harness so long --demo --tick runs traverse the full cube state.
+            // Threshold tuned to 2x the longest natural scene measured under --fixed-dt 16
+            // (cube 211 = 61s; cubes 207/210/202/214/213 in the 30-42s range; everything
+            // else under 30s). 120s gives comfortable headroom for slow hosts while keeping
+            // the worst-case "stuck on screen" exposure bounded at 2 minutes. Resets each
+            // time NumCube changes. See issue #176.
+            if (!Control_IsActive()) {
+                static const U32 CUBE_TIMEOUT_MS = 120000;
+                static S32 last_watchdog_cube = -1;
+                static U32 watchdog_entry_time = 0;
+                if (NumCube != last_watchdog_cube) {
+                    last_watchdog_cube = NumCube;
+                    watchdog_entry_time = TimerRefHR;
+                } else if (TimerRefHR - watchdog_entry_time > CUBE_TIMEOUT_MS) {
+                    HQ_StopSample();
+                    SavingEnable = FALSE;
+                    last_watchdog_cube = -1; // reset for the next demo entry
+                    return 0;                // graceful exit, ESC-equivalent
+                }
+            }
+
+            if (MyKey
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+                    AND MyKey != K_T
+#endif
+            ) {
+                HQ_StopSample();
+                SavingEnable = FALSE;
+                return (MyKey != K_ESC);
+            }
+
+            /*                      if( HigTrack>1 AND GetMusicCD()==-1 )
+                        {
+                                S32     num = MyRnd(HigTrack-1)+1 ;
+
+                                PlayCdTrack( num ) ;
+                        }
+*/
+        }
+
+        /*-------------------------------------------------------------------------*/
+        /* gestion clavier */ /* tools */
+
+        // Faut-il le laisser ? (non, à mon avis !)
+        if (DemoSlide AND MyKey == K_T) {
+            SetTimerHR(TimerRefHR + 200);
+        }
+
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+        if (MyKey == K_D) {
+            AffDebugMenu();
+        }
+
+        if (MyKey == K_F) {
+            DebugFps ^= 1;
+            InitWaitNoKey();
+        }
+#endif
+
+#ifdef DEBUG_TOOLS
+        if (MyKey == K_T) {
+            SetTimerHR(TimerRefHR + 200);
+        }
+
+        if (MyKey == K_Z) {
+            DrawZVObjets ^= 1;
+            InitWaitNoKey();
+        }
+
+        if (MyKey == K_E) {
+            FlagDrawHorizon ^= 1;
+            FirstTime = AFF_ALL_FLIP;
+            while (MyKey)
+                MyGetInput();
+        }
+
+        if (MyKey == K_F12) {
+            AsciiMode ^= 1;
+            while (MyKey)
+                MyGetInput();
+        }
+
+        if (MyKey == K_F10) {
+            if (CubeMode == CUBE_EXTERIEUR) {
+                S32 n;
+                S32 lasttimer = TimerRefHR;
+
+                SaveTimer();
+
+                CoulText(LBAWHITE, 0);
+
+                for (n = 0; n < 20; n++) {
+                    ManageTime();
+
+                    if (FlagDrawHorizon) {
+                        DrawHorizon2ZBuf();
+                    }
+
+                    // Doit Rajouter sa boite
+                    AffichageTerrainZBuf();
+                    GraphPrintf(FALSE, 0, 0, "%d Drawn", n);
+                    BoxStaticFullflip();
+                }
+
+                GraphPrintf(TRUE, 0, 10, "Time for 20 Loops: %d", TimerRefHR - lasttimer);
+
+                while (MyKey)
+                    MyGetInput();
+                while (!MyKey)
+                    MyGetInput();
+
+                RestoreTimer();
+            } else {
+                LogPrintf("F10 benchmark only works in exterior scenes\n");
+            }
+            while (MyKey)
+                MyGetInput();
+        }
+
+        if (MyKey == K_F11) {
+            if (CubeMode == CUBE_EXTERIEUR) {
+                S32 n;
+                S32 lasttimer = TimerRefHR;
+
+                SaveTimer();
+
+                CoulText(LBAWHITE, 0);
+
+                for (n = 0; n < 20; n++) {
+                    ManageTime();
+
+                    AffScene(AFF_ALL_NO_FLIP);
+                    GraphPrintf(FALSE, 0, 0, "%d Drawn", n);
+                    BoxUpdate();
+                }
+
+                GraphPrintf(TRUE, 0, 10, "Time for 20 Loops: %d", TimerRefHR - lasttimer);
+
+                while (MyKey)
+                    MyGetInput();
+                while (!MyKey)
+                    MyGetInput();
+
+                RestoreTimer();
+            } else {
+                LogPrintf("F11 benchmark only works in exterior scenes\n");
+            }
+            while (MyKey)
+                MyGetInput();
+        }
+
+        if (MyKey == K_V) {
+            if (MagicBall != -1) {
+                ptrobj->Obj.X = ListExtra[MagicBall].PosX;
+                ptrobj->Obj.Y = ListExtra[MagicBall].PosY;
+                ptrobj->Obj.Z = ListExtra[MagicBall].PosZ;
+            }
+        }
+
+        if (MyKey == K_M) {
+            SaveTimer();
+
+            AffPalette();
+
+            FirstTime = AFF_ALL_FLIP;
+            RestoreTimer();
+        }
+
+        if (MyKey == K_K) {
+            ExtraBonus(ptrobj->Obj.X,
+                       ptrobj->Obj.Y + 2000,
+                       ptrobj->Obj.Z,
+                       (256 * MUL_ANGLE), 0,
+                       6, 1);
+        }
+
+        if (MyKey == K_A) {
+            SaveTimer();
+            if (!FlagFade)
+                FadeToBlackAndSamples(PtrPal);
+
+            FlagFade = TRUE;
+
+            PlayAcf("bu");
+
+            if (CubeMode == CUBE_INTERIEUR) {
+                InitGrille(NumCube);
+            }
+            RazListPartFlow();
+            ChoicePalette();
+
+            FlagFade = TRUE;
+            FirstTime = AFF_ALL_FLIP;
+            RestoreTimer();
+        }
+#endif // debug tools
+
+#ifdef ENABLE_POLY_RECORDING
+        // Scene snapshot / polygon recording capture (Alt+F9)
+        if (Key == K_F9 && (SDL_GetModState() & SDL_KMOD_ALT)) {
+            SnapshotRequested = 1;
+            while (Key)
+                MyGetInput();
+        }
+#endif
+
+        CheckSavePcx(); // F9: Sauve Screen
+
+        /* Console screenshot (PNG): performed here where Log + PtrPal are valid.
+           Capture Log, the presented buffer (SDL PresentFrame uploads Log); Screen
+           is the clean-background secondary and misses the per-frame 3D models and
+           the foreground-brick re-blit. */
+        {
+            char shotPath[ADELINE_MAX_PATH];
+            int is_png = 0;
+            if (Console_HasPendingScreenshot(shotPath, sizeof(shotPath), &is_png) && is_png) {
+                SavePNG(shotPath, Log, ModeDesiredX, ModeDesiredY, PtrPal);
+                Console_ClearPendingScreenshot();
+            }
+        }
+
+        /*-------------------------------------------------------------------------*/
+        /* gestion clavier */ /* game */
+
+        if (!FlagFade) {
+            if (Input & I_HELP) {
+                SaveTimer();
+                StopSpeak();
+                BackupScreen(FALSE);
+                CopyScreen(Log, Screen);
+                BoxReset();
+                InitDial(0);
+
+                HQ_StopSample();
+                RestartRainSample = TRUE;
+
+                InitPlasmaMenu();
+                PauseMusic(TRUE);
+
+                MenuConfig();
+
+                ClearPlasmaMenu();
+
+                InitDial(START_FILE_ISLAND + Island);
+                PaletteSync(PtrPal);
+                RestoreScreen();
+                ResumeMusic(TRUE);
+                RestoreTimer();
+            }
+
+            if ((MyKey == K_ESC OR Input & I_MENUS)) {
+                if (CinemaMode > 1) {
+                    ResetCinemaMode();
+                } else {
+                    StopSpeak();
+                    PauseMusic(FALSE);
+                    EscTimer = TimerRefHR;
+
+                    if (Comportement == C_PROTOPACK OR Comportement == C_JETPACK) {
+                        // pour pouvoir restaurer anim marche protopack
+                        if (ptrobj->GenAnim == GEN_ANIM_MARCHE) {
+                            TimerProto = EscTimer + TEMPO_PROTO_AUTO; // 1/2 s
+                        }
+                    }
+
+                    if ((ptrobj->LifePoint > 0)
+                            AND(ptrobj->Obj.Body.Num != -1)
+                                AND(!(ptrobj->Flags & INVISIBLE))
+                                    AND(NumCube != NUM_CUBE_PHANTOM)
+                                        AND !DemoSlide
+                                            AND !PLAY_THE_END) {
+                        SavingEnable = TRUE;
+                    } else {
+                        SavingEnable = FALSE;
+                    }
+                    /* Leaving MainLoop for the menu. Under MainGameMenu that is a pause
+                       and the loop is re-entered; under the CLI harness, which calls
+                       MainLoop once, it is the end of the run -- so a replay stops here
+                       with its stream unread. The harness cannot see the difference from
+                       the return value, which MainGameMenu's switch already spends. */
+                    Control_NoteLeftForMenu();
+                    break;
+                }
+            }
+
+            if (Input & I_OPTIONS) // options menu
+            {
+                SaveTimer();
+                MemoClipWindow();
+                UnsetClipWindow();
+                GameOptionMenu[5] = 15; // retour au jeu
+
+                StopSpeak();
+                InitDial(0); //      SYS
+
+                InitPlasmaMenu();
+
+                PauseMusic(FALSE);
+
+                OptionsMenu(FALSE);
+
+                GameOptionMenu[5] = 26; // retour au menu precedent
+
+                InitDial(START_FILE_ISLAND + Island);
+
+                ClearPlasmaMenu();
+                //                        CopyScreen( ScreenAux, Screen ) ;
+                //                      RestoreClipWindow() ;// fait dans OptionsMenu
+                //                        BoxStaticFullflip() ;
+                PaletteSync(PtrPal);
+
+                ResumeMusic(FALSE);
+
+                RestoreTimer();
+            }
+
+            if (Input & I_SAVE) // Sauvegarde
+            {
+#if !defined(DEMO) || defined(DEBUG_TOOLS)
+                if ((ptrobj->LifePoint > 0)
+                        AND(ptrobj->Obj.Body.Num != -1)
+                            AND(!(ptrobj->Flags & INVISIBLE))
+                                AND(NumCube != NUM_CUBE_PHANTOM)
+                                    AND !PLAY_THE_END) {
+                    S32 savenewcube = NewCube;
+
+                    InitDial(0);
+
+                    SaveTimer();
+                    MemoClipWindow();
+                    UnsetClipWindow();
+                    StopSpeak();
+                    BackupScreen(TRUE);
+                    HQ_PauseSamples();
+#ifdef DEMO
+                    SetDemoSaveGame(CurrentDemoSave);
+                    NumVersion = NUM_VERSION | SAVE_COMPRESS;
+                    CopyScreen(Screen, Log);
+                    SaveGame(TRUE);
+#else
+                    InitPlasmaMenu();
+                    if (ChoosePlayerName(42, FALSE, TRUE)) {
+                        NumVersion = NUM_VERSION | SAVE_COMPRESS;
+                        CopyScreen(Screen, Log);
+                        if (FileSize(OldGamePathname))
+                            Delete(OldGamePathname);
+                        SaveGame(TRUE);
+                        // Match the main-menu Save path: resume samples for the
+                        // chime, then show the "Game Saved" confirmation. Without
+                        // it the quick-save writes silently, so a successful save
+                        // looks identical to a failure (menu just closes).
+                        HQ_ResumeSamples();
+                        ShowGameSavedConfirmation();
+                    }
+                    ClearPlasmaMenu();
+#endif
+                    RestoreClipWindow();
+                    RestoreScreen();
+                    NewCube = savenewcube;
+                    InitDial(START_FILE_ISLAND + Island);
+                    HQ_ResumeSamples();
+                    PaletteSync(PtrPal);
+                    RestoreTimer();
+
+                    while (MyKey OR Input)
+                        MyGetInput();
+                } else
+                    PlayErrorSample();
+#else // DEMO
+                PlayErrorSample();
+#endif
+            }
+
+#ifndef DEMO
+            if (Input & I_LOAD) // Chargement
+            {
+                S32 savenewcube = NewCube;
+
+                InitDial(0);
+
+                SaveTimer();
+                MemoClipWindow();
+                UnsetClipWindow();
+                StopSpeak();
+                BackupScreen(TRUE);
+                HQ_PauseSamples();
+                InitPlasmaMenu();
+                if (ChoosePlayerName(41, FALSE, FALSE)) {
+                    RestoreTimer();
+
+                    StopMusic();
+
+                    InitGame(-1);
+                    ChangeCube();
+
+                    CopyScreen(Log, ScreenAux);
+
+                    RestoreTimer();
+                    SaveTimer();
+                    AffScene(AFF_ALL_NO_FLIP);
+                    FixeCinemaMode(FALSE);
+                    CopyScreen(Log, Screen);
+
+                    // au cas ou le mec meurre avant de faire <ESC>
+                    if (!Save_AutoDisabled())
+                        CurrentSaveGame();
+
+                    BoxReset(); // pas de flip
+
+                    // In-game save zoom. Float to match the menu-driven sibling
+                    // (GAMEMENU MainGameMenu): 80 = SCREEN_SAVE_WIDTH/2 so X tracks
+                    // SAVE_THUMB_X, and Y floats with the rest of the UI. No-op at 640x480.
+                    ZoomSavedGame((S32)ModeDesiredX / 2 - 80, 10 + UI_VCENTER_OFS);
+
+                    FlagFade = FALSE;
+                    RestartRainSample = TRUE;
+                    HQ_ResumeSamples();
+
+                    ClearPlasmaMenu();
+
+                    RestoreTimer();
+
+                    goto restartloop;
+                } else {
+                    // on charge pas de nouvelle partie
+                    NewCube = savenewcube;
+                    ClearPlasmaMenu();
+                    RestoreClipWindow();
+                    RestoreScreen();
+                    InitDial(START_FILE_ISLAND + Island);
+                    HQ_ResumeSamples();
+                    PaletteSync(PtrPal);
+                    RestoreTimer();
+
+                    while (MyKey OR Input)
+                        MyGetInput();
+                }
+            }
+#endif
+
+#ifdef DEBUG_TOOLS
+            if ((MyKey == K_G) // Sauvegarde d'un bug
+                AND(ptrobj->LifePoint > 0)
+                    AND(ptrobj->Obj.Body.Num != -1)
+                        AND(!(ptrobj->Flags & INVISIBLE))
+                            AND(NumCube != NUM_CUBE_PHANTOM)) {
+                S32 savenewcube = NewCube;
+
+                InitDial(0);
+
+                SaveTimer();
+                MemoClipWindow();
+                UnsetClipWindow();
+                StopSpeak();
+                BackupScreen(TRUE);
+                HQ_PauseSamples();
+                InitPlasmaMenu();
+                if (ChoosePlayerName(42 | 0x40000000, FALSE, TRUE)) {
+                    NumVersion = NUM_VERSION | SAVE_COMPRESS;
+                    CopyScreen(Screen, Log);
+                    SaveGame(TRUE);
+                }
+                ClearPlasmaMenu();
+                RestoreScreen();
+                NewCube = savenewcube;
+                InitDial(START_FILE_ISLAND + Island);
+                RestoreClipWindow();
+                HQ_ResumeSamples();
+                PaletteSync(PtrPal);
+                RestoreTimer();
+
+                while (MyKey OR Input)
+                    MyGetInput();
+            }
+#endif
+
+            if (Input & I_PAUSE) {
+                SaveTimer();
+
+                if (Comportement == C_PROTOPACK OR Comportement == C_JETPACK) {
+                    // pour pouvoir restaurer anim marche protopack
+                    if (ptrobj->GenAnim == GEN_ANIM_MARCHE) {
+                        TimerProto = TimerRefHR + TEMPO_PROTO_AUTO; // 1/2 s
+                    }
+                }
+
+                StopSpeak();
+                HQ_PauseSamples();
+                PauseMusic(FALSE);
+
+                GamePaused(PAUSE_MESSAGE);
+
+                ResumeMusic(FALSE);
+                HQ_ResumeSamples();
+                RestoreTimer();
+            }
+
+            InventoryAction = -1;
+
+            // Console `useitem`: inject a one-frame inventory item-use (as MenuInventory would),
+            // before the throttle gate, so it exercises the exact drop/deliver path a real use hits.
+            // Optional delay lets the injection land past the load large-jump on a settled skip frame.
+            if (DbgUseItemInject >= 0 && DbgUseItemInjectN > 0) {
+                if (DbgUseItemInjectDelay > 0) {
+                    DbgUseItemInjectDelay--;
+                } else {
+                    InventoryAction = DbgUseItemInject;
+                    if (--DbgUseItemInjectN <= 0)
+                        DbgUseItemInject = -1;
+                }
+            }
+
+            if ((Input & I_INVENTORY)
+                    AND(PtrComportement->Flags & CF_INVENTORY)
+                        AND(ptrobj->Obj.Body.Num != -1)
+                            AND !(ptrobj->WorkFlags & SKATING)
+                                AND(ptrobj->Move == MOVE_MANUAL)) {
+                SaveTimer();
+                StopSpeak();
+                BackupScreen(TRUE);
+                MenuInventory(0);
+
+                switch (InventoryAction) {
+                case FLAG_HOLOMAP: // holomap
+                    if (PtrComportement->Flags & CF_HOLOMAP) {
+                        HoloMap();
+                    }
+                    break;
+
+                case FLAG_BALLE_MAGIQUE: // balle magique
+                case FLAG_DART:          // Flechette
+                case FLAG_SARBACANE:     // Sarbacane
+                case FLAG_GANT:          // Gant (raquette)
+                case FLAG_PISTOLASER:    // PistoLaser
+                    Weapon = (U8)InventoryAction;
+                    if (Comportement > C_DISCRET) {
+                        SetComportement(C_NORMAL);
+                    }
+                    InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    break;
+
+                case FLAG_SABRE: // SABRE MAGIQUE
+                    Weapon = (U8)InventoryAction;
+                    if (Comportement > C_DISCRET) {
+                        SetComportement(C_NORMAL);
+                    }
+
+                    // anim degaine sabre
+                    InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    InitAnim(GEN_ANIM_DEGAINE, ANIM_THEN, NUM_PERSO);
+                    break;
+
+                case FLAG_PROTOPACK: // protopack
+                {
+                    U8 comp;
+
+                    if (TabInv[FLAG_PROTOPACK].IdObj3D == 1)
+                        comp = C_JETPACK;
+                    else
+                        comp = C_PROTOPACK;
+
+                    if (Comportement == comp)
+                        SetComportement(C_NORMAL);
+                    else
+                        SetComportement(comp);
+                } break;
+
+                case FLAG_CONQUE: // Conque
+                    if (Comportement == C_CONQUE)
+                        SetComportement(C_NORMAL);
+                    else
+                        SetComportement(C_CONQUE);
+                    break;
+
+                case FLAG_MECA_PINGOUIN: // meca pingouin
+                    ThrowMecaPingouin();
+                    break;
+
+                case FLAG_ARDOISE:
+                    GereArdoise();
+                    break;
+
+                case FLAG_VISIONNEUSE:
+                    PlayAllAcf();
+
+                    if (CubeMode == CUBE_INTERIEUR) {
+                        InitGrille(NumCube);
+                    }
+
+                    RazListPartFlow();
+                    ChoicePalette();
+                    FirstTime = AFF_ALL_FLIP;
+                    break;
+
+                case FLAG_ANNEAU_FOUDRE:
+                    if (Comportement > C_DISCRET) {
+                        SetComportement(C_NORMAL);
+                    }
+
+                    InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    InitAnim(GEN_ANIM_FOUDRE, ANIM_ALL_THEN, NUM_PERSO);
+                    break;
+
+                case FLAG_PROTECTION:
+                    ToggleSortProtection();
+                    break;
+
+                case FLAG_NOTE_BOURGMESTRE:
+                    if (FirstTime != AFF_ALL_FLIP)
+                        RestoreScreen();
+
+                    // init incdisp symbol utilisation
+                    InitIncrustDisp(INCRUST_INVENTORY | INCRUST_YCLIP,
+                                    FLAG_NOTE_BOURGMESTRE,
+                                    0, 0,
+                                    0, 0, 3);
+
+                    InitDial(2); // FR_GAM.TXT
+#ifdef CDROM
+                    NumObjSpeak = NUM_PERSO;
+#endif
+                    NumObjDial = NUM_PERSO;
+                    Dial(800, TRUE);
+                    InitDial(START_FILE_ISLAND + Island);
+                    break;
+                }
+                if (FirstTime != AFF_ALL_FLIP)
+                    RestoreScreen();
+                RestoreTimer();
+            }
+
+            if ((Input & I_COMPORTEMENT)
+                    AND(ptrobj->Obj.Body.Num != -1)
+                        AND !(ptrobj->WorkFlags & SKATING)
+                            AND((ptrobj->Move == MOVE_MANUAL)
+                                    OR(ptrobj->Move == MOVE_BUGGY_MANUAL))) {
+                MenuComportement(FALSE);
+            }
+
+            // changement d'arme ou de comportement
+            if (PtrComportement->Flags & CF_INVENTORY
+                                             AND(ptrobj->Obj.Body.Num != -1)
+                                                 AND !(ptrobj->WorkFlags & SKATING)
+                                                     AND(ptrobj->Move == MOVE_MANUAL)) {
+                if (Input & I_WEAPON_1) // Balle magique
+                {
+                    if (ListVarGame[FLAG_BALLE_MAGIQUE]) {
+                        Weapon = FLAG_BALLE_MAGIQUE;
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    }
+                    InitWaitNoInput(I_WEAPON_1);
+                }
+
+                if (Input & I_WEAPON_2) // Fléchettes
+                {
+                    if (ListVarGame[FLAG_DART]) {
+                        Weapon = FLAG_DART;
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    }
+                    InitWaitNoInput(I_WEAPON_2);
+                }
+
+                if (Input & I_WEAPON_3) // SARBACANE/SARBATRON
+                {
+                    if (ListVarGame[FLAG_SARBACANE]) {
+                        Weapon = FLAG_SARBACANE;
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    }
+                    InitWaitNoInput(I_WEAPON_3);
+                }
+
+                if (Input & I_WEAPON_4) // CONQUE
+                {
+                    if (ListVarGame[FLAG_CONQUE]) {
+                        if (Comportement == C_CONQUE)
+                            SetComportement(C_NORMAL);
+                        else
+                            SetComportement(C_CONQUE);
+                    }
+                    InitWaitNoInput(I_WEAPON_4);
+                }
+
+                if (Input & I_WEAPON_5) // GANT
+                {
+                    if (ListVarGame[FLAG_GANT]) {
+                        Weapon = FLAG_GANT;
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    }
+                    InitWaitNoInput(I_WEAPON_5);
+                }
+
+                if (Input & I_WEAPON_6) // PISTOLASER
+                {
+                    if (ListVarGame[FLAG_PISTOLASER] AND TabInv[FLAG_PISTOLASER].IdObj3D == 2) {
+                        Weapon = FLAG_PISTOLASER;
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                    }
+                    InitWaitNoInput(I_WEAPON_6);
+                }
+
+                if (Input & I_WEAPON_7) // SABRE
+                {
+                    if (ListVarGame[FLAG_SABRE]) {
+                        S32 oldweapon = Weapon;
+
+                        Weapon = FLAG_SABRE;
+
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+
+                        // anim degaine sabre
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+
+                        if (oldweapon != FLAG_SABRE) {
+                            InitAnim(GEN_ANIM_DEGAINE, ANIM_THEN, NUM_PERSO);
+                        }
+                    }
+                    InitWaitNoInput(I_WEAPON_7);
+                }
+
+                if (SpellKeyDown(33)) { // ProtoPack/SuperJetPack
+                    if (!WaitNoKey33
+                            AND ListVarGame[FLAG_PROTOPACK]) {
+                        U8 comp;
+
+                        if (TabInv[FLAG_PROTOPACK].IdObj3D == 1)
+                            comp = C_JETPACK;
+                        else
+                            comp = C_PROTOPACK;
+
+                        if (Comportement == comp)
+                            SetComportement(C_NORMAL);
+                        else
+                            SetComportement(comp);
+                    }
+
+                    WaitNoKey33 = TRUE;
+                } else
+                    WaitNoKey33 = FALSE;
+
+                if (SpellKeyDown(32)) { // NitroMecaPingouin
+                    if (!WaitNoKey32
+                            AND ListVarGame[FLAG_MECA_PINGOUIN] > 0) {
+                        SaveTimer();
+                        InventoryAction = FLAG_MECA_PINGOUIN;
+                        ThrowMecaPingouin();
+                        RestoreTimer();
+                    }
+
+                    WaitNoKey32 = TRUE;
+                } else
+                    WaitNoKey32 = FALSE;
+
+                if (SpellKeyDown(34)) { // Sort de Protection
+                    if (!WaitNoKey34
+                            AND ListVarGame[FLAG_PROTECTION] > 0 AND MagicPoint > 0) {
+                        SaveTimer();
+                        InventoryAction = FLAG_PROTECTION;
+                        ToggleSortProtection();
+                        RestoreTimer();
+                    }
+
+                    WaitNoKey34 = TRUE;
+                } else
+                    WaitNoKey34 = FALSE;
+
+                if (SpellKeyDown(35)) { // Sort de Foudre
+                    if (!WaitNoKey35
+                            AND ListVarGame[FLAG_ANNEAU_FOUDRE] > 0 AND MagicPoint >= (MagicLevel * 20)) {
+                        SaveTimer();
+                        InventoryAction = FLAG_ANNEAU_FOUDRE;
+                        if (Comportement > C_DISCRET) {
+                            SetComportement(C_NORMAL);
+                        }
+
+                        InitBody(GEN_BODY_TUNIQUE, NUM_PERSO);
+                        InitAnim(GEN_ANIM_FOUDRE, ANIM_ALL_THEN, NUM_PERSO);
+                        RestoreTimer();
+                    }
+
+                    WaitNoKey35 = TRUE;
+                } else
+                    WaitNoKey35 = FALSE;
+            }
+
+            if ((Input & (I_NORMAL | I_SPORTIF | I_AGRESSIF | I_DISCRET))
+                    AND(PtrComportement->Flags & CF_COMPORTEMENT)
+                        AND(ptrobj->Obj.Body.Num != -1)
+                            AND !(ptrobj->WorkFlags & SKATING)
+                                AND(ptrobj->Move == MOVE_MANUAL)) {
+                switch (Comportement) {
+                case C_NORMAL:
+                case C_SPORTIF:
+                case C_AGRESSIF:
+                case C_DISCRET:
+                case C_PROTOPACK:
+                case C_CONQUE:
+                case C_JETPACK:
+                    SaveTimer();
+
+                    if (Input & I_NORMAL)
+                        SetComportement(C_NORMAL);
+                    else if (Input & I_SPORTIF)
+                        SetComportement(C_SPORTIF);
+                    else if (Input & I_AGRESSIF)
+                        SetComportement(C_AGRESSIF);
+                    else if (Input & I_DISCRET)
+                        SetComportement(C_DISCRET);
+
+                    IncrustComportement(Comportement);
+                    RestoreTimer();
+                    break;
+
+                case C_SCAPH_INT_NORM:
+                    if (Input & I_SPORTIF) {
+                        SaveTimer();
+                        SetComportement((U8)C_SCAPH_INT_SPOR);
+                        IncrustComportement(Comportement);
+                        RestoreTimer();
+                    }
+                    break;
+
+                case C_SCAPH_INT_SPOR:
+                    if (Input & I_NORMAL) {
+                        SaveTimer();
+                        SetComportement((U8)C_SCAPH_INT_NORM);
+                        IncrustComportement(Comportement);
+                        RestoreTimer();
+                    }
+                    break;
+
+                case C_SCAPH_EXT_NORM:
+                    if (Input & I_SPORTIF) {
+                        SaveTimer();
+                        SetComportement((U8)C_SCAPH_EXT_SPOR);
+                        IncrustComportement(Comportement);
+                        RestoreTimer();
+                    }
+                    break;
+
+                case C_SCAPH_EXT_SPOR:
+                    if (Input & I_NORMAL) {
+                        SaveTimer();
+                        SetComportement((U8)C_SCAPH_EXT_NORM);
+                        IncrustComportement(Comportement);
+                        RestoreTimer();
+                    }
+                    break;
+                }
+            }
+
+            if ((Input & I_HOLOMAP)
+                    AND(PtrComportement->Flags & (CF_HOLOMAP | CF_INVENTORY))
+                        AND(ListVarGame[FLAG_HOLOMAP] == 1)
+                            AND(ptrobj->Obj.Body.Num != -1)
+                                AND(ptrobj->Move == MOVE_MANUAL OR ptrobj->Move == MOVE_BUGGY_MANUAL)
+                                    AND !CinemaMode) {
+                SaveTimer();
+                StopSpeak();
+                //                      PauseMusic( TRUE ) ;
+                //			BackupScreen( FALSE ) ;
+                InitWaitNoInput(I_HOLOMAP | I_MENUS | I_RETURN | I_ACTION);
+                InitWaitNoKey();
+                HoloMap();
+                //                      ResumeMusic( TRUE ) ;
+                //                        RestoreScreen() ;
+                RestoreTimer();
+            }
+
+            if (Input & I_RETURN) /* recentre sur perso */
+            {
+                if (!CameraZone /* si pas camera forcée */
+                        AND !CinemaMode) {
+                    SaveTimer();
+
+                    Rotate(0, DISTANCE_VISEE, ListObjet[NumObjFollow].Obj.Beta);
+
+                    StartXCube = (ListObjet[NumObjFollow].Obj.X + X0) / SIZE_BRICK_XZ;
+                    StartYCube = ((ListObjet[NumObjFollow].Obj.Y + SIZE_BRICK_Y) / SIZE_BRICK_Y);
+                    StartZCube = (ListObjet[NumObjFollow].Obj.Z + Z0) / SIZE_BRICK_XZ;
+
+                    CameraCenter(1);
+                    FirstTime = AFF_ALL_FLIP;
+
+                    /* Re-sync follow camera state so it continues
+                     * smoothly from the reset position. */
+                    if (FollowCamera)
+                        FollowCamResetToView();
+
+                    RestoreTimer();
+
+#ifndef DEBUG_TOOL
+                    // faut-il le laisser ?
+                    InitWaitNoInput(I_RETURN);
+#endif
+                }
+            }
+
+#ifdef DEBUG_TOOLS
+            if (MyKey == K_B) {
+                if (Sample_Driver_Enabled) {
+                    if ((SamplesEnable ^= 1) == 0) {
+                        HQ_PauseSamples();
+                        Message("Samples OFF", TRUE);
+                    } else {
+                        HQ_ResumeSamples();
+                        Message("Samples ON", TRUE);
+                    }
+                }
+            }
+#endif
+
+        } // if !flagfade
+
+        /*-------------------------------------------------------------------------*/
+
+        /* Fixed-timestep simulation (issue #358). When enabled (console: fixedtimestep),
+           the simulation advances in fixed FixedTimestep-ms steps decoupled from the render
+           rate, so movement/animation is frame-rate independent. `elapsed` is the game-time
+           banked since the last simulated frame; we run `elapsed / FixedTimestep` sub-steps:
+             - 0 steps (rendering faster than ~60 fps): skip the sim, re-present the settled
+               scene, carry the time. High-frame-rate case (vsync off, high-refresh displays).
+             - 1 step (~60 fps): the historical per-frame path.
+             - N steps (below ~60 fps): sub-step so a long frame still advances the animation
+               the correct amount instead of losing it to the keyframe overshoot-discard.
+           Each sub-step drives TimerRefHR to its own value; the sub-step remainder carries via
+           LastSimRefHR, and TimerRefHR is restored to the frame's value afterwards. Held input
+           actions (jump, throw) would re-fire if their object-loop code ran every sub-step, so
+           after the first sub-step only movement bits (I_JOY) are kept -- InitAnim is
+           idempotent, so the walk anim does not reset. A game-clock rewind (a modal SaveTimer
+           restore, a cube change) re-anchors and skips one frame. Off (0) is the historical
+           per-frame path byte-for-byte, and at --fixed-dt 16 the on path is byte-identical too
+           (elapsed == 16 -> exactly 1 step). See docs/MOVEMENT_FRAMERATE.md. */
+        S32 nSimSteps = 1;
+        S32 simStep = 0;
+        U32 simBaseRef = LastSimRefHR;
+        U32 simFinalRef = TimerRefHR;
+        U32 simSavedInput = Input;
+        U32 simSavedLastInput = LastInput; // restored after the sub-step loop (see below)
+        if (FixedTimestep > 0) {
+            // Plan this frame's sub-steps (count + sub-step clock anchor + the next-frame carry).
+            // Timer_PlanSimSteps is the pure, unit-tested core (LIB386/SYSTEM/TIMER.CPP): it
+            // delegates the normal-path count/carry to Timer_FixedStepCount and owns the rewind
+            // and large-jump re-anchors. LastSimRefHR is advanced here (the carry), so the tail
+            // below no longer touches it.
+            U32 nextLastSim;
+            nSimSteps = Timer_PlanSimSteps(TimerRefHR, LastSimRefHR, FixedTimestep,
+                                           FIXED_TIMESTEP_MAX_STEPS, &simBaseRef, &nextLastSim);
+            /* Force a real sim step on a would-skip frame when it carries a one-frame signal that a
+               later, non-skipped frame cannot recover:
+
+                 - InventoryAction: a quest item-use set by MenuInventory, cleared at the top of
+                   every loop and consumed by LF_USE_INVENTORY in DoLife below. On high-refresh
+                   displays most frames skip the sim, so without this the event is wiped before any
+                   simulated frame reads it and a quest item-use (the ferry ticket, the Balsam
+                   flower, the Wizard Diploma) silently fails (#358 regression, softlocks the Peddler).
+
+                 - FirstTime == AFF_ALL_FLIP: a full-scene flip (scene load / CAM_FOLLOW). DoLife
+                   runs this frame and reads FirstTime; AffScene(FirstTime) below then consumes it and
+                   the tail resets FirstTime to AFF_OBJETS_FLIP. If the flip frame is skipped, AffScene
+                   still runs and resets FirstTime, so the deferred DoLife reads the stale value a
+                   frame later -- e.g. the demo behaviour menu (LM_COMPORTEMENT_HERO), suppressed
+                   while FirstTime == AFF_ALL_FLIP, then leaks over scene setup. Forcing the flip
+                   frame to step keeps DoLife and AffScene on the same frame.
+
+                 - A hero action/fire input EDGE ((Input ^ LastInput) & I_ACTION_EDGE): melee,
+                   weapon fire and dodge are edge-triggered by the object loop -- a new attack
+                   starts on the press edge, weapon fire stops on the release edge -- but that loop
+                   runs only on simulated frames while LastInput advances every rendered frame
+                   (above). A press/release landing on a skipped frame is never seen, so the blowgun
+                   keeps firing on its own and melee never starts while moving (#407). Movement
+                   (I_JOY) is deliberately excluded: it is held state the throttle is correct to
+                   skip, and forcing a step on every walk change would defeat the frame-rate fix.
+
+               Promotes a would-skip frame to a single step; a no-op when a step already runs or
+               nothing is pending, so the throttle and its --fixed-dt 16 byte-for-byte guarantee are
+               otherwise untouched. */
+            nSimSteps = Timer_ForceStepIfPending(nSimSteps,
+                                                 (InventoryAction >= 0) || (FirstTime == AFF_ALL_FLIP) || (((Input ^ LastInput) & I_ACTION_EDGE) != 0),
+                                                 TimerRefHR, FixedTimestep, &simBaseRef, &nextLastSim);
+            LastSimRefHR = nextLastSim;
+            if (nSimSteps <= 0) {
+                /* Boundary 3 (SYSTEM/INPUT_FLOW.H): this frame carried an input
+                   edge and the simulation is about to not see it. Counted on
+                   both arms rather than once below the block, so that a
+                   diagnostic adds lines and moves none: the goto leaves from
+                   inside here, and hoisting it out to share one call would edit
+                   the throttle to measure it. */
+                InputFlow_NoteSimFrame(Input ^ LastInput, I_ACTION_EDGE, FALSE);
+                goto skip_simulation; // high-fps skip (remainder carries) or clock rewind (re-anchored)
+            }
+        }
+        InputFlow_NoteSimFrame(Input ^ LastInput, I_ACTION_EDGE, TRUE);
+
+        /* Advance the harness input timeline by this frame's sim ticks (docs/plan/INPUT_SIM_PLAN.md).
+           Metered in sim ticks, not rendered frames, so a hold means the same across
+           --fixed-timestep settings; a skipped frame goto's above and never reaches here, so it
+           consumes no tick. nSimSteps is 1 when unthrottled. */
+        Control_InputAdvance(nSimSteps);
+
+    sim_step:
+        if (FixedTimestep > 0) {
+            TimerRefHR = simBaseRef + (U32)(simStep + 1) * (U32)FixedTimestep;
+            if (simStep > 0) {
+                /* Input is sampled once per rendered frame; a frame's sub-steps advance sim TIME, not
+                   input. So every sub-step sees the frame's held input, and the press/release EDGE is
+                   consumed once -- on the first sub-step, where LastInput is still the previous frame's
+                   real sample. On later sub-steps we hold BOTH Input and LastInput at that sample so the
+                   held bits read as steady state: no phantom press (Input == LastInput, so the object
+                   loop's edge-guarded actions like the C_AGRESSIF MyRnd combo do not re-select) and no
+                   phantom release (the held bits are still present, so the momentary-action reset paths
+                   -- `if (LastInput & I_THROW) InitAnim(GEN_ANIM_RIEN)` and the LastMyFire idle reset in
+                   OBJECT.CPP MOVE_MANUAL -- stay put instead of cancelling an in-flight throw/attack anim
+                   before it reaches its action frame). The earlier `& I_JOY` mask dropped the held action
+                   bits, which the loop read as a release and reset the anim every sub-step, so below
+                   ~60 fps a held throw/attack never advanced to its throw/hit frame (#456). InitAnim is
+                   idempotent and projectile spawns are animation-frame-gated, so re-presenting the held
+                   input each sub-step does not re-fire. LastInput is restored after the loop.
+                   At FixedTimestep == 0 or nSimSteps == 1 (>= ~60 fps) this branch never runs, so the
+                   per-frame path is byte-for-byte unchanged. */
+                Input = simSavedInput;
+                LastInput = simSavedInput;
+            }
+        }
+
+        /* vitesse de chute propor pour tous les objets */
+        StepFalling = GetDeltaMove(&RealFalling);
+        /* vitesse de decalage propor pour tous les objets */
+        StepShifting = GetDeltaMove(&RealShifting);
+
+        // doit-on repaner les samples always
+        pansample = GetDeltaMove(&SampleAlwaysMove);
+
+        /*-------------------------------------------------------------------------*/
+
+        CameraZone = FALSE;
+
+        GereAmbiance();
+        CheckNextMusic();
+
+        /*-------------------------------------------------------------------------*/
+        /* gere les objets */
+
+        // asm
+        ptrobj = ListObjet;
+        for (i = 0; i < NbObjets; i++, ptrobj++) {
+            ptrobj->HitBy = 255;
+        }
+
+        GereExtras();
+        AnimAllFlow(); // gere les flows de particules
+
+        if (CubeMode == CUBE_EXTERIEUR) {
+            if (Island == 0 AND TEMPETE_ACTIVE AND RainEnable)
+                GereRain();
+
+            DoAnimatedPolys();
+        }
+
+        ptrobj = ListObjet;
+        for (i = 0; i < NbObjets; i++, ptrobj++) {
+            if (ptrobj->WorkFlags & OBJ_DEAD)
+                continue;
+
+            // test mort d'un objet
+
+            if (ptrobj->LifePoint == 0) {
+                switch (i) {
+                case NUM_PERSO: // twinsen
+                    if (ListVarGame[FLAG_CLOVER] > 0) {
+                        UseOneClover();
+                    } else {
+                        InitAnim(GEN_ANIM_MORT, ANIM_FINAL, NUM_PERSO);
+                        ptrobj->Move = NO_MOVE;
+                    }
+                    break;
+
+                case NUM_PINGOUIN:
+                    ExplodeMecaPingouin();
+                    break;
+
+                default:
+                    // sample specifique mort ?
+                    HQ_3D_MixSample(SAMPLE_DEAD, 0x1000, 2000, 1,
+                                    ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+
+                    // 'explosion' de l'objet ?
+                    if ((ptrobj->OptionFlags & EXTRA_MASK)
+                            AND !(ptrobj->OptionFlags & EXTRA_GIVE_NOTHING)) {
+                        GiveExtraBonus(ptrobj);
+                    }
+                }
+            }
+
+            // Save Beta pour les objets carrier
+            // peut-etre pourrait-on éviter le test
+            if (ptrobj->CarryBy == -1)
+                ptrobj->OldBeta = ptrobj->Obj.Beta;
+
+            DoDir(i);
+
+            ptrobj->OldPosX = ptrobj->Obj.X;
+            ptrobj->OldPosY = ptrobj->Obj.Y;
+            ptrobj->OldPosZ = ptrobj->Obj.Z;
+
+            if (ptrobj->OffsetTrack != -1) {
+                DoTrack(i);
+            }
+
+            if (!FirstLoop)
+                PtrDoAnim(i);
+
+            if (ptrobj->Flags & CHECK_ZONE) {
+                CheckZoneSce(ptrobj, i);
+            }
+
+            // Samples Always
+            if (pansample AND ptrobj->SampleAlways) {
+                ParmSampleVolume = ptrobj->SampleVolume;
+
+                if (!(ptrobj->SampleAlways & 0xFF000000)
+                        OR !IsSamplePlaying(ptrobj->SampleAlways)) {
+                    ptrobj->SampleAlways = HQ_3D_MixSample((ptrobj->SampleAlways >> 8) & 0xFFFF,
+                                                           0x1000, 0, 0,
+                                                           ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+
+                } else {
+                    HQ_3D_ChangePanSample(ptrobj->SampleAlways,
+                                          ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+                }
+            }
+
+            if (i == NUM_PERSO) {
+                // Pour la prochaine boucle
+                ptrobj->WorkFlags &= ~(FLY_JETPACK | CHECK_FALLING);
+
+                CheckDartCol(ptrobj);
+
+                if (ptrobj->Move == MOVE_BUGGY_MANUAL) {
+                    // teste les zones giver pour le
+                    // buggy au point devant le buggy
+                    CheckBuggyZoneGiver(ptrobj);
+                }
+
+                // pour la demo
+                if (DemoSlide)
+                    ActionNormal = FALSE;
+            }
+
+            if (ptrobj->OffsetLife != -1) {
+                DoLife(i);
+            }
+
+            // objtrace: where this object ended up after track, animation and life ran. The clock
+            // leads, because a trace without one cannot be aligned against anything else and
+            // cannot show whether two entries are two passes over one tick or two ticks.
+            if (DbgObjTraceObj >= 0 && i == DbgObjTraceObj)
+                Log_Info("[obj] t=%u obj=%d pos=%d,%d,%d rot=%d,%d,%d step=%d,%d,%d "
+                         "anim=%d frame=%d track=%d label=%d comport=%d move=%d flags=%u",
+                         (unsigned)TimerRefHR,
+                         (int)i, (int)ptrobj->Obj.X, (int)ptrobj->Obj.Y, (int)ptrobj->Obj.Z,
+                         (int)ptrobj->Obj.Alpha, (int)ptrobj->Obj.Beta, (int)ptrobj->Obj.Gamma,
+                         (int)ptrobj->Obj.LastAnimStepX, (int)ptrobj->Obj.LastAnimStepY,
+                         (int)ptrobj->Obj.LastAnimStepZ,
+                         (int)ptrobj->Obj.Anim.Num, (int)ptrobj->Obj.NextFrame,
+                         (int)ptrobj->OffsetTrack, (int)ptrobj->LabelTrack,
+                         (int)ptrobj->MemoComportement, (int)ptrobj->Move,
+                         (unsigned)ptrobj->WorkFlags);
+
+            if (FlagTheEnd != -1)
+                return FlagTheEnd; // mmm violent
+
+            // si aprés la vie on à toujours 0 point de vie
+            // destruction definitive
+            if (ptrobj->LifePoint <= 0) {
+                if (i == NUM_PERSO) {
+                    if (ptrobj->WorkFlags & ANIM_END) {
+                        if (ListVarGame[FLAG_CLOVER] > 0) {
+                            UseOneClover();
+                            goto startloop;
+                        } else // game over
+                        {
+                            if (FirstTime == AFF_ALL_FLIP) {
+                                AffScene(AFF_ALL_FLIP);
+                            }
+
+                            GameOver();
+                            return 2;
+                        }
+                    }
+                } else // autre obj
+                {
+                    CheckCarrier(i);
+                    ptrobj->WorkFlags |= OBJ_DEAD;
+                    ptrobj->Obj.Body.Num = -1;
+                    ptrobj->ZoneSce = -1;
+                }
+            }
+
+            if (NewCube != -1) {
+                goto startloop;
+            }
+        }
+
+        /*-------------------------------------------------------------------------*/
+        /* recentre sur hero (numobjfollow) */
+
+        /* An orbit only means something while the exterior Auto camera is the one
+         * being driven, frame after frame. The moment anything else owns the view
+         * -- a camera zone, a cutscene, an interior, or the player turning the Auto
+         * camera off -- the gesture is over, and the state describing it has to end
+         * with it rather than wait for the camera to come back. GereExtKeys cannot
+         * do this itself: it is not called at all in those states. */
+        if (CameraZone OR CinemaMode OR CubeMode != CUBE_EXTERIEUR OR !FollowCamera)
+            FollowCamForgetManualGesture();
+
+        if (!CameraZone) {
+            if (!CinemaMode) {
+                // AlphaCam (touches '+' et '-' *)
+                GereExtKeys(MyKey);
+
+                if (Input & I_CAMERA) {
+                    SaveTimer();
+                    AddBetaCam = (AddBetaCam + 1024) & 4095;
+                    /* FollowCamera: do not use CameraCenter(2) — it resets
+                     * AlphaCam/VueDistance to VueCamera presets.  Recompute
+                     * target offset and BetaCam like case 2, then apply only. */
+                    if (FollowCamera AND CubeMode == CUBE_EXTERIEUR) {
+                        T_OBJ_3D *ptr3d_cc = &ListObjet[NumObjFollow].Obj;
+                        S32 newbeta_cc = AddBetaCam + ptr3d_cc->Beta;
+                        newbeta_cc &= 4095;
+                        Rotate(0, DISTANCE_VISEE, newbeta_cc);
+                        VueOffsetX = ptr3d_cc->X + X0;
+                        VueOffsetY = ptr3d_cc->Y;
+                        VueOffsetZ = ptr3d_cc->Z + Z0;
+                        StartXCube = VueOffsetX / SIZE_BRICK_XZ;
+                        StartYCube = VueOffsetY / SIZE_BRICK_Y;
+                        StartZCube = VueOffsetZ / SIZE_BRICK_XZ;
+                        BetaCam = (2048 - newbeta_cc) & 4095;
+                        FollowCamSyncTarget();
+                        CameraCenter(3);
+                    } else {
+                        CameraCenter(2);
+                    }
+                    FirstTime = AFF_ALL_FLIP;
+                    InitWaitNoInput(I_CAMERA);
+                    RestoreTimer();
+                }
+
+                if (FollowCamera AND CubeMode == CUBE_EXTERIEUR)
+                    UpdateFollowCameraExt();
+            }
+        }
+
+        FollowCamTrace();
+
+        if (!CameraZone) {
+            if (FirstTime == AFF_OBJETS_FLIP) {
+                T_OBJET *ptrobj;
+
+                ptrobj = &ListObjet[NumObjFollow];
+
+                PtrProjectPoint(ptrobj->Obj.X,
+                                ptrobj->Obj.Y,
+                                ptrobj->Obj.Z);
+
+                /* FollowCamera (exterior): the follow camera tracks the hero
+                 * every frame — the classic off-screen snap (CameraCenter(0))
+                 * would fight it and cause jarring resets near trees / decors.
+                 *
+                 * X margins track ClipWindowX* (the Y side already did) so the
+                 * snap follows the actual visible region. No-op at 640x480
+                 * (80/539 preserved); at wider widths it stops firing while
+                 * the hero is still well inside the right half of the screen,
+                 * which is most visible in iso scenes (iso centre shifts with
+                 * ModeDesiredX, so hero screen-X tracked the static 539). */
+                if ((Xp<(ClipWindowXMin + 80) OR Xp>(ClipWindowXMax - 100) OR Yp<(80 + ClipWindowYMin) OR Yp>(ClipWindowYMax - 50))
+                        AND !(FollowCamera AND CubeMode == CUBE_EXTERIEUR)) {
+                    SaveTimer();
+
+                    if (CubeMode == CUBE_INTERIEUR) {
+                        xm = (ptrobj->Obj.X) / SIZE_BRICK_XZ;
+                        zm = (ptrobj->Obj.Z) / SIZE_BRICK_XZ;
+
+                        StartXCube = xm + ((xm - StartXCube)) / 2;
+                        StartZCube = zm + ((zm - StartZCube)) / 2;
+                    } else {
+                        Rotate(0, DISTANCE_VISEE, ptrobj->Obj.Beta);
+                        xm = (ptrobj->Obj.X + X0) / SIZE_BRICK_XZ;
+                        zm = (ptrobj->Obj.Z + Z0) / SIZE_BRICK_XZ;
+
+                        StartXCube = xm;
+                        StartZCube = zm;
+                    }
+
+                    ym = ptrobj->Obj.Y / SIZE_BRICK_Y;
+                    StartYCube = ym;
+
+                    if (StartXCube >= SIZE_CUBE_X)
+                        StartXCube = SIZE_CUBE_X - 1;
+                    if (StartZCube >= SIZE_CUBE_Z)
+                        StartZCube = SIZE_CUBE_Z - 1;
+
+                    if (FlagCameraForcee) {
+                        FlagCameraForcee = FALSE;
+                        AlphaCam = DefAlphaCam[VueCamera];
+                        GammaCam = DEFAULT_GAMMA_CAM;
+                        VueDistance = DefVueDistance[VueCamera];
+                    }
+
+                    CameraCenter(0);
+                    FirstTime = AFF_ALL_FLIP;
+
+                    RestoreTimer();
+                }
+            }
+        }
+
+        /*-------------------------------------------------------------------------*/
+
+        if (FixedTimestep > 0 && ++simStep < nSimSteps)
+            goto sim_step; // run the next fixed sub-step of this frame
+        if (FixedTimestep > 0) {
+            // Restore the frame's clock for rendering / the next frame and undo the per-sub-step
+            // input hold. LastSimRefHR was already advanced by Timer_PlanSimSteps (the carry).
+            TimerRefHR = simFinalRef;
+            Input = simSavedInput;
+            LastInput = simSavedLastInput; // undo the sub-step hold so the next frame's edge is real
+        }
+
+        /*-------------------------------------------------------------------------*/
+        /* affiche tout */
+
+    skip_simulation:
+        Perftrace_PhaseBegin(PERFTRACE_PHASE_SCENE);
+        AffScene(FirstTime);
+        Perftrace_PhaseEnd(PERFTRACE_PHASE_SCENE);
+
+        if ((FirstLoop OR RestartMusic)
+                AND !PLAY_THE_END) {
+            // on attend une boucle scenarique au cas ou le
+            // scenar aurait lancé une musique
+            if (CubeJingle != 255) {
+                PlayMusic(CubeJingle, FALSE);
+            }
+
+            RestartMusic = FALSE;
+        }
+
+        FirstTime = AFF_OBJETS_FLIP;
+        FirstLoop = FALSE;
+
+        CmptFrame++;
+
+#ifdef DEBUG_TOOLS
+        if (NbFramePerSecond < MinNbf)
+            MinNbf = NbFramePerSecond;
+        if (NbFramePerSecond > MaxNbf)
+            MaxNbf = NbFramePerSecond;
+
+        TotalNbf += NbFramePerSecond;
+        NbNbf++;
+#endif
+
+        Perftrace_FrameEnd();
+    }
+
+    return 0;
+}
+
+/*══════════════════════════════════════════════════════════════════════════*
+                            █▄ ▄█ █▀▀▀█  █    ██▄ █
+                            ██▀ █ ██▀▀█  ██   ██▀██
+                            ▀▀  ▀ ▀▀  ▀  ▀▀   ▀▀  ▀
+ *══════════════════════════════════════════════════════════════════════════*/
+/*──────────────────────────────────────────────────────────────────────────*/
+
+/*══════════════════════════════════════════════════════════════════════════*/
+
+// Erreur dans le HQRGet() qui appel cette fonction: on sort violemment
+
+HQR_GET_CALLBACK ErrorHQRGet;
+
+void InitProgram() {
+    BoxInit(MAX_BOXES);
+
+    Cls();
+    BoxUpdate();
+
+    MemoClipWindow(); // pour caler MemoClipWindow... sur ClipWindow...
+
+#ifdef TRACE
+    AsciiMode = TRUE;
+#endif
+
+#ifdef CDROM
+    InitVoiceFile();
+#endif
+
+    ReadConfigFile();
+}
+
+/*══════════════════════════════════════════════════════════════════════════*/
+
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+void Message(const char *mess, S32 flag) {
+    S32 x;
+
+    CoulText(LBAWHITE, 0);
+    PalOne(LBAWHITE, 255, 255, 255);
+    x = (strlen(mess) * 8) / 2;
+    MemoClip();
+
+    GraphPrintf(FALSE, (S32)ModeDesiredX / 2 - x, 236, "%s", mess);
+    Rect((S32)ModeDesiredX / 2 - x - 4, 234, (S32)ModeDesiredX / 2 + x + 4, 248, LBAWHITE);
+
+    BoxStaticAdd((S32)ModeDesiredX / 2 - x - 4, 234, (S32)ModeDesiredX / 2 + x + 4, 248);
+
+    if (flag) {
+        BoxUpdate();
+        WaitNoInput();
+        WaitInput();
+    }
+    RestoreClip();
+}
+#else
+void Message(const char *mess, S32 flag) {
+    // pour virer warnings !!!! Baaahhhh ! Que j'aime pas ça, c'est pas
+    // beau !!! mais ça marche et ça ne génère pas de code !!!
+
+    mess = mess;
+    flag = flag;
+}
+#endif
+
+/*══════════════════════════════════════════════════════════════════════════*/
+/*══════════════════════════════════════════════════════════════════════════*/
+
+/* The game state a crash block reports: the scene, the chapter, the behaviour,
+ * whether a cutscene or a fade holds the frame, and the hero's position and body.
+ * Plain globals the engine already keeps, registered by address with
+ * Crash_AddState and read when the block is written; nothing here is updated for
+ * the report's sake. The cast lets a volatile global through; the handler only
+ * copies its bytes. */
+#define ADD_SIGNED(name, variable) Crash_AddState(name, (const void *)&(variable), sizeof(variable), 1)
+#define ADD_UNSIGNED(name, variable) Crash_AddState(name, (const void *)&(variable), sizeof(variable), 0)
+
+static void register_crash_state(void) {
+    T_OBJET *hero = &ListObjet[NUM_PERSO];
+
+    ADD_SIGNED("island", Island);
+    ADD_SIGNED("cube", NumCube);
+    ADD_SIGNED("new_cube", NewCube);
+    ADD_SIGNED("cube_mode", CubeMode);
+    ADD_SIGNED("chapter", ListVarGame[FLAG_CHAPTER]);
+    ADD_UNSIGNED("behaviour", Comportement);
+    ADD_UNSIGNED("cinema", CinemaMode);
+    ADD_SIGNED("fade", FlagFade);
+    /* 0 while a modal loop owns the frame: the nearest thing to a flag for an open
+       menu or holomap, which the engine does not keep. */
+    ADD_SIGNED("fps", NbFramePerSecond);
+    ADD_UNSIGNED("timer", TimerRefHR);
+
+    ADD_SIGNED("hero", hero->Obj.X);
+    ADD_SIGNED("hero", hero->Obj.Y);
+    ADD_SIGNED("hero", hero->Obj.Z);
+    ADD_SIGNED("hero_angle", hero->Obj.Alpha);
+    ADD_SIGNED("hero_angle", hero->Obj.Beta);
+    ADD_SIGNED("hero_angle", hero->Obj.Gamma);
+    ADD_SIGNED("life", hero->LifePoint);
+    ADD_SIGNED("body", hero->Obj.Body.Num);
+    ADD_SIGNED("anim", hero->Obj.Anim.Num);
+    ADD_UNSIGNED("gen_anim", hero->GenAnim);
+}
+
+#undef ADD_SIGNED
+#undef ADD_UNSIGNED
+
+/* Issue #62 host harness: --save-load-test <path> drives InitGame(-1) + ChangeCube()
+ * and exits, so a driver script can run each save in a subprocess and capture
+ * { exit_code, SAVE_LOAD_TEST stage lines }.  SaveLoadTestMode is declared in
+ * SAVEGAME.H so OBJECT.CPP::ChangeCube can emit a stage line on flagload;
+ * SaveLoadTestPath is file-local — only the parser-and-driver path here needs it. */
+S32 SaveLoadTestMode = 0;
+static char SaveLoadTestPath[ADELINE_MAX_PATH] = "";
+
+static void parse_save_load_test_flag(int *argc, char *argv[]) {
+    int read = 1, write = 1;
+    while (read < *argc) {
+        if (!strcmp(argv[read], "--save-load-test") && read + 1 < *argc) {
+            strncpy(SaveLoadTestPath, argv[read + 1], sizeof(SaveLoadTestPath) - 1);
+            SaveLoadTestPath[sizeof(SaveLoadTestPath) - 1] = '\0';
+            SaveLoadTestMode = 1;
+            read += 2;
+            continue;
+        }
+        argv[write++] = argv[read++];
+    }
+    argv[write] = NULL;
+    *argc = write;
+}
+
+/* Take a profile name from wherever it came, or refuse it by name. Checked
+   before any path is resolved: an unusable name means the run would write
+   somewhere other than asked, and there is no log yet to explain it. */
+static bool ProfileNameOrExit(const char *name, const char *source) {
+    if (Directories_IsValidProfileName(name)) {
+        Directories_SetProfileOverride(name);
+        return true;
+    }
+    fprintf(stderr,
+            "error: %s names '%s', which is not a usable profile name\n\n"
+            "A profile is a folder inside your saves folder, so the name cannot\n"
+            "contain '/' or '\\', cannot step up with '..', and cannot be empty.\n",
+            source, name);
+    return false;
+}
+
+/* Pre-present chain: service the --listen socket, then draw the console overlay.
+ *
+ * The socket is polled from here rather than only from Control_TickHook because
+ * that hook has a single call site inside MainLoop, and a cinematic, dialogue or
+ * menu runs its own inner loop that never reaches it. A driver connected over the
+ * socket would go dark for the whole modal, which is precisely when it most wants
+ * to look. Every mode presents frames, so this is the one point that is always
+ * reached. Executing a console command from here is what the console itself
+ * already does when it is open during a modal, so it is no new exposure.
+ */
+static void ControlPrePresent(U32 *frameBuffer, U32 pitch, U32 width, U32 height,
+                              const U8 *palette_rgb) {
+    Control_ServiceListen();
+    Console_PrePresent(frameBuffer, pitch, width, height, palette_rgb);
+}
+
+int main(int argc, char *argv[]) {
+    /* --version: print resolved engine version (from VERSION file at the
+     * repo root, optionally suffixed with -dirty) and exit. Handled before
+     * any other init so it works without retail data, without SDL, and on
+     * stripped-down environments (CI, AppImage builders). The same string
+     * is written to ${CMAKE_BINARY_DIR}/VERSION for release pipelines to
+     * cat directly — see cmake/write_version.cmake. */
+    {
+        int i;
+        for (i = 1; i < argc; ++i) {
+            if (strcmp(argv[i], "--version") == 0) {
+                printf("%s\n", LBA2_VERSION_STRING);
+                return 0;
+            }
+        }
+    }
+
+    /* --help and unknown-flag rejection, for the same reason --version is here: no SDL,
+       no retail data, no window. An unknown flag exits rather than booting, so a typo
+       can't quietly leave the run on a default. */
+    int wantsHelp = Cli_WantsHelp(argc, argv);
+    if (wantsHelp) {
+        Cli_PrintUsage(argv[0], wantsHelp == 2); /* --help-all prints the full surface */
+        return 0;
+    }
+    if (Cli_ValidateArgs(argc, argv) != 0) {
+        return 2;
+    }
+
+    S32 load = FALSE;
+    U8 *ptrdos4gw;
+    char tmpFilePath[ADELINE_MAX_PATH];
+
+    parse_save_load_test_flag(&argc, argv);
+    Control_ParseArgs(&argc, argv);
+    Control_ArmRecording(); /* prototype: --record / --replay */
+
+#ifdef DEBUG_TOOLS
+    MemoMemory = AvailableMem();       // memory at start
+    MemoDosMemory = DosAvailableMem(); // Dos memory at start
+#endif
+
+    /* SDL filesystem APIs (GetDefaultUserDir, ResolveGameDataDir) require SDL
+     * to be initialized before use. */
+    if (!SDL_Init(0)) {
+        LogPrintf("SDL_Init failed: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
+    }
+
+    /* Boot stopwatch for the "ready in Xs" closer (logged once the engine is up,
+       just before the menu/game). */
+    const U32 bootStartMs = SDL_GetTicks();
+
+    Android_EnsureExternalStoragePermission();
+
+    {
+        char resFolderPath[ADELINE_MAX_PATH] = "";
+        char userFolderPath[ADELINE_MAX_PATH] = "";
+
+        /* --user-dir and --profile have to be read before the first
+           GetDefaultUserDir, which is the next line: that call resolves the root
+           once and caches it, so an override arriving later would leave the log
+           in one folder and the saves in another. Last spelling wins, as it does
+           for --disc.
+
+           A profile name is checked here rather than left to fail later: an
+           unusable one means the run would write somewhere other than asked,
+           and there is no log yet to explain it. */
+        bool profileNamed = false;
+        for (int i = 1; i < argc;) {
+            const int arity = Cli_FlagArity(argv[i]);
+            if (arity < 0) { /* not a flag we know: a value, or a positional */
+                i++;
+                continue;
+            }
+            if (arity < 1 || i + 1 >= argc) {
+                i += 1 + arity;
+                continue;
+            }
+            if (!strcmp(argv[i], "--user-dir"))
+                Directories_SetUserDirOverride(argv[i + 1]);
+            if (!strcmp(argv[i], "--profile")) {
+                if (!ProfileNameOrExit(argv[i + 1], "--profile"))
+                    return 2;
+                profileNamed = true;
+            }
+            i += 1 + arity;
+        }
+
+        /* LBA2_PROFILE, for the launcher or shortcut that cannot pass a flag.
+           Below --profile, matching LBA2_USER_DIR under --user-dir and
+           LBA2_GAME_DIR under --game-dir: the environment sets the habit, the
+           command line settles the run. */
+        if (!profileNamed) {
+            const char *envProfile = getenv("LBA2_PROFILE");
+            if ((envProfile != NULL) && (envProfile[0] != '\0') &&
+                !ProfileNameOrExit(envProfile, "LBA2_PROFILE")) {
+                return 2;
+            }
+        }
+
+        GetDefaultUserDir(userFolderPath);
+
+        /* Bring the structured log up here — BEFORE game-data discovery and the
+           folder picker — so their diagnostics reach adeline.log and the terminal,
+           not just stderr. The "can't find game data" path is exactly when a
+           persisted log matters most, and it used to be invisible there because
+           CreateLog/Log_Init ran later, inside InitAdeline. The log file lives in
+           the user dir (known now, independent of where the game data is). Use
+           GetLogPathInDir rather than GetLogPath, which needs InitDirectories — and
+           that needs the game dir we haven't resolved yet; it derives the same path
+           from the user dir alone. The console-buffer sink joins later in
+           InitAdeline: there's no F12 overlay this early. */
+        char logFilePath[ADELINE_MAX_PATH] = "";
+        GetLogPathInDir(logFilePath, ADELINE_MAX_PATH, userFolderPath, LOG_NAME);
+        CreateLog(logFilePath);
+        Log_Init();
+        /* Master log level for every sink: --log-level wins, else LBA2_LOG_LEVEL,
+           else INFO (debug off by default). The floor gates the file, terminal,
+           and F12 console alike, so this one value controls all logging. */
+        {
+            LogSeverity logLevel = LOG_INFO;
+            const char *envLevel;
+            if (Control_HasLogLevel())
+                logLevel = (LogSeverity)Control_GetLogLevel();
+            else if ((envLevel = getenv("LBA2_LOG_LEVEL")) != NULL && *envLevel)
+                (void)Log_ParseLevel(envLevel, &logLevel); /* invalid -> stays INFO */
+            Log_SetLevel(logLevel);
+        }
+        Log_AddSink(Log_MakeFileSink(logFilePath, LOG_DEBUG));
+        Log_AddSink(Log_MakeTerminalSink(LOG_DEBUG));
+        atexit(Log_Shutdown);
+        /* From here a fatal signal appends a CRASH block to the log. Nothing
+           heavy has run yet, and the log has already kept the previous run's. */
+        Crash_Install(logFilePath, LBA2_VERSION_STRING, LBA2_COMMIT_STRING);
+        /* The system's report of the last crash, kept beside the log it goes with;
+           the banner says what was found. */
+        Android_SavePreviousCrashReport(userFolderPath);
+
+        /* --disc names the image to mount, instead of letting the game folder's
+           scan rank what it finds. Read before discovery, not just before the
+           mount, because discovery also probes for an image when the folder has
+           no extracted data, and both should be looking at the same disc. */
+        char discImagePath[ADELINE_MAX_PATH] = "";
+        bool explicitGameDir = (getenv("LBA2_GAME_DIR") != NULL);
+        bool bindGameDir = false;
+        for (int i = 1; i < argc; i++) {
+            if (!strcasecmp(argv[i], "--game-dir") || !strcasecmp(argv[i], "--data-dir"))
+                explicitGameDir = true;
+            if (!strcasecmp(argv[i], "--bind-game-dir"))
+                bindGameDir = true;
+            if (strcasecmp(argv[i], "--disc") != 0 || i + 1 >= argc)
+                continue;
+            /* Accept the cue as readily as the image: pointing tools at the cue
+               is the convention, and the sheet names the image beside it. */
+            if (!Cue_ImageForSheet(argv[i + 1], discImagePath, sizeof(discImagePath))) {
+                strncpy(discImagePath, argv[i + 1], sizeof(discImagePath) - 1);
+                discImagePath[sizeof(discImagePath) - 1] = '\0';
+            }
+            DiscImage_SetOverride(discImagePath);
+        }
+
+        if (!ResolveGameDataDir(resFolderPath, ADELINE_MAX_PATH, &argc, argv)) {
+            /* A batch or headless run must not reach the folder picker: it is modal, and
+             * --headless still brings SDL up on the dummy video driver, so the dialog does
+             * open and then waits forever for an answer nobody can give. Exit with the fix
+             * in the message instead. */
+            if (Control_IsActive() || Control_IsHeadless()) {
+                Log_Error("Game data not found. Pass --game-dir <folder containing "
+                          "%s> (often Common/), or set LBA2_GAME_DIR.",
+                          Directories_GetResMarker());
+                exit(EXIT_FAILURE);
+            }
+
+            /* Interactive last fallback: prompt with a folder dialog and persist the pick
+             * for next launch. */
+            if (!PromptForResDir(resFolderPath, ADELINE_MAX_PATH)) {
+                /* Do not SDL_Quit() here: SDL3 can double-free in
+                 * SDL_QuitFilesystem when shutting down after early
+                 * filesystem API use; exiting is enough. */
+                exit(EXIT_FAILURE);
+            }
+            WritePersistedGameDir(resFolderPath);
+            /* The banner labels which probe resolved the assets, and this one
+               lives outside ResolveGameDataDir. Only for the run the picker
+               fires on; the next launch reports last_game_dir.txt. */
+            Res_SetDiscoverySource("first-launch picker");
+        }
+
+        /* --disc without an explicit game folder: the disc's own folder is the
+           install. Discovery would otherwise stop at whichever candidate it tried
+           first, since the override makes every candidate look valid, and that
+           arbitrary folder would become the mount base. Harmless for reads that
+           fall through to the image, but a stale file sitting in it would shadow
+           the disc, and the boot banner would name a folder holding none of the
+           assets. */
+        if (discImagePath[0] != '\0' && !explicitGameDir) {
+            char discDir[ADELINE_MAX_PATH];
+            size_t dirLen = 0;
+            for (size_t i = 0; discImagePath[i] != '\0'; i++) {
+                if (discImagePath[i] == '/' || discImagePath[i] == '\\')
+                    dirLen = i + 1;
+            }
+            if (dirLen > 0 && dirLen < sizeof(discDir)) {
+                memcpy(discDir, discImagePath, dirLen);
+                discDir[dirLen] = '\0';
+                /* Image-aware: the whole point is that this folder holds the
+                   disc and nothing else, so the cheap check would reject it. */
+                if (IsValidResourceDirOrImage(discDir)) {
+                    strncpy(resFolderPath, discDir, ADELINE_MAX_PATH - 1);
+                    resFolderPath[ADELINE_MAX_PATH - 1] = '\0';
+                }
+            }
+        }
+
+        /* A named profile binds to the install it was given, so that naming the
+           profile alone works next time: `--profile gog --game-dir <path>` once,
+           then `--profile gog`.
+
+           Only for a folder the user typed. Binding a probe's answer would
+           write down a guess as that profile's install for good, and the
+           sibling scan is exactly the probe that boots something nobody named:
+           without this rule, `--profile gog` on its own would happily settle on
+           whatever install happened to sit beside the binary and remember it.
+
+           It binds once. A later --game-dir runs against that folder and leaves
+           the binding alone, because the two readings of a second folder are
+           opposites and only one of them is recoverable: "just this run" read as
+           "from now on" silently discards the setup the profile existed to hold,
+           while "from now on" read as "just this run" costs one more flag. So
+           moving a profile says so, with --bind-game-dir.
+
+           The default profile keeps its old behaviour, where an explicit
+           --game-dir is for this run only. Naming a profile is what says "this
+           is my setup"; running without one is not.
+
+           Asks the resolved profile rather than the --profile seen while
+           scanning argv above, so LBA2_PROFILE binds exactly as the flag does. */
+        const bool haveProfile = Directories_GetProfile()[0] != '\0';
+        if (haveProfile && Res_ResolvedFromUserInput()) {
+            char boundPath[ADELINE_MAX_PATH] = "";
+            const bool bound = ReadPersistedGameDir(boundPath, ADELINE_MAX_PATH);
+            if (!bound || strcmp(boundPath, resFolderPath) != 0) {
+                if (!bound || bindGameDir) {
+                    if (WritePersistedGameDir(resFolderPath)) {
+                        Log_Info("Profile    '%s' now points at %s",
+                                 Directories_GetProfile(), resFolderPath);
+                    } else if (bound) {
+                        /* The write says why it failed; this says what it means,
+                           which is that the next run boots the old install. */
+                        Log_Warn("Profile    '%s' still points at %s: the move could "
+                                 "not be written",
+                                 Directories_GetProfile(), boundPath);
+                    }
+                } else {
+                    /* Said out loud, because the folder this run uses and the one
+                       the profile keeps now differ, and nothing else would show
+                       it until a later run booted the other install. */
+                    Log_Info("Profile    '%s' stays bound to %s; this run uses %s "
+                             "(--bind-game-dir moves it)",
+                             Directories_GetProfile(), boundPath, resFolderPath);
+                }
+            }
+        } else if (bindGameDir) {
+            /* Nothing to bind, and a flag that quietly does nothing is how the
+               setting it was meant to move goes unnoticed. */
+            Log_Warn("--bind-game-dir needs a named profile (--profile) and a folder "
+                     "you named (--game-dir or LBA2_GAME_DIR); nothing was bound");
+        }
+
+        InitDirectories(userFolderPath, resFolderPath, userFolderPath, "",
+                        DistribVersion);
+
+        /* Mount a disc image in the install dir, if one is present, so assets
+           that ship only inside the image (FMV, voices, music) resolve through
+           the OpenRead seam with no extraction step. A pure no-op when there is
+           no image (today's filesystem-only behaviour). Done before InitAdeline
+           so the banner can show the mount, and before AssetPreflight so it
+           sees disc-backed assets. */
+        DiscImage_Mount(resFolderPath, Directories_GetResMarker());
+    }
+
+    HQRGetErrorFunc = ErrorHQRGet;
+
+    /* Resolve the cfg path early so Res_LoadBootDimensions can read
+       ResolutionX/Y BEFORE we size MainBuffer. InitAdeline re-resolves
+       the same path later (GetCfgPath is deterministic / idempotent
+       given directoriesCfgDir) and re-inits the cfg buffer against
+       ScreenAux for the main ReadConfigFile pass. */
+    GetCfgPath(PathConfigFile, ADELINE_MAX_PATH, CFG_NAME);
+
+    /* Configure the framebuffer-sized ListMem entries with the effective resolution
+       BEFORE InitMainBuffer() does the giant single-shot allocation. Precedence:
+       --resolution CLI > lba2.cfg ResolutionX/Y > compile-time default. The cfg
+       read uses a transient stack/BSS buffer (no heap, no MainBuffer dependency),
+       so we get the right MainBuffer size in a single allocation cycle. */
+    /* Bring up the video subsystem now (idempotent, since InitProgram's later
+       SDL_INIT_VIDEO init is guarded by SDL_WasInit) so Res_LoadBootDimensions
+       can query the primary display for widescreen auto-detect BEFORE we size
+       the framebuffer here. Without this the early resolve would have no display
+       (windowed/640) while InitAdeline's later resolve (video up) would pick the
+       wide size, and the two MUST agree or MainBuffer and Log/Screen mismatch. */
+    if (!SDL_WasInit(SDL_INIT_VIDEO))
+        SDL_InitSubSystem(SDL_INIT_VIDEO);
+
+    U32 reqResX, reqResY;
+    Res_LoadBootDimensions(&reqResX, &reqResY);
+    Mem_ConfigureScreenBuffers(reqResX, reqResY);
+    InitMainBuffer(); // Alloue gros buffer pour tous les pointeurs
+
+    BootExit_NoteContext(PathConfigFile);
+
+    InitAdeline(argc, argv);
+
+    /* Split the boot time: engine subsystems (InitAdeline — SDL, audio device,
+       video) vs everything after (data loads + the intro logo splashes). */
+    const U32 subsystemsMs = SDL_GetTicks() - bootStartMs;
+
+    /* Console hooks: keyboard toggle/input interception + final-frame overlay compositing. */
+    SetEventFilter(Console_FeedEvent);
+    SetPrePresentCallback(ControlPrePresent);
+
+    /* Touch virtual gamepad (Android / mobile). Init before Perftrace so
+       timing callbacks nest correctly. No-op on non-Android builds.
+
+       Registered unconditionally rather than only when the overlay is visible
+       right now: it starts hidden until the first touch, and gating the
+       callback on the boot-time state is what would make that state
+       permanent -- the overlay would come back on and draw nothing, with
+       nothing to say why. TouchOverlay_Render is a no-op when there is
+       nothing to draw. */
+    TouchOverlay_Init();
+    SetOverlayPrePresentCallback(TouchOverlay_Render);
+
+    /* Perftrace: ring-buffer per-frame timing capture; off by default, opt-in
+       via the `perftrace` console verb. See docs/PERFTRACE.md. */
+    Perftrace_Init();
+    SetPresentTimingCallbacks(Perftrace_PresentBegin, Perftrace_PresentEnd);
+
+    atexit(TheEndInfo);
+    register_crash_state();
+
+    BootExit_NoteContext(""); /* past the cfg: a later failure names itself */
+
+    InitProgram();
+    InitMemory(); // Alloue petits buffers
+
+    /* "Display" status: WxH render resolution, where it came from (CLI / cfg /
+       auto-detect / default), and the real SDL window mode. The mode comes from
+       Window_IsFullscreen (the actual SDL flag state, not the cached request
+       flag). Logged here in main with the rest of the post-init summary. */
+    {
+        U32 dispW = 0, dispH = 0;
+        Res_LoadBootDimensions(&dispW, &dispH);
+        Log_Info("Display    %ux%u (%s) %s", dispW, dispH,
+                 Res_BootDimensionsSource(),
+                 Control_IsHeadless()    ? "headless (no window)"
+                 : Window_IsFullscreen() ? "fullscreen"
+                                         : "windowed");
+    }
+
+    /* Fail fast on missing required data: AssetPreflight has logged each missing
+       file; bail here (before any heavy load and before "Ready") via TheEnd so it
+       flows through the same fatal surface as every other error — non-zero exit
+       plus the native dialog in TheEndInfo for terminal-less launches. */
+    if (AssetPreflight() > 0) {
+        /* Every required file can be present and unreadable: on Android the game
+           data lives on shared storage, and without all-files access the engine
+           sees an empty folder. Telling that player their data is missing sends
+           them looking for files that are sitting right where they put them. */
+        TheEnd(ERROR_NOT_FOUND_FILE,
+               Android_HasExternalStoragePermission()
+                   ? "required game data is missing (see the log)"
+                   : "the game data could not be read because storage access was "
+                     "not granted (see the log)");
+    }
+
+#ifdef ONE_GAME_DIRECTORY
+    /* Before CreateLbaDirectories, which creates the save folder: its absence is
+       what says this profile has never been used. */
+    Directories_SeedSavesFromGameData();
+
+    CreateLbaDirectories();
+#endif
+
+    //-------------------   buffer samples
+
+    if (Sample_Driver_Enabled) {
+        // déclare ressource samples buffer
+        GetResPath(tmpFilePath, ADELINE_MAX_PATH, SAMPLES_HQR_NAME);
+        HQR_Samples = HQR_Init_Ressource(
+            tmpFilePath,
+            SampleMem,
+            SampleMem / 5000);
+
+        SamplesEnable = TRUE;
+
+        if (!HQR_Samples) {
+            TheEndCheckFile(tmpFilePath);
+        }
+
+        // pour Windows
+        HQR_Lock_Ressource(HQR_Samples);
+    }
+
+    //-------------------
+
+    InitLanguage(); // multilangue
+    /* What the cfg resolved to, captured before the override below replaces it,
+       so WriteConfigFile can put the player's own language back. */
+    ConfigFile_NoteBootLanguage(Language);
+    /* --language <name> override: bypass the cfg's Language key for this run.
+       Used by the test harness to pin a deterministic language regardless of
+       whatever the local cfg says, and useful for any dev wanting to spot-
+       check a language without editing their cfg. */
+    if (Control_HasLanguage()) {
+        Language = Control_GetLanguage();
+        if (Control_IsVerbose())
+            fprintf(stderr, "[control] --language: %s (index %d)\n",
+                    GetLanguageName(Language), (int)Language);
+    }
+    Log_Info("Language   %s", GetLanguageName(Language));
+    /* What release this run is, and how it knows. Two inputs settle it: what a
+       config declared and what the assets measure as (docs/VERSIONS.md). The
+       declaration wins; the measurement is reported beside it, because the two
+       disagreeing means one publisher's splash and panel sprite drawn over
+       another's data with nothing saying so.
+
+       Operative value first. 0 is the ordinary outcome rather than a missing
+       one: no 2point21 re-release ships a config beside its assets, so those
+       installs run at UNKNOWN_VERSION, where DistribLogo matches no case and
+       draws nothing. Calling that "unknown, declared by nothing" would report
+       the wanted state as a deficiency, so it reads as the default it is. */
+    {
+        const T_DATA_MASTER master = Distrib_GetMaster();
+        const char *dataName = Distrib_MasterName(master);
+
+        if (Distrib_WasDeclared()) {
+            /* The two halves compared on the one axis they share. A declaration
+               naming a publisher the data cannot see still agrees, as long as
+               both land on the same master. */
+            if (master == DATA_MASTER_UNRECOGNISED) {
+                Log_Info("Release    %s (%d) from the config", Distrib_Name(DistribVersion),
+                         (int)DistribVersion);
+            } else if (master == Distrib_MasterForVersion(DistribVersion)) {
+                Log_Info("Release    %s (%d) from the config, data agrees",
+                         Distrib_Name(DistribVersion), (int)DistribVersion);
+            } else {
+                /* The case nothing catches otherwise: one publisher's splash
+                   and panel sprite drawn over another's data, exiting 0. */
+                Log_Info("Release    %s (%d) from the config, data is %s",
+                         Distrib_Name(DistribVersion), (int)DistribVersion, dataName);
+            }
+        } else if (DistribVersion != UNKNOWN_VERSION) {
+            Log_Info("Release    %s (%d) from the data", Distrib_Name(DistribVersion),
+                     (int)DistribVersion);
+        } else if (master != DATA_MASTER_UNRECOGNISED) {
+            /* Operative value first, observation second. Nothing was declared
+               and nothing needs to be: this is the wanted state for a
+               re-release, not a gap in it. */
+            Log_Info("Release    default (%d), data is %s", (int)DistribVersion, dataName);
+        } else {
+            Log_Info("Release    default (%d)", (int)DistribVersion);
+        }
+    }
+
+    /* "Ready" counts engine subsystems coming up (InitAdeline: SDL, audio,
+       video, window). The intro banners/logos that follow are a timed slideshow,
+       deliberately not included. */
+    Log_Raw("");
+    Log_Banner("======== Ready in %.2fs ========", (double)subsystemsMs / 1000.0);
+
+    BufText = (U8 *)SmartMalloc(BIG_FILE_DIA);
+    if (!BufText)
+        TheEnd(NOT_ENOUGH_MEM, "BufText");
+
+    BufOrder = (U16 *)SmartMalloc(BIG_FILE_ORD);
+    if (!BufOrder)
+        TheEnd(NOT_ENOUGH_MEM, "BufOrder");
+
+    InitDial(0);
+    GetMultiText(49, PleaseWait);
+    GetMultiText(71, NewGameTxt);
+
+    // chargement palettes ici car le InitDial(2) ou le AskForCD()
+    // peuvent en avoir besoin...
+    InitPalette();
+    ChoicePalette();
+
+#ifdef CDROM
+#if defined(DEBUG_TOOLS) || defined(TEST_TOOLS)
+    InitCD("");
+#else
+    SetBlackPal(); // pour etre sur ...
+
+    {
+        char volname[10];
+        S32 cd = TRUE;
+
+        switch (DistribVersion) {
+        case UNKNOWN_VERSION:
+        case EA_VERSION:
+            strcpy(volname, "LBA2");
+            strcpy(MessageNoCD, MESSAGE_NO_CD);
+            break;
+
+        default:
+            strcpy(volname, "TWINSEN");
+            strcpy(MessageNoCD, MESSAGE_NO_CD_US);
+            break;
+        }
+
+        do {
+            // The CD loading screen and its palette fade are pure presentation, and
+            // FadeToPal spins on a real wall-clock timer (FADE_DELAY ms). They make no
+            // sense for the headless control harness / save-load test: no save has loaded
+            // yet and the scene render overwrites the framebuffer anyway. Skip them there;
+            // default gameplay keeps the loading screen. InitCD still runs (cheap; it sets
+            // up the music track table).
+            if (!SaveLoadTestMode && !Control_IsActive()) {
+                // pour Windows car ca prend du temps a scaner le CD
+                GetResPath(tmpFilePath, ADELINE_MAX_PATH, SCREEN_HQR_NAME);
+                Image_LoadCentered(tmpFilePath, Log, PCR_CDROM);
+                BoxStaticFullflip();
+
+                // premiere fois
+                if (cd)
+                    FadeToPal(PtrPalNormal);
+            }
+
+            if (!InitCD(volname)) {
+                // premiere fois
+                if (cd)
+                    PlayErrorSample();
+
+                if (!AskForCD()) {
+                    TheEnd(PROGRAM_OK, MessageNoCD);
+                }
+
+                cd = FALSE;
+            } else
+                cd = TRUE;
+        } while (!cd);
+    }
+    if (!SaveLoadTestMode && !Control_IsActive())
+        FadeToBlack(PtrPalNormal);
+
+#endif
+
+    //-------------------   divers malloc
+    BufMemoSeek = (U32 *)SmartMalloc(2048L);
+    if (!BufMemoSeek)
+        TheEnd(NOT_ENOUGH_MEM, "BufMemoSeek");
+#endif
+
+    InitJingle();
+
+    BufferAnim = (U8 *)SmartMalloc(SIZE_BUFFER_ANIM);
+    if (!BufferAnim)
+        TheEnd(NOT_ENOUGH_MEM, "Buffer Anim");
+    //-------------------
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    LbaFont = (U8 *)LoadMalloc_HQR(tmpFilePath, RESS_FONT_GPM);
+    if (!LbaFont)
+        TheEndCheckFile(tmpFilePath);
+
+    SetFont(LbaFont, 2, 8);
+    ColorFont(14);
+
+    InitAcf();
+
+#ifndef DEBUG_TOOLS
+    //-------------------   logo adeline (affiche)
+
+    if (!SaveLoadTestMode && !Control_IsActive()) {
+        DistribLogo();
+
+        Cls();
+        BoxUpdate();
+
+        if (!IsFirstGameLaunched()) {
+            AdelineLogo();
+
+            Cls();
+            BoxUpdate();
+        }
+
+#ifdef DEMO
+        DemoBumper();
+
+        Cls();
+        BoxUpdate();
+#endif
+    } else {
+        Cls();
+        BoxUpdate();
+    }
+#else
+    Cls();
+#endif
+
+    InitDial(2); // on s'assure que FR_GAM.VOX soit sur le Disque Dur
+
+    Init3DExt();
+
+    // a Faire Imperativement avant LoadFicPerso() !!!!!!!!
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    if (!Load_HQR(tmpFilePath, BufferFile3D, RESS_FILE3D))
+        TheEndCheckFile(tmpFilePath);
+
+    LoadFicPerso();
+    InitObjects(BufferAnim, SIZE_BUFFER_ANIM, GivePtrBody, GivePtrAnim);
+
+    //-------------------   load ressources diverses
+
+    // Textures inventaire, médaillon, etc... (256x256)
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    BufferTexture = (U8 *)LoadMalloc_HQR(tmpFilePath, RESS_TEXTURES);
+    if (!BufferTexture)
+        TheEndCheckFile(tmpFilePath);
+
+    ScanTextureAnimation(BufferTexture, 256);
+    InitTextureAnimation(); // pour initialiser l'affaire
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    PtrZvExtra = (S16 *)LoadMalloc_HQR(tmpFilePath, RESS_GOODIES_GPC);
+    if (!PtrZvExtra)
+        TheEndCheckFile(tmpFilePath);
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    PtrZvExtraRaw = (S16 *)LoadMalloc_HQR(tmpFilePath, RESS_GOODRAW_GPC);
+    if (!PtrZvExtraRaw)
+        TheEndCheckFile(tmpFilePath);
+
+#ifndef DEMO
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    PtrZvAnim3DS = (S16 *)LoadMalloc_HQR(tmpFilePath, RESS_ANIM3DS_GPC);
+    if (!PtrZvAnim3DS)
+        TheEndCheckFile(tmpFilePath);
+#endif
+
+    //-------------------   buffer sprites
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, SPRITES_HQR_NAME);
+    HQRPtrSprite = HQR_Init_Ressource(
+        tmpFilePath,
+        SpriteMem,
+        SpriteMem / 1000);
+
+    if (!HQRPtrSprite)
+        TheEndCheckFile(tmpFilePath);
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, SPRIRAW_HQR_NAME);
+    HQRPtrSpriteRaw = HQR_Init_Ressource(
+        tmpFilePath,
+        SpriteRawMem,
+        SpriteRawMem / 100);
+
+    if (!HQRPtrSpriteRaw)
+        TheEndCheckFile(tmpFilePath);
+
+//-------------------   Anims 3DS
+#ifndef DEMO
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, ANIM3DS_HQR_NAME);
+    HQRPtrAnim3DS = HQR_Init_Ressource(
+        tmpFilePath,
+        Anim3DSMem,
+        100);
+
+    if (!HQRPtrAnim3DS)
+        TheEndCheckFile(tmpFilePath);
+
+    LoadListAnim3DS();
+#endif
+    //-------------------   Pof
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    Load_HQR(tmpFilePath, BufferPof, RESS_POF);
+
+    //-------------------   buffer Impacts
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, RESS_HQR_NAME);
+    Load_HQR(tmpFilePath, BufferImpact, RESS_IMPACT);
+
+    //-------------------   buffer animations
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, ANIM_HQR_NAME);
+    HQR_Anims = HQR_Init_Ressource(
+        tmpFilePath,
+        AnimMem,
+        AnimMem / 800);
+
+    if (!HQR_Anims)
+        TheEndCheckFile(tmpFilePath);
+
+    //-------------------   buffer bodys
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, BODY_HQR_NAME);
+    HQR_Bodys = HQR_Init_Ressource(
+        tmpFilePath,
+        BodyMem,
+        BodyMem / 1000);
+
+    if (!HQR_Bodys)
+        TheEndCheckFile(tmpFilePath);
+
+    GetResPath(tmpFilePath, ADELINE_MAX_PATH, OBJFIX_HQR_NAME);
+    HQR_ObjFix = HQR_Init_Ressource(
+        tmpFilePath,
+        ObjFixMem,
+        ObjFixMem / 1000);
+
+    if (!HQR_ObjFix)
+        TheEndCheckFile(tmpFilePath);
+
+    /* (No per-type asset counts here: the ressource HQRs load lazily and only
+       expose a cache-slot budget, not the file's real entry count. The asset
+       preflight above reports presence, which is the verification that matters.
+       Real entry counts would need an HQR-header reader — a future addition.) */
+
+    //-------------------   buffer flows de particules
+
+    InitPartFlow();
+    InitDarts();
+    InitRain();
+    InitSysText();
+
+    // doit etre la derniere allocation faite
+    PtrPolySea = (S_ANI_POLY *)Malloc(SIZE_BUFFER_POLY_SEA);
+    if (!PtrPolySea)
+        MaxPolySea = 0; // Animation de l'eau non dispo
+
+#ifdef DEBUG_TOOLS
+    MemoMinDosMemory = DosAvailableMem(); // Dos memory after inits
+    MemEnd = AvailableMem();              // Extend memory at the end
+#endif
+
+#ifndef DEBUG_TOOLS
+    // Pour virer warning !!!!!!
+    ArgC = ArgC;
+#else
+    // temporaire pour virer Warning
+    ArgC = ArgC;
+
+    Palette(PtrPalBlack);
+#endif
+
+    //-------------------   main game menu
+
+    FadeToBlack(PalettePcx);
+
+    // Pour un SlideShow sur un salon, il ne faut pas que les p'tits gars
+    // puissent jouer avec le clavier !!!!!
+    /*      if( ArgC==2 AND !strcasecmp(ArgV[1],"/NOKEY") )
+        {
+                KeyOff = TRUE ;
+        }
+*/
+
+#ifdef DEBUG_TOOLS
+    // Command-line cube selection: ./lba2 <cube_number>
+    if (ArgC > 1) {
+        char *p = ArgV[1];
+        S32 isNumber = TRUE;
+        while (*p) {
+            if (!isdigit((unsigned char)*p++)) {
+                isNumber = FALSE;
+                break;
+            }
+        }
+
+        if (isNumber) {
+            S32 cubeNum = atoi(ArgV[1]);
+            LogPrintf("\nStarting at cube %d\n", cubeNum);
+
+            InitGame(1);
+            NewCube = cubeNum; // Set AFTER InitGame since it resets NewCube to 0
+            FlagFade = TRUE;
+            MainLoop();
+            TheEnd(PROGRAM_OK, "");
+            return 0;
+        }
+    }
+#endif
+
+    // Load save game from command line argument
+    if (ArgC > 1) {
+#ifdef DEMO
+#ifdef DEBUG_TOOLS
+        load = atoi(ArgV[1]);
+#endif
+#else
+        LogPrintf("\nTry to load %s\n", ArgV[1]);
+
+        if (FileSize(ArgV[1])) {
+            strcpy(GamePathname, ArgV[1]);
+            load = TRUE;
+        } else {
+            GetSavePath(GamePathname, ADELINE_MAX_PATH, ArgV[1]);
+
+            if (FileSize(GamePathname)) {
+                load = TRUE;
+            } else {
+                char tmpFileName[ADELINE_MAX_PATH];
+                snprintf(tmpFileName, ADELINE_MAX_PATH, "%s.lba", ArgV[1]);
+                GetSavePath(GamePathname, ADELINE_MAX_PATH, tmpFileName);
+
+                if (FileSize(GamePathname)) {
+                    load = TRUE;
+                } else
+                    strcpy(GamePathname, "");
+            }
+        }
+
+        if (load) {
+            Palette(PtrPal);
+        }
+#endif
+    }
+
+#ifdef DEBUG_TOOLS
+    HERCULE(HCls());
+#endif
+
+    if (SaveLoadTestMode) {
+        /* Issue #62 harness: drive the menu's "load_game" sequence on a fixed path,
+         * print parseable lines for the driver script, and exit.  Mirrors
+         * GAMEMENU.CPP load_game label: InitGame(-1) → ChangeCube(). */
+        if (!FileSize(SaveLoadTestPath)) {
+            LogPrintf("SAVE_LOAD_TEST: stage=open path=%s status=missing\n", SaveLoadTestPath);
+            fprintf(stdout, "SAVE_LOAD_TEST: stage=open path=%s status=missing\n", SaveLoadTestPath);
+            fflush(stdout);
+            TheEnd(PROGRAM_OK, "");
+            return 2;
+        }
+        strcpy(GamePathname, SaveLoadTestPath);
+        fprintf(stdout, "SAVE_LOAD_TEST: stage=start path=%s\n", SaveLoadTestPath);
+        fflush(stdout);
+        InitGame(-1);
+        fprintf(stdout, "SAVE_LOAD_TEST: stage=after_initgame newcube=%d\n", (int)NewCube);
+        fflush(stdout);
+        ChangeCube();
+        /* Balance the load's timer bracket, as the menu's load_game label does. This
+           path exits immediately below, so nothing here reads the clock again and the
+           depth is unobservable today; it is the same unmatched bracket the other
+           harness entry carries, and left out it becomes a trap for whoever next adds
+           a step between here and TheEnd. */
+        RestoreTimer();
+        /* ChangeCube prints SAVE_LOAD_TEST: stage=after_loadgame flagload=N when in test mode. */
+        {
+            extern S32 NbPatches;
+            fprintf(stdout, "SAVE_LOAD_TEST: stage=done numcube=%d nb_objets=%d nb_patches=%d\n",
+                    (int)NumCube, (int)NbObjets, (int)NbPatches);
+        }
+        fflush(stdout);
+        TheEnd(PROGRAM_OK, "");
+        return 0;
+    }
+
+    /* CLI control harness: when driven by --load/--exec/--tick/etc, bypass the menu
+     * and run the automated boot path (load -> exec -> tick -> dump/screenshot ->
+     * exit). The single Control_TickHook() in MainLoop does the per-tick work. */
+    if (Control_IsActive()) {
+        if (!Control_Begin()) {
+            /* Setup failed (a --load that resolved to nothing, say). Exit non-zero and
+               WITHOUT Control_End: it would write --dump-state / --screenshot from a game
+               that never loaded, i.e. plausible artifacts of the wrong scene. */
+            TheEnd(PROGRAM_FAIL, "control: setup failed");
+            return 1;
+        }
+        /* Through the menu loop rather than MainLoop directly. MainLoop RETURNS when the
+           player opens the in-game menu (the I_MENUS break), so calling it once ends the
+           run there: a replay of a session where the player pressed ESC stops at that
+           press with most of the stream unread. MainGameMenu's loop already does the
+           right thing, re-entering MainLoop when the session resumes, so route through it
+           instead of reimplementing it here. The load is already done, hence resumeInGame. */
+        MainGameMenu(0, TRUE);
+        Control_End();
+        /* Beside the --exec-at check and for the same reason: a run that did not do what
+           the command line asked must not exit 0. Control_End has already said which of
+           the two happened and why. */
+        if (Control_ReplayCutShort()) {
+            TheEnd(PROGRAM_FAIL, "control: the replay did not reach the end of its recording");
+            return 1;
+        }
+        if (Control_UnfiredExecAt() > 0) {
+            TheEnd(PROGRAM_FAIL, "control: --exec-at never ran");
+            return 1;
+        }
+        TheEnd(PROGRAM_OK, "");
+        return 0;
+    }
+
+    MainGameMenu(load, FALSE);
+
+#ifdef DEMO
+    if (!FlagShowEndDemo) {
+        SlideShow();
+    }
+
+    DemoBumper();
+#endif
+
+    TheEnd(PROGRAM_OK, "");
+
+    return 0;
+}
+
+/*══════════════════════════════════════════════════════════════════════════*/
