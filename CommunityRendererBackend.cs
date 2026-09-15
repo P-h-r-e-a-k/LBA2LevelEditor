@@ -22,7 +22,8 @@ internal sealed class CommunityRendererBackend
 
     public CommunityRendererBackend()
     {
-        var vendoredRoot = Path.Combine(AppContext.BaseDirectory, "native", "lba2-classic-community");
+        var editorRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        var vendoredRoot = Path.Combine(editorRoot, "native", "lba2-classic-community");
         var siblingRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "lba2-classic-community"));
         var repoRoot = Directory.Exists(vendoredRoot) ? vendoredRoot : siblingRoot;
         enginePath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "lba2cc.exe");
