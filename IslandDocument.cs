@@ -40,6 +40,8 @@ internal sealed class IslandDocument
     private readonly byte[]? shadeTable;
     private readonly int shadeLevel;
     public int CubeCount => map.Count(value => (value & 0x7F) != 0);
+    public short MinHeight => heights.Values.SelectMany(values => values).DefaultIfEmpty().Min();
+    public short MaxHeight => heights.Values.SelectMany(values => values).DefaultIfEmpty().Max();
     public byte CubeAt(int x, int y) => map[y * MapSize + x];
     public short HeightAt(int cubeId, int x, int y) => heights.TryGetValue(cubeId, out var heightMap) ? heightMap[y * 65 + x] : (short)0;
     public uint PolygonAt(int cubeId, int x, int y) => groundPolygons.TryGetValue(cubeId, out var polygons) ? polygons[y * 128 + x] : 0;

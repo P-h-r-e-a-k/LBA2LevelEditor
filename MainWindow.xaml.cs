@@ -19,7 +19,7 @@ public partial class MainWindow : Window
     private string activeFile = "DESERT.ILE";
     private TerrainType selectedTerrain = TerrainType.Grass;
     private double cameraYaw = 45;
-    private double cameraDistance = 42000;
+    private double cameraDistance = 30000;
     private int nativeAlpha = 240;
     private int nativeBeta = -256;
     private int nativeGamma = 0;
@@ -74,12 +74,12 @@ public partial class MainWindow : Window
             activeFile = Path.GetFileName(path);
             FileLabel.Text = $"●  {activeFile}";
             DocumentTitle.Text = Path.GetFileNameWithoutExtension(path);
-            DocumentSummary.Text = $"Native ILE / 16 x 16 cubes / {currentIsland.CubeCount} present";
+            DocumentSummary.Text = $"Native ILE / 16 x 16 cubes / {currentIsland.CubeCount} present / Y {currentIsland.MinHeight}..{currentIsland.MaxHeight}";
             targetX = 8 * 32768 + 16384;
             targetZ = 9 * 32768 + 16384;
 
             nativeViewActive = false;
-            DocumentSummary.Text += " / editable island map";
+            DocumentSummary.Text += " / software 3D";
             TerrainViewport.Source = currentIsland.CreatePreview();
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(RenderSoftwareTerrain));
         }
