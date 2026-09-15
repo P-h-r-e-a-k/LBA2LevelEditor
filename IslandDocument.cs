@@ -134,14 +134,11 @@ internal sealed class IslandDocument
         for (var x = 0; x < MapSize; x++)
         {
             var cube = CubeAt(x, y) & 0x7F;
-            var sampleX = (cube * 17) & 0xFF;
-            var sampleY = ((cube * 31) + 64) & 0xFF;
-            var color = GroundTexture[sampleY * 256 + sampleX];
             var pixel = (y * MapSize + x) * 4;
-            pixels[pixel] = (byte)(color * 3 / 4);
-            pixels[pixel + 1] = (byte)Math.Min(255, color + 24);
-            pixels[pixel + 2] = (byte)Math.Min(255, color + 48);
-            pixels[pixel + 3] = cube == 0 ? (byte)55 : (byte)255;
+            pixels[pixel] = cube == 0 ? (byte)22 : (byte)(70 + (cube * 37) % 130);
+            pixels[pixel + 1] = cube == 0 ? (byte)70 : (byte)Math.Min(255, pixels[pixel] + 28);
+            pixels[pixel + 2] = cube == 0 ? (byte)150 : (byte)Math.Min(255, pixels[pixel] + 52);
+            pixels[pixel + 3] = 255;
         }
         return BitmapSource.Create(MapSize, MapSize, 96, 96, PixelFormats.Bgra32, null, pixels, MapSize * 4);
     }

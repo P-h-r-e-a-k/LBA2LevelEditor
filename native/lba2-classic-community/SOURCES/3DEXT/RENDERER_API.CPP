@@ -35,11 +35,8 @@ int lba2_renderer_initialize(void)
     Mem_ConfigureScreenBuffers(640, 480);
     AdjustHQRMem();
     InitMainBuffer();
-    ModeDesiredX = 640;
-    ModeDesiredY = 480;
-    Log = malloc(640 * 480 + 512);
-    if (!Log) return 0;
     InitMemory();
+    if (!CreateScreenMemory(640, 480)) return 0;
     if (!RendererBootAssets()) return 0;
     if (!InitEvents()) return 0;
     return InitExternalView();
@@ -61,7 +58,6 @@ void lba2_renderer_shutdown(void)
     ClearExternalView();
     EndEvents();
     Mem_TeardownMainBuffer();
-    free(Log); Log = NULL;
     free(IsleMapIndex); IsleMapIndex = NULL;
     free(GroundTexture); GroundTexture = NULL;
     free(ObjTexture); ObjTexture = NULL;
@@ -121,6 +117,6 @@ const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pit
     if (width) *width = ModeDesiredX;
     if (height) *height = ModeDesiredY;
     if (pitch) *pitch = ModeDesiredX;
-    return (const unsigned char *)Screen;
+    return (const unsigned char *)Log;
 }
 

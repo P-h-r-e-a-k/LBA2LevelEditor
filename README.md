@@ -15,7 +15,7 @@ The current first slice provides an editable exterior-map workspace with terrain
 
 ## Native renderer backend
 
-The editor uses the vendored native renderer at `native/lba2-classic-community` for `CITADEL` and `DESERT`. It loads the original resources from the configured game directory and renders directly through `liblba2_renderer.dll` into the WPF viewport. Camera updates do not launch the playable game or generate PNG screenshots.
+The editor includes a vendored native renderer at `native/lba2-classic-community`. Its DLL integration is isolated while the renderer-only bootstrap is stabilized. The current WPF viewport displays a safe editable `.ILE` island map without launching the playable game or generating PNG screenshots.
 
 The native support library excludes `PERSO.CPP` and the playable game loop. Build it with MSYS2 UCRT64, CMake, and Ninja; the generated DLL is placed under `native/lba2-classic-community/out/build/windows_ucrt64/SOURCES/3DEXT/`.
 

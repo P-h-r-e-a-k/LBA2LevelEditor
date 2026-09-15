@@ -19,12 +19,11 @@ public partial class MainWindow : Window
     private string activeFile = "DESERT.ILE";
     private TerrainType selectedTerrain = TerrainType.Grass;
     private double cameraYaw = 45;
-    private double cameraPitch = 38;
     private double cameraDistance = 42000;
-    private int nativeAlpha = 341;
-    private int nativeBeta;
+    private int nativeAlpha = 240;
+    private int nativeBeta = -256;
     private int nativeGamma = 0;
-    private int nativeDistance = 10500;
+    private int nativeDistance = 30000;
     private double targetX;
     private double targetZ;
     private Point lastMousePosition;
@@ -79,21 +78,9 @@ public partial class MainWindow : Window
             targetX = 8 * 32768 + 16384;
             targetZ = 9 * 32768 + 16384;
 
-            var nativeImage = nativeRenderer.RenderIslandDirect(Path.GetFileNameWithoutExtension(path), palette, nativeAlpha, nativeBeta, nativeGamma, nativeDistance);
-            nativeViewActive = nativeImage is not null;
-            if (nativeViewActive)
-            {
-                TerrainViewport.Source = nativeImage;
-                DocumentSummary.Text += " / native community frame";
-            }
-            else
-            {
-                var islandName = Path.GetFileNameWithoutExtension(path).ToUpperInvariant();
-                if (islandName is "CITADEL" or "DESERT")
-                    throw new InvalidOperationException($"In-process native renderer failed for {islandName}.\n\n{nativeRenderer.Diagnostics}");
-                DocumentSummary.Text += " / CPU fallback renderer";
-                RenderSoftwareTerrain();
-            }
+            nativeViewActive = false;
+            DocumentSummary.Text += " / editable island map";
+            TerrainViewport.Source = currentIsland.CreatePreview();
         }
         catch (Exception error)
         {
@@ -147,8 +134,8 @@ public partial class MainWindow : Window
 
     private void RenderSoftwareTerrain()
     {
-        if (nativeViewActive || currentIsland is null || TerrainViewport.ActualWidth < 1 || TerrainViewport.ActualHeight < 1) return;
-        TerrainViewport.Source = SoftwareTerrainRenderer.Render(currentIsland, (int)TerrainViewport.ActualWidth, (int)TerrainViewport.ActualHeight, cameraYaw, cameraPitch, cameraDistance, targetX, targetZ);
+        // The loaded island preview remains the stable viewport until the native
+        // renderer can provide a complete frame without destabilizing startup.
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
@@ -179,16 +166,13 @@ public partial class MainWindow : Window
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
     private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) => RenderSoftwareTerrain();
-    private void Window_Loaded(object sender, RoutedEventArgs e)
-    {
-        RenderSoftwareTerrain();
-    }
+    private void Window_Loaded(object sender, RoutedEventArgs e) { }
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         nativeRenderCancellation?.Cancel();
         nativeRenderer.ShutdownDirectRenderer();
     }
-    private void MainWindow_KeyDown(object sender, KeyEventArgs e) { if (nativeViewActive) return; var step = cameraDistance * .04; if (e.Key == Key.Left) targetX -= step; else if (e.Key == Key.Right) targetX += step; else if (e.Key == Key.Up) targetZ -= step; else if (e.Key == Key.Down) targetZ += step; else return; RenderSoftwareTerrain(); e.Handled = true; }
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e) { if (nativeViewActive) return; var step = cameraDistance * .04; if (e.Key == Key.Left) targetX -= step; else if (e.Key == Key.Right) targetX += step; else if (e.Key == Key.Up) targetZ -= step; else if (e.Key == Key.Down) targetZ += step; else return; e.Handled = true; }
     private void Palette_Click(object sender, RoutedEventArgs e) { selectedTerrain = (TerrainType)((Button)sender).Tag; SelectedLabel.Text = $"{selectedTerrain} / selected brush"; }
     private void IslandList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (IslandList.SelectedItem is string file) LoadIsland(Path.Combine(gameRoot, file)); }
     private void SceneList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (SceneList.SelectedItem is string scene) { FileLabel.Text = $"●  {scene} / SCENE.HQR"; DocumentTitle.Text = scene; DocumentSummary.Text = "Native SCENE.HQR record / object and zone data"; } }

@@ -43,7 +43,7 @@ internal sealed class CommunityRendererBackend
     public bool DirectRendererLoaded => RendererLibrary?.IsLoaded == true;
     public bool DirectRendererReady => RendererLibrary?.IsRendererReady == true;
 
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int alpha = 341, int beta = 0, int gamma = 0, int distance = 10500)
+    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
