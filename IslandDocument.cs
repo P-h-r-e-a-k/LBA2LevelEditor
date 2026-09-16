@@ -40,6 +40,29 @@ internal sealed class IslandDocument
     private readonly byte[]? shadeTable;
     private readonly int shadeLevel;
     public int CubeCount => map.Count(value => (value & 0x7F) != 0);
+
+    // Bounding box (inclusive) of cubes with data, in cube coordinates. Most
+    // islands only occupy a small corner of the full 16x16 grid, so callers
+    // that want to show the island up close (the minimap) crop to this
+    // instead of the whole grid. Falls back to the full grid if the island
+    // is somehow empty.
+    public (int MinX, int MinY, int MaxX, int MaxY) PresentCubeBounds
+    {
+        get
+        {
+            int minX = MapSize, minY = MapSize, maxX = -1, maxY = -1;
+            for (var y = 0; y < MapSize; y++)
+            for (var x = 0; x < MapSize; x++)
+            {
+                if ((CubeAt(x, y) & 0x7F) == 0) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+            return maxX < 0 ? (0, 0, MapSize - 1, MapSize - 1) : (minX, minY, maxX, maxY);
+        }
+    }
     public short MinHeight => heights.Values.SelectMany(values => values).DefaultIfEmpty().Min();
     public short MaxHeight => heights.Values.SelectMany(values => values).DefaultIfEmpty().Max();
     public byte CubeAt(int x, int y) => map[y * MapSize + x];

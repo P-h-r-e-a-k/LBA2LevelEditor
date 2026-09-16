@@ -6,6 +6,7 @@
 #include "HQR_NAMES.H"
 #include "COMMON.H"
 #include <SYSTEM/EVENTS.H>
+#include <POLYGON/POLY.H>
 #include <SVGA/CLIP.H>
 #include <SVGA/INITMODE.H>
 #include <SVGA/DIRTYBOX.H>
@@ -30,6 +31,15 @@ extern int RendererBootAssets(void);
 // twice by two different paths.
 extern S32 Island;
 extern U8 RendererDrawSky;
+
+// LoadCube() (LOADISLE.CPP) overwrites ClipZFar/StartZFog from each cube's
+// own data on every load; lba2_renderer_load_cube() re-applies these on top
+// afterwards so every cube keeps the same generous editor view distance
+// regardless of what it shipped with. lba2_renderer_set_view_distance()
+// updates both the live values and this pair, so a later cube load doesn't
+// silently revert to the original defaults.
+static S32 RendererStartFog = 200000;
+static S32 RendererClipFar = 250000;
 
 int lba2_renderer_version(void)
 {
@@ -93,7 +103,14 @@ int lba2_renderer_initialize(void)
 
     if (!RendererBootAssets()) return 0;
     if (!InitEvents()) return 0;
-    return InitExternalView();
+    if (!InitExternalView()) return 0;
+
+    // InitExternalView() just set ClipZFar/StartZFog to the original game's
+    // tuned values (48000/12000); widen them for editing so panning/zooming
+    // around a cube doesn't fade into the fog/sky colour well short of its
+    // far edge. See lba2_renderer_set_view_distance()'s doc comment.
+    lba2_renderer_set_view_distance(200000, 250000);
+    return 1;
 }
 
 int lba2_renderer_set_data_root(const char *path)
@@ -173,7 +190,14 @@ int lba2_renderer_load_cube(int x, int y)
     CurrentCubeX = x;
     CurrentCubeY = y;
     S32 result = LoadCube(x, y);
-    if (result) Init3DExtGame();
+    if (result) {
+        Init3DExtGame();
+        // LoadCube() just overwrote ClipZFar/StartZFog from this cube's own
+        // data (LOADISLE.CPP) and re-ran SetFog() with them; re-apply the
+        // wider editor defaults on top so every cube gets the same generous
+        // view distance regardless of what it shipped with.
+        lba2_renderer_set_view_distance(RendererStartFog, RendererClipFar);
+    }
     return result;
 }
 
@@ -238,6 +262,18 @@ void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance)
 void lba2_renderer_set_draw_sky(int enabled)
 {
     RendererDrawSky = enabled ? 1 : 0;
+}
+
+void lba2_renderer_set_view_distance(int startFog, int clipFar)
+{
+    RendererStartFog = startFog;
+    RendererClipFar = clipFar;
+    StartZFog = startFog;
+    ClipZFar = clipFar;
+    // SetFog() recomputes Fill_ZBuffer_Factor (POLY.CPP) from the far value;
+    // without this the Z-buffer stays scaled for whatever distance was
+    // current before, and depth comparisons past that range are unreliable.
+    SetFog(startFog, clipFar);
 }
 
 const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pitch)

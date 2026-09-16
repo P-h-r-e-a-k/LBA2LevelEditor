@@ -101,10 +101,12 @@
                     <Grid>
                         <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
                         <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
-                            <Grid Width="300" Height="300" Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
-                                <Image x:Name="MinimapImage" Stretch="Uniform" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
-                            </Grid>
+                            <ScrollViewer x:Name="MinimapScrollViewer" Width="220" Height="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
+                                    <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                                </Grid>
+                            </ScrollViewer>
                         </Border>
                     </Grid>
                 </Border>

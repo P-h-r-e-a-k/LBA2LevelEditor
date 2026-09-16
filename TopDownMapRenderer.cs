@@ -12,7 +12,7 @@ namespace LBA2LevelEditor;
 internal static class TopDownMapRenderer
 {
     private const int CubesPerSide = 16;
-    private const int CellsPerCube = 64;
+    public const int CellsPerCube = 64;
 
     // 2 pixels per terrain cell -> 2048x2048 for a full 16x16-cube island.
     // High enough detail to hold up scaled down or viewed large; low enough

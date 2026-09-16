@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using System.Threading;
 using System.Threading.Tasks;
@@ -84,8 +85,6 @@ public partial class MainWindow : Window
 
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
-            MinimapImage.Source = preview; // instant placeholder while the full-detail map renders
-            UpdateMinimapMarker();
             RegenerateMinimap();
             if (nativeRenderer.DirectRendererReady)
             {
@@ -198,21 +197,25 @@ public partial class MainWindow : Window
         UpdateMinimapMarker();
     }
 
-    // Islands span 16 cubes of 32768 world units each on both axes; the
-    // minimap image is one pixel per cube (IslandDocument.CreatePreview()),
-    // so a fraction of that world span maps directly onto a fraction of the
-    // minimap's rendered size regardless of how big the control is drawn.
-    private const double MapWorldSize = 16 * 32768.0;
+    // TopDownMapRenderer draws at this many image pixels per 512-unit terrain
+    // cell (see TopDownMapRenderer.CellsPerCube); the minimap crops to the
+    // present-cube bounding box (plus one cube of padding) instead of the
+    // full 16x16 grid, so most of the displayed area is actual island
+    // instead of empty sea. These fields describe that crop in the same
+    // pixel space so marker placement and click-to-jump can convert between
+    // world units and minimap pixel coordinates.
+    private const int MinimapPixelsPerCell = 2;
+    private const double MinimapWorldUnitsPerPixel = 512.0 / MinimapPixelsPerCell;
+    private int minimapCropOffsetXPixels;
+    private int minimapCropOffsetYPixels;
 
     private void UpdateMinimapMarker()
     {
         MinimapMarkerCanvas.Children.Clear();
-        if (currentIsland is null) return;
-        var width = MinimapImage.ActualWidth > 0 ? MinimapImage.ActualWidth : 300;
-        var height = MinimapImage.ActualHeight > 0 ? MinimapImage.ActualHeight : 300;
-        var fractionX = Math.Clamp(targetX / MapWorldSize, 0.0, 1.0);
-        var fractionZ = Math.Clamp(targetZ / MapWorldSize, 0.0, 1.0);
-        const double markerSize = 8;
+        if (currentIsland is null || MinimapImage.Source is null) return;
+        var px = targetX / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
+        var pz = targetZ / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
+        const double markerSize = 10;
         var marker = new System.Windows.Shapes.Ellipse
         {
             Width = markerSize,
@@ -221,28 +224,64 @@ public partial class MainWindow : Window
             Stroke = Brushes.Black,
             StrokeThickness = 1,
         };
-        Canvas.SetLeft(marker, fractionX * width - markerSize / 2);
-        Canvas.SetTop(marker, fractionZ * height - markerSize / 2);
+        Canvas.SetLeft(marker, px - markerSize / 2);
+        Canvas.SetTop(marker, pz - markerSize / 2);
         MinimapMarkerCanvas.Children.Add(marker);
     }
 
+    // The minimap crops to the island's bounding box but that can still be
+    // larger than the small on-screen viewport (hence the scrollbars); center
+    // the view on the current camera position so opening an island or
+    // jumping via a minimap click doesn't leave the marker scrolled off screen.
+    private void CenterMinimapOnMarker()
+    {
+        if (MinimapImage.Source is null) return;
+        var px = targetX / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
+        var pz = targetZ / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
+        MinimapScrollViewer.ScrollToHorizontalOffset(px - MinimapScrollViewer.ViewportWidth / 2);
+        MinimapScrollViewer.ScrollToVerticalOffset(pz - MinimapScrollViewer.ViewportHeight / 2);
+    }
+
     // Renders the full-resolution top-down map (TopDownMapRenderer) off the UI
-    // thread and swaps it into the minimap once ready. Called after every
-    // island load; also the hook to call again once terrain painting actually
-    // mutates currentIsland's data, so the minimap can be refreshed live
-    // instead of only reflecting what was true at load time.
+    // thread, crops it to the island's present-cube bounding box (so the
+    // minimap shows the island zoomed in instead of mostly empty sea), and
+    // swaps it into the minimap once ready. Called after every island load;
+    // also the hook to call again once terrain painting actually mutates
+    // currentIsland's data, so the minimap can be refreshed live instead of
+    // only reflecting what was true at load time.
     private void RegenerateMinimap()
     {
         if (currentIsland is null) return;
         var island = currentIsland;
         var request = Interlocked.Increment(ref minimapRequest);
-        Task.Run(() => TopDownMapRenderer.Render(island)).ContinueWith(task =>
+        Task.Run(() =>
         {
-            if (task.IsCanceled || task.IsFaulted || request != minimapRequest) return;
+            var full = TopDownMapRenderer.Render(island, MinimapPixelsPerCell);
+            var (minX, minY, maxX, maxY) = island.PresentCubeBounds;
+            const int padding = 1;
+            minX = Math.Max(0, minX - padding);
+            minY = Math.Max(0, minY - padding);
+            maxX = Math.Min(15, maxX + padding);
+            maxY = Math.Min(15, maxY + padding);
+            var offsetX = minX * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
+            var offsetY = minY * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
+            var cropWidth = (maxX - minX + 1) * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
+            var cropHeight = (maxY - minY + 1) * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
+            var cropped = new CroppedBitmap(full, new Int32Rect(offsetX, offsetY, cropWidth, cropHeight));
+            cropped.Freeze();
+            return (Bitmap: (BitmapSource)cropped, offsetX, offsetY);
+        }).ContinueWith(task =>
+        {
+            if (task.IsCanceled || request != minimapRequest) return;
+            if (task.IsFaulted) return;
             Dispatcher.Invoke(() =>
             {
                 if (request != minimapRequest) return;
-                MinimapImage.Source = task.Result;
+                minimapCropOffsetXPixels = task.Result.offsetX;
+                minimapCropOffsetYPixels = task.Result.offsetY;
+                MinimapImage.Source = task.Result.Bitmap;
+                UpdateMinimapMarker();
+                CenterMinimapOnMarker();
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
@@ -256,14 +295,11 @@ public partial class MainWindow : Window
 
     private void Minimap_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (currentIsland is null) return;
+        if (currentIsland is null || MinimapImage.Source is null) return;
         var grid = (Grid)sender;
         var point = e.GetPosition(grid);
-        if (grid.ActualWidth < 1 || grid.ActualHeight < 1) return;
-        var fractionX = Math.Clamp(point.X / grid.ActualWidth, 0.0, 1.0);
-        var fractionZ = Math.Clamp(point.Y / grid.ActualHeight, 0.0, 1.0);
-        var worldX = fractionX * MapWorldSize;
-        var worldZ = fractionZ * MapWorldSize;
+        var worldX = (minimapCropOffsetXPixels + point.X) * MinimapWorldUnitsPerPixel;
+        var worldZ = (minimapCropOffsetYPixels + point.Y) * MinimapWorldUnitsPerPixel;
         if (!IsWorldPositionOnIsland(worldX, worldZ)) return;
         targetX = worldX;
         targetZ = worldZ;

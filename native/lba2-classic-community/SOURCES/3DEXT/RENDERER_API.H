@@ -35,6 +35,16 @@ LBA2_RENDERER_API void lba2_renderer_set_camera(int alpha, int beta, int gamma, 
    instead, useful when a high overhead camera would otherwise have the sky
    filling most of the frame. Does not affect the full game. */
 LBA2_RENDERER_API void lba2_renderer_set_draw_sky(int enabled);
+/* Overrides the distance-fog start and far-clip distances (world units) used
+   by the exterior renderer. LOADISLE.CPP's InitExternalView() sets these to
+   values tuned for the original 320x200 game (StartZFog 12000, ClipZFar
+   48000) which, at editor zoom-out distances and steep overhead angles,
+   fades most of a 32768-unit-wide cube into the fog/sky colour well before
+   its far edge. Called once at boot with generous defaults; exposed
+   separately in case a caller wants different values later. Does not affect
+   the full game (LOADISLE.CPP's own values are untouched; this only
+   overwrites them after the fact, and only this renderer ever calls it). */
+LBA2_RENDERER_API void lba2_renderer_set_view_distance(int startFog, int clipFar);
 LBA2_RENDERER_API const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pitch);
 
 #ifdef __cplusplus
