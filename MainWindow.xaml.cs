@@ -81,7 +81,10 @@ public partial class MainWindow : Window
                 targetZ = cubeY * 32768 + 16384;
             }
 
-            TerrainViewport.Source = currentIsland.CreatePreview();
+            var preview = currentIsland.CreatePreview();
+            TerrainViewport.Source = preview;
+            MinimapImage.Source = preview;
+            UpdateMinimapMarker();
             if (nativeRenderer.DirectRendererReady)
             {
                 nativeViewActive = true;
@@ -190,6 +193,52 @@ public partial class MainWindow : Window
         var newZ = targetZ + dz;
         if (IsWorldPositionOnIsland(newX, targetZ)) targetX = newX;
         if (IsWorldPositionOnIsland(targetX, newZ)) targetZ = newZ;
+        UpdateMinimapMarker();
+    }
+
+    // Islands span 16 cubes of 32768 world units each on both axes; the
+    // minimap image is one pixel per cube (IslandDocument.CreatePreview()),
+    // so a fraction of that world span maps directly onto a fraction of the
+    // minimap's rendered size regardless of how big the control is drawn.
+    private const double MapWorldSize = 16 * 32768.0;
+
+    private void UpdateMinimapMarker()
+    {
+        MinimapMarkerCanvas.Children.Clear();
+        if (currentIsland is null) return;
+        var width = MinimapImage.ActualWidth > 0 ? MinimapImage.ActualWidth : 160;
+        var height = MinimapImage.ActualHeight > 0 ? MinimapImage.ActualHeight : 160;
+        var fractionX = Math.Clamp(targetX / MapWorldSize, 0.0, 1.0);
+        var fractionZ = Math.Clamp(targetZ / MapWorldSize, 0.0, 1.0);
+        const double markerSize = 8;
+        var marker = new System.Windows.Shapes.Ellipse
+        {
+            Width = markerSize,
+            Height = markerSize,
+            Fill = Brushes.Yellow,
+            Stroke = Brushes.Black,
+            StrokeThickness = 1,
+        };
+        Canvas.SetLeft(marker, fractionX * width - markerSize / 2);
+        Canvas.SetTop(marker, fractionZ * height - markerSize / 2);
+        MinimapMarkerCanvas.Children.Add(marker);
+    }
+
+    private void Minimap_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (currentIsland is null) return;
+        var grid = (Grid)sender;
+        var point = e.GetPosition(grid);
+        if (grid.ActualWidth < 1 || grid.ActualHeight < 1) return;
+        var fractionX = Math.Clamp(point.X / grid.ActualWidth, 0.0, 1.0);
+        var fractionZ = Math.Clamp(point.Y / grid.ActualHeight, 0.0, 1.0);
+        var worldX = fractionX * MapWorldSize;
+        var worldZ = fractionZ * MapWorldSize;
+        if (!IsWorldPositionOnIsland(worldX, worldZ)) return;
+        targetX = worldX;
+        targetZ = worldZ;
+        UpdateMinimapMarker();
+        if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));

@@ -97,7 +97,15 @@
                     </DockPanel>
                 </Border>
                 <Border Grid.Row="1" Background="#151B1C" ClipToBounds="True">
-                    <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
+                    <Grid>
+                        <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
+                        <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
+                            <Grid Width="160" Height="160" Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
+                                <Image x:Name="MinimapImage" Stretch="Uniform" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                                <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Border>
                 <DockPanel Grid.Row="2" Background="#151B1C" LastChildFill="True" Margin="24,0">
                     <TextBlock Text="3D VIEW / EDITABLE TERRAIN" FontFamily="Consolas" FontSize="10" Foreground="#738076" VerticalAlignment="Center"/>
