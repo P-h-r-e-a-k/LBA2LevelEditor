@@ -96,6 +96,9 @@ public partial class MainWindow : Window
 
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
+            selectedActorIndex = null;
+            ActorInspectorPanel.Visibility = Visibility.Collapsed;
+            ActorMarkerCanvas.Children.Clear();
             RegenerateMinimap();
             if (nativeRenderer.DirectRendererReady)
             {
@@ -167,11 +170,90 @@ public partial class MainWindow : Window
         try
         {
             TerrainViewport.Source = SoftwareTerrainRenderer.Render(currentIsland, (int)TerrainViewport.ActualWidth, (int)TerrainViewport.ActualHeight, cameraYaw, 38, cameraDistance, targetX, targetZ);
+            UpdateActorMarkersOverlay();
         }
         catch
         {
             TerrainViewport.Source = currentIsland.CreatePreview();
         }
+    }
+
+    // Simple-marker actor overlay for the main 3D view: projects each actor's
+    // world position with the exact camera SoftwareTerrainRenderer just used
+    // (see SoftwareTerrainRenderer.TryProjectWorldPoint) and drops a clickable
+    // dot on top of the rendered frame. Only meaningful while the software
+    // camera is active -- the native renderer's camera/perspective isn't
+    // reproduced in C#, so markers are cleared instead of drawn at a wrong
+    // position while nativeViewActive. Body-mesh rendering and full script
+    // editing are intentionally out of scope for this first pass; clicking a
+    // marker opens a read-only attributes + script panel (see
+    // ShowActorInspector) instead.
+    private int? selectedActorIndex;
+
+    private void UpdateActorMarkersOverlay()
+    {
+        ActorMarkerCanvas.Children.Clear();
+        if (nativeViewActive || currentIsland is null) return;
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null) return;
+        var width = (int)TerrainViewport.ActualWidth;
+        var height = (int)TerrainViewport.ActualHeight;
+        if (width < 1 || height < 1) return;
+        var count = library.GetActorCount();
+        for (var i = 0; i < count; i++)
+        {
+            if (!library.GetActor(i, out var x, out var y, out var z, out _)) continue;
+            var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
+            if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var screenX, out var screenY)) continue;
+            if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
+
+            var selected = selectedActorIndex == i;
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = selected ? 14 : 10,
+                Height = selected ? 14 : 10,
+                Fill = selected ? Brushes.Yellow : Brushes.Red,
+                Stroke = Brushes.Black,
+                StrokeThickness = 1,
+                Cursor = Cursors.Hand,
+                Tag = i,
+            };
+            dot.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+            Canvas.SetLeft(dot, screenX - dot.Width / 2);
+            Canvas.SetTop(dot, screenY - dot.Height / 2);
+            ActorMarkerCanvas.Children.Add(dot);
+        }
+    }
+
+    private void ActorMarker_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is not int index) return;
+        e.Handled = true;
+        selectedActorIndex = index;
+        UpdateActorMarkersOverlay();
+        ShowActorInspector(index);
+    }
+
+    private void ShowActorInspector(int index)
+    {
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null) return;
+        if (!library.GetActor(index, out var x, out var y, out var z, out var waypointCount)) return;
+        library.GetActorAttributes(index, out var beta, out var body, out var anim, out var lifePoint, out var armor, out var hitForce, out var move);
+
+        ActorTitleLabel.Text = $"Actor {index} ({waypointCount} waypoint{(waypointCount == 1 ? "" : "s")})";
+        ActorPositionBox.Text = $"{x}, {y}, {z}";
+        ActorFacingBox.Text = $"beta={beta}  body={body}  anim={anim}";
+        ActorStatsBox.Text = $"life={lifePoint}  armor={armor}  hit={hitForce}  move={move}";
+        ActorScriptBox.Text = library.GetActorScript(index);
+        ActorInspectorPanel.Visibility = Visibility.Visible;
+    }
+
+    private void CloseActorInspector_Click(object sender, RoutedEventArgs e)
+    {
+        selectedActorIndex = null;
+        ActorInspectorPanel.Visibility = Visibility.Collapsed;
+        UpdateActorMarkersOverlay();
     }
 
     // Islands are a 16x16 grid of cubes, each spanning 32768 world units

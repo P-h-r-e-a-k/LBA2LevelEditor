@@ -62,6 +62,21 @@ LBA2_RENDERER_API int lba2_renderer_get_actor(int index, int *x, int *y, int *z,
 /* Returns 0 if actorIndex/waypointIndex is out of range, 1 on success. */
 LBA2_RENDERER_API int lba2_renderer_get_actor_waypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z);
 
+/* Attribute snapshot for the editor's actor inspector: facing angle, body/anim
+   indices, remaining life points, armor, hit force, and movement type -- all
+   read directly off the loaded T_OBJET at scan time. Returns 0 if index is
+   out of range, 1 on success; any out pointer may be NULL. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_attributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move);
+
+/* Read-only decoded life+track script text for one actor (see RENDERER_ACTORS.CPP's
+   DecodeLifeScript/DecodeTrackScript for exactly which opcodes are covered --
+   decoding stops and says so at the first opcode it doesn't recognize, rather
+   than risk misreading the rest of the script). Copies up to bufferSize-1 bytes
+   plus a NUL terminator into buffer (pass NULL/0 to just query the required
+   size). Returns the number of bytes the full text needs, or 0 if index is out
+   of range. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_script(int index, char *buffer, int bufferSize);
+
 #ifdef __cplusplus
 }
 #endif

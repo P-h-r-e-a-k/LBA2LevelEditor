@@ -101,6 +101,7 @@
                 <Border Grid.Row="1" Background="#151B1C" ClipToBounds="True">
                     <Grid>
                         <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
+                        <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
                         <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
                             <ScrollViewer x:Name="MinimapScrollViewer" Width="220" Height="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                 <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
@@ -118,18 +119,35 @@
                 </DockPanel>
             </Grid>
             <Border Grid.Column="2" BorderBrush="#344039" BorderThickness="1,0,0,0" Background="#141B19" Padding="20,30">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="TERRAIN PALETTE" Style="{StaticResource Eyebrow}"/>
-                    <ItemsControl x:Name="Palette" Margin="0,14,0,22"/>
-                    <Separator/>
-                    <TextBlock Text="SELECTION" Style="{StaticResource Eyebrow}" Margin="0,22,0,0"/>
-                    <TextBlock x:Name="SelectedLabel" Text="Grass / selected brush" FontSize="13" Margin="0,14,0,24"/>
-                    <TextBlock Text="Tile height" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Text="0.0" IsReadOnly="True" Style="{StaticResource FieldBox}"/>
-                    <TextBlock Text="Walkable" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
-                    <ComboBox SelectedIndex="0" Style="{StaticResource FieldBox}"><ComboBoxItem>Yes</ComboBoxItem><ComboBoxItem>No</ComboBoxItem></ComboBox>
-                    <TextBlock Text="Native .ILE import and binary writing will plug into this panel." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#78847B" Margin="0,28,0,0"/>
+                    <StackPanel x:Name="TerrainPalettePanel">
+                        <TextBlock Text="TERRAIN PALETTE" Style="{StaticResource Eyebrow}"/>
+                        <ItemsControl x:Name="Palette" Margin="0,14,0,22"/>
+                        <Separator/>
+                        <TextBlock Text="SELECTION" Style="{StaticResource Eyebrow}" Margin="0,22,0,0"/>
+                        <TextBlock x:Name="SelectedLabel" Text="Grass / selected brush" FontSize="13" Margin="0,14,0,24"/>
+                        <TextBlock Text="Tile height" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="0.0" IsReadOnly="True" Style="{StaticResource FieldBox}"/>
+                        <TextBlock Text="Walkable" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
+                        <ComboBox SelectedIndex="0" Style="{StaticResource FieldBox}"><ComboBoxItem>Yes</ComboBoxItem><ComboBoxItem>No</ComboBoxItem></ComboBox>
+                        <TextBlock Text="Native .ILE import and binary writing will plug into this panel." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#78847B" Margin="0,28,0,0"/>
+                    </StackPanel>
+                    <StackPanel x:Name="ActorInspectorPanel" Visibility="Collapsed">
+                        <TextBlock Text="ACTOR" Style="{StaticResource Eyebrow}"/>
+                        <TextBlock x:Name="ActorTitleLabel" Text="Actor 0" FontSize="13" Margin="0,14,0,16"/>
+                        <TextBlock Text="Position (X, Y, Z)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="ActorPositionBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Facing / Body / Anim" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="ActorFacingBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Life / Armor / Hit force / Move" Style="{StaticResource FieldLabel}"/>
+                        <TextBox x:Name="ActorStatsBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,16"/>
+                        <TextBlock Text="SCRIPT (READ-ONLY)" Style="{StaticResource Eyebrow}" Margin="0,0,0,8"/>
+                        <TextBox x:Name="ActorScriptBox" IsReadOnly="True" Style="{StaticResource FieldBox}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap" AcceptsReturn="True" Height="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                        <Button Content="Close" Click="CloseActorInspector_Click" Style="{StaticResource QuietButton}" Margin="0,16,0,0" HorizontalAlignment="Left"/>
+                    </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Grid>

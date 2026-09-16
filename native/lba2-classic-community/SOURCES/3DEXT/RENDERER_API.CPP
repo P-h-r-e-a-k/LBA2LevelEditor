@@ -35,6 +35,8 @@ extern int RendererScanIslandActors(int islandIndex);
 extern int RendererGetActorCount(void);
 extern int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount);
 extern int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z);
+extern int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move);
+extern int RendererGetActorScript(int index, char *buffer, int bufferSize);
 
 // LoadCube() (LOADISLE.CPP) overwrites ClipZFar/StartZFog from each cube's
 // own data on every load; lba2_renderer_load_cube() re-applies these on top
@@ -306,5 +308,15 @@ int lba2_renderer_get_actor(int index, int *x, int *y, int *z, int *waypointCoun
 int lba2_renderer_get_actor_waypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z)
 {
     return RendererGetActorWaypoint(actorIndex, waypointIndex, x, y, z);
+}
+
+int lba2_renderer_get_actor_attributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move)
+{
+    return RendererGetActorAttributes(index, beta, body, anim, lifePoint, armor, hitForce, move);
+}
+
+int lba2_renderer_get_actor_script(int index, char *buffer, int bufferSize)
+{
+    return RendererGetActorScript(index, buffer, bufferSize);
 }
 

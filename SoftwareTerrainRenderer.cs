@@ -57,6 +57,39 @@ internal static class SoftwareTerrainRenderer
         return bitmap;
     }
 
+    // Projects a world-space point (e.g. an actor position) using the exact
+    // same camera this renderer builds internally for Render(), so overlays
+    // (actor markers, selection highlights) drawn on a WPF Canvas above the
+    // rendered bitmap line up with it pixel-for-pixel. Returns false for a
+    // point behind the camera (viewZ <= 1, matching RasterTriangle's own
+    // near-plane check) rather than a garbage screen position.
+    public static bool TryProjectWorldPoint(int width, int height, double yaw, double pitch, double distance, double targetX, double targetZ, Point3D world, out double screenX, out double screenY)
+    {
+        width = Math.Max(320, width);
+        height = Math.Max(200, height);
+        var yawRadians = yaw * Math.PI / 180.0;
+        var pitchRadians = pitch * Math.PI / 180.0;
+        var horizontal = distance * Math.Cos(pitchRadians);
+        var camera = new Point3D(targetX + horizontal * Math.Cos(yawRadians), distance * Math.Sin(pitchRadians), targetZ + horizontal * Math.Sin(yawRadians));
+        var target = new Point3D(targetX, 0, targetZ);
+        var forward = target - camera;
+        forward.Normalize();
+        var right = Vector3D.CrossProduct(forward, new Vector3D(0, 1, 0));
+        right.Normalize();
+        var up = Vector3D.CrossProduct(right, forward);
+        up.Normalize();
+        var focal = width / (2.0 * Math.Tan(55.0 * Math.PI / 360.0));
+
+        var relative = world - camera;
+        var viewX = Vector3D.DotProduct(relative, right);
+        var viewY = Vector3D.DotProduct(relative, up);
+        var viewZ = Vector3D.DotProduct(relative, forward);
+        if (viewZ <= 1) { screenX = screenY = 0; return false; }
+        screenX = width / 2.0 + focal * viewX / viewZ;
+        screenY = height / 2.0 - focal * viewY / viewZ;
+        return true;
+    }
+
     private static void RasterTriangle(IslandDocument island, byte[] pixels, float[] depth, int width, int height, Point3D camera, Vector3D right, Vector3D up, Vector3D forward, double focal, int cubeId, int cubeX, int cubeY, int cellX, int cellZ, uint polygon, int[] corners)
     {
         var texture = island.TextureAt(cubeId, (int)((polygon >> 19) & 0x1FFF));

@@ -19,6 +19,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorCountFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFn(int index, out int x, out int y, out int z, out int waypointCount);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorWaypointFn(int actorIndex, int waypointIndex, out int x, out int y, out int z);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorAttributesFn(int index, out int beta, out int body, out int anim, out int lifePoint, out int armor, out int hitForce, out int move);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorScriptFn(int index, [Out] byte[]? buffer, int bufferSize);
     private IntPtr handle;
     private VersionFn? version;
     private InitializeFn? initialize;
@@ -34,6 +36,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetActorCountFn? getActorCount;
     private GetActorFn? getActor;
     private GetActorWaypointFn? getActorWaypoint;
+    private GetActorAttributesFn? getActorAttributes;
+    private GetActorScriptFn? getActorScript;
 
     public RendererLibraryApi(string path)
     {
@@ -49,6 +53,8 @@ internal sealed class RendererLibraryApi : IDisposable
         getActorCount = Get<GetActorCountFn>("lba2_renderer_get_actor_count");
         getActor = Get<GetActorFn>("lba2_renderer_get_actor");
         getActorWaypoint = Get<GetActorWaypointFn>("lba2_renderer_get_actor_waypoint");
+        getActorAttributes = Get<GetActorAttributesFn>("lba2_renderer_get_actor_attributes");
+        getActorScript = Get<GetActorScriptFn>("lba2_renderer_get_actor_script");
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool SetDllDirectory(string path);
@@ -80,6 +86,21 @@ internal sealed class RendererLibraryApi : IDisposable
         if (getActorWaypoint is null) { x = y = z = 0; return false; }
         return getActorWaypoint(actorIndex, waypointIndex, out x, out y, out z) == 1;
     }
+    public bool GetActorAttributes(int index, out int beta, out int body, out int anim, out int lifePoint, out int armor, out int hitForce, out int move)
+    {
+        if (getActorAttributes is null) { beta = body = anim = lifePoint = armor = hitForce = move = 0; return false; }
+        return getActorAttributes(index, out beta, out body, out anim, out lifePoint, out armor, out hitForce, out move) == 1;
+    }
+    public string GetActorScript(int index)
+    {
+        if (getActorScript is null) return string.Empty;
+        var buffer = new byte[16384];
+        var needed = getActorScript(index, buffer, buffer.Length);
+        if (needed <= 0) return string.Empty;
+        if (needed > buffer.Length) { buffer = new byte[needed]; getActorScript(index, buffer, buffer.Length); }
+        var nul = Array.IndexOf(buffer, (byte)0);
+        return System.Text.Encoding.ASCII.GetString(buffer, 0, nul < 0 ? buffer.Length : nul);
+    }
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 
@@ -92,6 +113,6 @@ internal sealed class RendererLibraryApi : IDisposable
         handle = IntPtr.Zero;
         version = null;
         initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; setCamera = null; setDrawSky = null; framebuffer = null;
-        getActorCount = null; getActor = null; getActorWaypoint = null;
+        getActorCount = null; getActor = null; getActorWaypoint = null; getActorAttributes = null; getActorScript = null;
     }
 }
