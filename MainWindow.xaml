@@ -100,17 +100,27 @@
                 </Border>
                 <Border Grid.Row="1" Background="#151B1C" ClipToBounds="True">
                     <Grid>
-                        <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
-                        <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
-                        <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
-                            <ScrollViewer x:Name="MinimapScrollViewer" Width="220" Height="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
-                                    <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
-                                    <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
-                                </Grid>
-                            </ScrollViewer>
-                        </Border>
+                        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
+                        <Grid Grid.Row="0" Grid.Column="0">
+                            <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
+                            <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
+                                <ScrollViewer x:Name="MinimapScrollViewer" Width="220" Height="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                    <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
+                                        <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                        <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
+                                        <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                                    </Grid>
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
+                        <ScrollBar x:Name="PanVerticalScrollBar" Grid.Row="0" Grid.Column="1" Orientation="Vertical"
+                                   Minimum="0" Maximum="524288" ViewportSize="65536" SmallChange="8192" LargeChange="65536"
+                                   Scroll="PanVerticalScrollBar_Scroll"/>
+                        <ScrollBar x:Name="PanHorizontalScrollBar" Grid.Row="1" Grid.Column="0" Orientation="Horizontal"
+                                   Minimum="0" Maximum="524288" ViewportSize="65536" SmallChange="8192" LargeChange="65536"
+                                   Scroll="PanHorizontalScrollBar_Scroll"/>
                     </Grid>
                 </Border>
                 <DockPanel Grid.Row="2" Background="#151B1C" LastChildFill="True" Margin="24,0">

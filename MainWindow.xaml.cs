@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -30,7 +31,6 @@ public partial class MainWindow : Window
     private double targetZ;
     private Point lastMousePosition;
     private bool orbiting;
-    private bool panning;
     private bool nativeViewActive;
     private CancellationTokenSource? nativeRenderCancellation;
     private int nativeRenderRequest;
@@ -93,6 +93,7 @@ public partial class MainWindow : Window
                 targetX = cubeX * 32768 + 16384;
                 targetZ = cubeY * 32768 + 16384;
             }
+            SyncPanScrollBars();
 
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
@@ -193,18 +194,48 @@ public partial class MainWindow : Window
     private void UpdateActorMarkersOverlay()
     {
         ActorMarkerCanvas.Children.Clear();
-        if (nativeViewActive || currentIsland is null) return;
+        if (currentIsland is null) return;
         var library = nativeRenderer.RendererLibrary;
         if (library is null) return;
         var width = (int)TerrainViewport.ActualWidth;
         var height = (int)TerrainViewport.ActualHeight;
         if (width < 1 || height < 1) return;
+
+        // Native view: the community renderer already built a camera matrix
+        // for whatever it just drew (RenderIslandDirect -> lba2_renderer_
+        // render_frame), so lba2_renderer_project_point() reuses that exact
+        // matrix (LongWorldRotatePoint/LongProjectPoint -- the same pair the
+        // engine itself uses to place actor sprites) instead of guessing at
+        // the native perspective/alpha-beta-gamma math in C#. Its output is
+        // in the renderer's fixed framebuffer resolution, so it's rescaled
+        // to whatever size Stretch="Fill" is actually displaying at.
+        double fbScaleX = 1, fbScaleY = 1;
+        if (nativeViewActive)
+        {
+            var fbPtr = library.GetFramebuffer(out var fbWidth, out var fbHeight, out _);
+            if (fbPtr == IntPtr.Zero || fbWidth < 1 || fbHeight < 1) return;
+            fbScaleX = width / (double)fbWidth;
+            fbScaleY = height / (double)fbHeight;
+        }
+
         var count = library.GetActorCount();
         for (var i = 0; i < count; i++)
         {
             if (!library.GetActor(i, out var x, out var y, out var z, out _)) continue;
-            var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
-            if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var screenX, out var screenY)) continue;
+            double screenX, screenY;
+            if (nativeViewActive)
+            {
+                if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
+                screenX = sx * fbScaleX;
+                screenY = sy * fbScaleY;
+            }
+            else
+            {
+                var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
+                if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var wx, out var wy)) continue;
+                screenX = wx;
+                screenY = wy;
+            }
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
 
             var selected = selectedActorIndex == i;
@@ -288,6 +319,36 @@ public partial class MainWindow : Window
         if (IsWorldPositionOnIsland(newX, targetZ)) targetX = newX;
         if (IsWorldPositionOnIsland(targetX, newZ)) targetZ = newZ;
         UpdateMinimapMarker();
+        SyncPanScrollBars();
+    }
+
+    // The pan scrollbars use a fixed 0..16*32768 range (XAML) since every
+    // island is a 16x16 grid of 32768-unit cubes (HOLO.H's SCE). Scroll (not
+    // ValueChanged) is used on the scrollbars so setting .Value here to
+    // reflect a pan that came from elsewhere (mouse drag, keyboard, minimap
+    // click) doesn't loop back into the scrollbar's own drag handler.
+    private void SyncPanScrollBars()
+    {
+        PanHorizontalScrollBar.Value = targetX;
+        PanVerticalScrollBar.Value = targetZ;
+    }
+
+    private void PanHorizontalScrollBar_Scroll(object sender, ScrollEventArgs e)
+    {
+        if (currentIsland is null) return;
+        if (IsWorldPositionOnIsland(e.NewValue, targetZ)) targetX = e.NewValue;
+        else PanHorizontalScrollBar.Value = targetX;
+        UpdateMinimapMarker();
+        if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
+    }
+
+    private void PanVerticalScrollBar_Scroll(object sender, ScrollEventArgs e)
+    {
+        if (currentIsland is null) return;
+        if (IsWorldPositionOnIsland(targetX, e.NewValue)) targetZ = e.NewValue;
+        else PanVerticalScrollBar.Value = targetZ;
+        UpdateMinimapMarker();
+        if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
     }
 
     // TopDownMapRenderer draws at this many image pixels per 512-unit terrain
@@ -401,34 +462,33 @@ public partial class MainWindow : Window
         targetX = worldX;
         targetZ = worldZ;
         UpdateMinimapMarker();
+        SyncPanScrollBars();
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
     private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } }
     private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } }
-    private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; panning = e.ChangedButton is MouseButton.Middle or MouseButton.Right; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
+    private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
     private void TerrainViewport_MouseMove(object sender, MouseEventArgs e)
     {
-        if (!orbiting && !panning) return;
+        if (!orbiting) return;
         var point = e.GetPosition(TerrainViewport);
         var dx = point.X - lastMousePosition.X;
         var dy = point.Y - lastMousePosition.Y;
         lastMousePosition = point;
         if (nativeViewActive)
         {
-            if (orbiting) { nativeBeta += (int)Math.Clamp(dx * 3, -900, 900); nativeAlpha += (int)Math.Clamp(dy * 3, -900, 900); }
-            else TryPan(-dx * nativeDistance / 700, -dy * nativeDistance / 700);
+            nativeBeta += (int)Math.Clamp(dx * 3, -900, 900); nativeAlpha += (int)Math.Clamp(dy * 3, -900, 900);
             RenderNativeCamera();
         }
         else
         {
-            if (orbiting) cameraYaw += dx * .35;
-            else TryPan(-dx * cameraDistance / 700, -dy * cameraDistance / 700);
+            cameraYaw += dx * .35;
             RenderSoftwareTerrain();
         }
     }
-    private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; panning = false; TerrainViewport.ReleaseMouseCapture(); }
+    private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; TerrainViewport.ReleaseMouseCapture(); }
     private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } }
     private void RenderNativeCamera()
     {
@@ -461,6 +521,7 @@ public partial class MainWindow : Window
                     actorMarkersIsland = islandName;
                     DrawActorMarkers();
                 }
+                UpdateActorMarkersOverlay();
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
@@ -508,7 +569,7 @@ public partial class MainWindow : Window
             MinimapActorCanvas.Children.Add(dot);
         }
     }
-    private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) => RenderSoftwareTerrain();
+    private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (nativeViewActive) UpdateActorMarkersOverlay(); else RenderSoftwareTerrain(); }
     private void Window_Loaded(object sender, RoutedEventArgs e) { }
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

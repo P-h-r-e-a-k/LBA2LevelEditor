@@ -38,6 +38,7 @@ extern int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, i
 extern int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move);
 extern int RendererGetActorScript(int index, char *buffer, int bufferSize);
 
+
 // LoadCube() (LOADISLE.CPP) overwrites ClipZFar/StartZFog from each cube's
 // own data on every load; lba2_renderer_load_cube() re-applies these on top
 // afterwards so every cube keeps the same generous editor view distance
@@ -248,6 +249,39 @@ int lba2_renderer_set_view_target(int worldX, int worldY, int worldZ)
     VueOffsetY = worldY;
     VueOffsetZ = worldZ - cubeY * WORLD_CUBE_SIZE;
     return 1;
+}
+
+// Projects a world point through whatever camera the last successful
+// lba2_renderer_render_frame() call set up, using the engine's own
+// rotate+project pair (LongWorldRotatePoint/LongProjectPoint --
+// LIB386/3D/LPROJ3DF.CPP) instead of reimplementing the perspective math on
+// the C# side. This is exactly how the game itself projects an actor's
+// position to place its sprite (see CREDITS.CPP's credits-scene actor
+// rendering for the same two-call pattern).
+//
+// The exterior renderer's camera (MatriceWorld) is set up relative to
+// whichever cube lba2_renderer_load_cube()/set_view_target() last loaded,
+// not absolute island coordinates -- VueOffsetX/Y/Z above are that same
+// cube-local offset. Actor positions from RendererScanIslandActors() are
+// absolute (baseX/baseZ-adjusted, for the minimap's whole-island view), so
+// this undoes that the same way set_view_target does for the camera target
+// itself, using CurrentCubeX/Y (set by lba2_renderer_load_cube()) as the
+// currently-loaded cube's origin.
+//
+// Returns 0 (screenX/screenY left at LongProjectPoint's own INT_MIN
+// sentinel) for a point beyond the far clip plane; the caller still needs
+// its own on-screen bounds check since this doesn't clip to the viewport,
+// only to the camera's depth range. A point on a cube other than the one
+// currently loaded will project to a meaningless position -- only one
+// cube's terrain/decor is ever loaded at a time (see lba2_renderer_set_
+// view_distance's own note on this renderer's single-cube limitation).
+int lba2_renderer_project_point(int worldX, int worldY, int worldZ, int *screenX, int *screenY)
+{
+    LongWorldRotatePoint(worldX - CurrentCubeX * WORLD_CUBE_SIZE, worldY, worldZ - CurrentCubeY * WORLD_CUBE_SIZE);
+    int visible = LongProjectPoint(X0, Y0, Z0);
+    if (screenX) *screenX = Xp;
+    if (screenY) *screenY = Yp;
+    return visible;
 }
 
 int lba2_renderer_render_frame(void)

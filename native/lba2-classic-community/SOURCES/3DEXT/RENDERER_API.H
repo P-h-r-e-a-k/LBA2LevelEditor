@@ -77,6 +77,15 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_attributes(int index, int *beta, i
    of range. */
 LBA2_RENDERER_API int lba2_renderer_get_actor_script(int index, char *buffer, int bufferSize);
 
+/* Projects a world point through the camera set up by the most recent
+   lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which
+   engine functions this reuses). Returns 0 if the point is beyond the far
+   clip plane -- screenX/screenY are still written in that case, but to a
+   sentinel value, not a usable screen position. A nonzero return only means
+   "in front of the camera and within depth range," not "on screen": callers
+   still need their own bounds check against the viewport size. */
+LBA2_RENDERER_API int lba2_renderer_project_point(int worldX, int worldY, int worldZ, int *screenX, int *screenY);
+
 #ifdef __cplusplus
 }
 #endif
