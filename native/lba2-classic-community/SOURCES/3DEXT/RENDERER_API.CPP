@@ -122,6 +122,35 @@ int lba2_renderer_load_cube(int x, int y)
     return result;
 }
 
+// Matches HOLO.H's SCE ("SizeXZ Cube Exterieur"): each exterior cube spans
+// 32768 world units on X/Z.
+#define WORLD_CUBE_SIZE 32768
+
+int lba2_renderer_set_view_target(int worldX, int worldY, int worldZ)
+{
+    // Tracked independently of CurrentCubeX/CurrentCubeY: lba2_renderer_
+    // load_cube() sets those before knowing whether LoadCube() succeeds, so
+    // they can point at a cube that was never actually loaded.
+    static S32 lastViewCubeX = -1;
+    static S32 lastViewCubeY = -1;
+
+    S32 cubeX = worldX / WORLD_CUBE_SIZE;
+    S32 cubeY = worldZ / WORLD_CUBE_SIZE;
+    if (cubeX < 0) cubeX = 0; else if (cubeX > 15) cubeX = 15;
+    if (cubeY < 0) cubeY = 0; else if (cubeY > 15) cubeY = 15;
+
+    if (cubeX != lastViewCubeX || cubeY != lastViewCubeY) {
+        if (!lba2_renderer_load_cube(cubeX, cubeY)) return 0;
+        lastViewCubeX = cubeX;
+        lastViewCubeY = cubeY;
+    }
+
+    VueOffsetX = worldX - cubeX * WORLD_CUBE_SIZE;
+    VueOffsetY = worldY;
+    VueOffsetZ = worldZ - cubeY * WORLD_CUBE_SIZE;
+    return 1;
+}
+
 int lba2_renderer_render_frame(void)
 {
     AffGrilleExt();

@@ -43,7 +43,7 @@ internal sealed class CommunityRendererBackend
     public bool DirectRendererLoaded => RendererLibrary?.IsLoaded == true;
     public bool DirectRendererReady => RendererLibrary?.IsRendererReady == true;
 
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000)
+    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -58,9 +58,9 @@ internal sealed class CommunityRendererBackend
             if (!string.Equals(directIsland, baseName, StringComparison.OrdinalIgnoreCase))
             {
                 if (RendererLibrary.LoadIsland(baseName) == 0) { directFailure = $"load island failed: {baseName}"; return null; }
-                if (RendererLibrary.LoadCube(8, 9) == 0) { directFailure = $"load cube failed: {baseName} 8,9"; return null; }
                 directIsland = baseName;
             }
+            if (RendererLibrary.SetViewTarget(worldX, worldY, worldZ) == 0) { directFailure = $"set view target failed: {baseName} {worldX},{worldY},{worldZ}"; return null; }
             RendererLibrary.SetCamera(alpha, beta, gamma, distance);
             if (RendererLibrary.RenderFrame() == 0) { directFailure = "native render returned failure"; return null; }
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);

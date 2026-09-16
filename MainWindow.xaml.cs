@@ -25,14 +25,12 @@ public partial class MainWindow : Window
     private int nativeGamma = 0;
     private int nativeDistance = 30000;
     private double targetX;
+    private double targetY = 10000;
     private double targetZ;
     private Point lastMousePosition;
     private bool orbiting;
     private bool panning;
-    private double pendingDx;
-    private double pendingDy;
     private bool nativeViewActive;
-    private readonly TranslateTransform nativeDragTransform = new();
     private CancellationTokenSource? nativeRenderCancellation;
     private int nativeRenderRequest;
     private byte[] palette = Array.Empty<byte>();
@@ -42,7 +40,6 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        TerrainViewport.RenderTransform = nativeDragTransform;
         Focusable = true;
         KeyDown += MainWindow_KeyDown;
         SeedFallbackMap();
@@ -77,6 +74,12 @@ public partial class MainWindow : Window
             DocumentSummary.Text = $"Native ILE / 16 x 16 cubes / {currentIsland.CubeCount} present / Y {currentIsland.MinHeight}..{currentIsland.MaxHeight}";
             targetX = 8 * 32768 + 16384;
             targetZ = 9 * 32768 + 16384;
+            targetY = 10000;
+            if (!IsWorldPositionOnIsland(targetX, targetZ) && FindFirstPresentCube() is (int cubeX, int cubeY))
+            {
+                targetX = cubeX * 32768 + 16384;
+                targetZ = cubeY * 32768 + 16384;
+            }
 
             TerrainViewport.Source = currentIsland.CreatePreview();
             if (nativeRenderer.DirectRendererReady)
@@ -156,12 +159,64 @@ public partial class MainWindow : Window
         }
     }
 
+    // Islands are a 16x16 grid of cubes, each spanning 32768 world units
+    // (matches HOLO.H's SCE constant on the native side); a cube whose
+    // top byte (CubeAt & 0x7F) is zero has no loaded data, so panning must
+    // stop there instead of handing the renderer a position it can't load.
+    private bool IsWorldPositionOnIsland(double worldX, double worldZ)
+    {
+        if (currentIsland is null) return true;
+        var cubeX = (int)Math.Floor(worldX / 32768.0);
+        var cubeZ = (int)Math.Floor(worldZ / 32768.0);
+        if (cubeX < 0 || cubeX > 15 || cubeZ < 0 || cubeZ > 15) return false;
+        return (currentIsland.CubeAt(cubeX, cubeZ) & 0x7F) != 0;
+    }
+
+    private (int, int)? FindFirstPresentCube()
+    {
+        if (currentIsland is null) return null;
+        for (var y = 0; y < 16; y++)
+            for (var x = 0; x < 16; x++)
+                if ((currentIsland.CubeAt(x, y) & 0x7F) != 0) return (x, y);
+        return null;
+    }
+
+    // Applies each axis independently so a diagonal drag that would leave
+    // the mapped island still slides cleanly along whichever axis remains
+    // valid, instead of the whole pan getting stuck at the boundary.
+    private void TryPan(double dx, double dz)
+    {
+        var newX = targetX + dx;
+        var newZ = targetZ + dz;
+        if (IsWorldPositionOnIsland(newX, targetZ)) targetX = newX;
+        if (IsWorldPositionOnIsland(targetX, newZ)) targetZ = newZ;
+    }
+
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
-    private void ZoomIn_Click(object sender, RoutedEventArgs e) { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); }
-    private void ZoomOut_Click(object sender, RoutedEventArgs e) { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); }
-    private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; panning = e.ChangedButton is MouseButton.Middle or MouseButton.Right; pendingDx = 0; pendingDy = 0; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
-    private void TerrainViewport_MouseMove(object sender, MouseEventArgs e) { if (!orbiting && !panning) return; var point = e.GetPosition(TerrainViewport); var dx = point.X - lastMousePosition.X; var dy = point.Y - lastMousePosition.Y; pendingDx += dx; pendingDy += dy; if (!nativeViewActive) { if (orbiting) cameraYaw += dx * .35; else { targetX -= dx * cameraDistance / 700; targetZ -= dy * cameraDistance / 700; } RenderSoftwareTerrain(); } else { nativeDragTransform.X += dx; nativeDragTransform.Y += dy; } lastMousePosition = point; }
-    private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; panning = false; TerrainViewport.ReleaseMouseCapture(); if (nativeViewActive && (Math.Abs(pendingDx) > 1 || Math.Abs(pendingDy) > 1)) { nativeBeta += (int)Math.Clamp(pendingDx * 3, -900, 900); nativeAlpha += (int)Math.Clamp(pendingDy * 3, -900, 900); RenderNativeCamera(); } }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } }
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } }
+    private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; panning = e.ChangedButton is MouseButton.Middle or MouseButton.Right; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
+    private void TerrainViewport_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!orbiting && !panning) return;
+        var point = e.GetPosition(TerrainViewport);
+        var dx = point.X - lastMousePosition.X;
+        var dy = point.Y - lastMousePosition.Y;
+        lastMousePosition = point;
+        if (nativeViewActive)
+        {
+            if (orbiting) { nativeBeta += (int)Math.Clamp(dx * 3, -900, 900); nativeAlpha += (int)Math.Clamp(dy * 3, -900, 900); }
+            else TryPan(-dx * nativeDistance / 700, -dy * nativeDistance / 700);
+            RenderNativeCamera();
+        }
+        else
+        {
+            if (orbiting) cameraYaw += dx * .35;
+            else TryPan(-dx * cameraDistance / 700, -dy * cameraDistance / 700);
+            RenderSoftwareTerrain();
+        }
+    }
+    private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; panning = false; TerrainViewport.ReleaseMouseCapture(); }
     private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } }
     private void RenderNativeCamera()
     {
@@ -171,7 +226,7 @@ public partial class MainWindow : Window
         var request = Interlocked.Increment(ref nativeRenderRequest);
         var islandName = Path.GetFileNameWithoutExtension(activeFile);
         var token = nativeRenderCancellation.Token;
-        _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, nativeAlpha, nativeBeta, nativeGamma, nativeDistance), token).ContinueWith(task =>
+        _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance), token).ContinueWith(task =>
         {
             if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested || request != nativeRenderRequest) return;
             Dispatcher.Invoke(() =>
@@ -179,18 +234,16 @@ public partial class MainWindow : Window
                 if (request != nativeRenderRequest) return;
                 if (task.Result is null)
                 {
-                    // This cube/camera combination failed on the native renderer
-                    // (e.g. an island whose default cube (8,9) has no data).
-                    // Fall back to the movable CPU rasterizer instead of leaving
-                    // a frozen frame on screen.
+                    // The current world position has no loaded cube data (should
+                    // only happen if a caller bypasses TryPan's clamping). Fall
+                    // back to the movable CPU rasterizer instead of leaving a
+                    // frozen frame on screen.
                     nativeViewActive = false;
                     DocumentSummary.Text = DocumentSummary.Text.Replace("native 3D", "software 3D (native unavailable)");
                     RenderSoftwareTerrain();
                     return;
                 }
                 TerrainViewport.Source = task.Result;
-                nativeDragTransform.X = 0;
-                nativeDragTransform.Y = 0;
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
@@ -201,7 +254,19 @@ public partial class MainWindow : Window
         nativeRenderCancellation?.Cancel();
         nativeRenderer.ShutdownDirectRenderer();
     }
-    private void MainWindow_KeyDown(object sender, KeyEventArgs e) { if (nativeViewActive) return; var step = cameraDistance * .04; if (e.Key == Key.Left) targetX -= step; else if (e.Key == Key.Right) targetX += step; else if (e.Key == Key.Up) targetZ -= step; else if (e.Key == Key.Down) targetZ += step; else return; e.Handled = true; }
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        var step = (nativeViewActive ? nativeDistance : cameraDistance) * .04;
+        double dx = 0, dz = 0;
+        if (e.Key == Key.Left) dx = -step;
+        else if (e.Key == Key.Right) dx = step;
+        else if (e.Key == Key.Up) dz = -step;
+        else if (e.Key == Key.Down) dz = step;
+        else return;
+        TryPan(dx, dz);
+        if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
+        e.Handled = true;
+    }
     private void Palette_Click(object sender, RoutedEventArgs e) { selectedTerrain = (TerrainType)((Button)sender).Tag; SelectedLabel.Text = $"{selectedTerrain} / selected brush"; }
     private void IslandList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (IslandList.SelectedItem is string file) LoadIsland(Path.Combine(gameRoot, file)); }
     private void SceneList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (SceneList.SelectedItem is string scene) { FileLabel.Text = $"●  {scene} / SCENE.HQR"; DocumentTitle.Text = scene; DocumentSummary.Text = "Native SCENE.HQR record / object and zone data"; } }

@@ -25,7 +25,9 @@ The renderer-only bootstrap in `RENDERER_API.CPP`/`RENDERER_BOOT.CPP` now comple
 - `IsleMapIndex`/`GroundTexture`/`ObjTexture`/`ListTriExt` are reassigned via the engine's own `Malloc`/`NormMalloc` during boot; the renderer API's `initialize()`/`shutdown()` used plain `malloc`/`free` on them, corrupting the heap on shutdown.
 - `ClipXMin/ClipYMin/ClipXMax/ClipYMax` (and `ModeResX/ModeResY`) are established by `InitGraphics()` (window + video surface + screen buffers + clip rect), which the renderer-only path never called; without it every projected vertex was flagged out-of-bounds and nothing was ever rasterized.
 
-The WPF viewport now tries the native renderer first for any island (`nativeViewActive`), and falls back to the editor's own movable CPU rasterizer (`SoftwareTerrainRenderer`) if a given island/cube combination fails on the native side -- e.g. the hardcoded default cube `(8, 9)` doesn't exist on every island.
+The WPF viewport now tries the native renderer first for any island (`nativeViewActive`), and falls back to the editor's own movable CPU rasterizer (`SoftwareTerrainRenderer`) if the native renderer library itself is unavailable.
+
+Panning across a whole island (not just orbiting a single fixed cube) is done through `lba2_renderer_set_view_target(worldX, worldY, worldZ)`, a native export that maps an absolute world position into the 16x16 cube grid (each cube spans 32768 world units, matching HOLO.H's `SCE`), loads whichever cube contains it if that differs from the one currently loaded, and sets the cube-local `VueOffsetX/Y/Z` camera target. Mouse drag, mouse wheel, the zoom buttons, and the arrow keys all update a single world-space `(targetX, targetY, targetZ)` in `MainWindow.xaml.cs`, which `CommunityRendererBackend.RenderIslandDirect()` feeds straight into `SetViewTarget` on every frame -- so terrain streams in continuously as the camera crosses cube boundaries. Panning is clamped per-axis against `IslandDocument.CubeAt()` so a drag that would leave the island's mapped cubes stops cleanly on that axis instead of handing the renderer a position with no data.
 
 ## Source assets
 
