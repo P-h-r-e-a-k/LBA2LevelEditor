@@ -78,6 +78,12 @@ bool Window_CanLoseNativeWindow(void);
 // pixels or simulation state.
 void Window_SetVSync(int enabled);
 
+// Show/hide the SDL window without destroying it. For embedders (e.g. the LBA2
+// Level Workshop's native renderer backend) that only ever read pixels back via
+// their own framebuffer accessor and never want the SDL window on screen at all.
+// No-op if the window hasn't been created yet.
+void Window_SetVisible(bool visible);
+
 void SetWindowRelativeMouse(bool enable);
 void ManageWindow();
 void HandleEventsWindow(const void *event);

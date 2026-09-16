@@ -8,8 +8,10 @@
 #include <SYSTEM/EVENTS.H>
 #include <SVGA/CLIP.H>
 #include <SVGA/INITMODE.H>
+#include <SVGA/DIRTYBOX.H>
 #include <SYSTEM/WINDOW.H>
 #include "MEM.H"
+#include "AMBIANCE.H"
 #include <SDL3/SDL.h>
 
 extern void AdjustHQRMem(void);
@@ -21,6 +23,12 @@ extern void AffGrilleExt(void);
 extern void Init3DExtView(void);
 extern void Init3DExtGame(void);
 extern int RendererBootAssets(void);
+
+// Declared directly instead of pulling in C_EXTERN.H: that header (via
+// MEM.H) redeclares several enums/typedefs this file's own "MEM.H" include
+// already brought in, and MEM.H has no include guard against being reached
+// twice by two different paths.
+extern S32 Island;
 
 int lba2_renderer_version(void)
 {
@@ -62,6 +70,26 @@ int lba2_renderer_initialize(void)
     // to make (InitGraphics calls it internally).
     if (!InitGraphics(640, 480, false)) return 0;
 
+    // This renderer only ever reads pixels back via lba2_renderer_framebuffer()
+    // (the raw Log buffer); it has no use for a visible OS window. Without this,
+    // the SDL window InitGraphics() just created stays on screen as a second,
+    // real window alongside the WPF host window.
+    Window_SetVisible(false);
+
+    // BoxInit() sets up the dirty-box clip rect (BoxClipXMin/Min/Max) that the
+    // Cls() macro clears against every frame; it's normally called from
+    // PERSO.CPP's boot (excluded from this renderer-only build) with
+    // COMMON.H's MAX_BOXES (a sum of gameplay-system limits -- objects,
+    // flows, darts, rain -- this renderer never boots). Without it
+    // BoxClipXMin/Max stay at their zero-initialized default, so
+    // ClsTerrainZBuf()'s Cls() clears a degenerate zero-area box and does
+    // nothing -- each new frame's Log buffer keeps whatever the previous
+    // frame left behind wherever the new frame doesn't fully redraw over it,
+    // visible as ghost trails of stale terrain while panning. This renderer
+    // only ever clears the whole screen, so the box pool size just needs to
+    // be non-trivial; it doesn't need to match the full game's limits.
+    if (!BoxInit(256)) return 0;
+
     if (!RendererBootAssets()) return 0;
     if (!InitEvents()) return 0;
     return InitExternalView();
@@ -89,6 +117,16 @@ void lba2_renderer_shutdown(void)
     Free(ListTriExt); ListTriExt = NULL;
 }
 
+// Mirrors EXTFUNC.CPP's IleLst[] order, which the retail engine uses both to
+// pick the per-island sky texture (RESS_SKYSEA0 + index) and, via the
+// numeric Island global, the per-island ambience palette in ChoicePalette()
+// (RESS_XPL0 + Island -- OffsetFog/FogCoul/OffsetPalette all come from it).
+static const char *kIslandNames[] = {
+    "citadel", "sendell", "desert", "emeraude", "otringal",
+    "celebrat", "platform", "mosquibe", "knartas", "ilotcx",
+    "ascence", "souscelb",
+};
+
 int lba2_renderer_load_island(const char *name)
 {
     if (!name || !name[0]) return 0;
@@ -98,18 +136,27 @@ int lba2_renderer_load_island(const char *name)
 
     char path[ADELINE_MAX_PATH];
     GetResPath(path, ADELINE_MAX_PATH, RESS_HQR_NAME);
-    S32 skyResource = RESS_SKYSEA0;
-    if (!strcasecmp(name, "desert")) skyResource = RESS_SKYSEA2;
-    else if (!strcasecmp(name, "emeraude")) skyResource = RESS_SKYSEA3;
-    else if (!strcasecmp(name, "otringal")) skyResource = RESS_SKYSEA4;
-    else if (!strcasecmp(name, "celebrat") || !strcasecmp(name, "celebra2")) skyResource = RESS_SKYSEA5;
-    else if (!strcasecmp(name, "platform")) skyResource = RESS_SKYSEA6;
-    else if (!strcasecmp(name, "mosquibe")) skyResource = RESS_SKYSEA7;
-    else if (!strcasecmp(name, "knartas")) skyResource = RESS_SKYSEA8;
-    else if (!strcasecmp(name, "ilotcx")) skyResource = RESS_SKYSEA9;
-    else if (!strcasecmp(name, "ascence")) skyResource = RESS_SKYSEA10;
-    else if (!strcasecmp(name, "citabau")) skyResource = RESS_SKYSEA00;
+
+    S32 islandIndex = -1;
+    for (S32 i = 0; i < (S32)(sizeof(kIslandNames) / sizeof(kIslandNames[0])); i++) {
+        if (!strcasecmp(name, kIslandNames[i])) { islandIndex = i; break; }
+    }
+    if (islandIndex < 0 && !strcasecmp(name, "celebra2")) islandIndex = 5; // shares celebrat's sky/ambience
+
+    S32 skyResource = islandIndex >= 0 ? RESS_SKYSEA0 + islandIndex : RESS_SKYSEA0;
+    if (!strcasecmp(name, "citabau")) skyResource = RESS_SKYSEA00; // interior-only ambience, no Island slot
     if (!Load_HQR(path, SkySeaTexture, skyResource)) return 0;
+
+    // ChoicePalette() reads the Island global to pick this island's ambience
+    // palette. Without refreshing it here, every island loaded after the
+    // first kept whatever FogCoul/PtrNuances/PtrPalCurrent the boot-time
+    // default (RendererBootAssets()'s one-time ChoicePalette() call) left
+    // behind, so the horizon/screen-clear colour and shading didn't match
+    // the actually-loaded island.
+    if (islandIndex >= 0) {
+        Island = islandIndex;
+        ChoicePalette();
+    }
     return 1;
 }
 

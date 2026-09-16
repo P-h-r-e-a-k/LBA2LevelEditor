@@ -435,6 +435,17 @@ void Window_SetVSync(int enabled) {
     }
 }
 
+void Window_SetVisible(bool visible) {
+    if (sdlWindow == NULL) {
+        return;
+    }
+    if (visible) {
+        SDL_ShowWindow(sdlWindow);
+    } else {
+        SDL_HideWindow(sdlWindow);
+    }
+}
+
 void ManageWindow() {
     // Empty
 }
