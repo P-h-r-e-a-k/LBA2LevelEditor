@@ -56,5 +56,14 @@ int RendererBootAssets(void)
     GetResPath(path, ADELINE_MAX_PATH, ANIM3DS_HQR_NAME);
     HQRPtrAnim3DS = HQR_Init_Ressource(path, Anim3DSMem, 100);
     if (!HQRPtrAnim3DS) return 0;
+
+    // PERSO.CPP normally owns this allocation; it is excluded from the
+    // renderer-only build, so TERRAIN.CPP's animated water path would
+    // otherwise write through a null PtrPolySea/PtrAniPoly whenever a
+    // loaded cube has an animated water polygon (CodeJeu & 12 == 12).
+    PtrPolySea = (S_ANI_POLY *)Malloc(SIZE_BUFFER_POLY_SEA);
+    if (!PtrPolySea)
+        MaxPolySea = 0;
+
     return 1;
 }
