@@ -72,12 +72,46 @@ internal sealed class IslandDocument
     public byte IntensityAt(int cubeId, int x, int y) => intensities.TryGetValue(cubeId, out var values) ? (byte)(values[y * 65 + x] & 15) : (byte)15;
     public Color ColorAt(double u, double v, int lightLevel)
     {
-        var x = Math.Clamp((int)Math.Round(u), 0, 255);
-        var y = Math.Clamp((int)Math.Round(v), 0, 255);
-        var sourceIndex = GroundTexture[y * 256 + x];
-        var paletteIndex = sourceIndex * 3;
         var sixBitPalette = Palette.Take(768).Max() <= 63;
         var factor = 0.48 + Math.Clamp(lightLevel, 0, 15) / 15.0 * 0.72;
+        return SampleTexel((int)Math.Round(u), (int)Math.Round(v), sixBitPalette, factor);
+    }
+
+    // Bilinear-filtered ground texture sample. The ground texture atlas is
+    // palette-indexed 1997-era art that leans on dithering (alternating
+    // between two similar palette entries) to fake extra shades; ColorAt's
+    // nearest-neighbor sampling reproduces that faithfully at the 3D view's
+    // native pixel scale (matching the original renderer), but a much
+    // higher-density consumer like the minimap (TopDownMapRenderer) turns
+    // that dithering into visible per-pixel noise instead of a smooth
+    // gradient. Blending in RGB space after the palette lookup (not in index
+    // space, where adjacent indices aren't necessarily similar colors) is
+    // what actually smooths that dithering back into the intended shade.
+    public Color ColorAtSmooth(double u, double v, int lightLevel)
+    {
+        var sixBitPalette = Palette.Take(768).Max() <= 63;
+        var factor = 0.48 + Math.Clamp(lightLevel, 0, 15) / 15.0 * 0.72;
+        var x0 = (int)Math.Floor(u);
+        var y0 = (int)Math.Floor(v);
+        var fx = u - x0;
+        var fy = v - y0;
+        var c00 = SampleTexel(x0, y0, sixBitPalette, factor);
+        var c10 = SampleTexel(x0 + 1, y0, sixBitPalette, factor);
+        var c01 = SampleTexel(x0, y0 + 1, sixBitPalette, factor);
+        var c11 = SampleTexel(x0 + 1, y0 + 1, sixBitPalette, factor);
+        var topR = Lerp(c00.R, c10.R, fx); var topG = Lerp(c00.G, c10.G, fx); var topB = Lerp(c00.B, c10.B, fx);
+        var botR = Lerp(c01.R, c11.R, fx); var botG = Lerp(c01.G, c11.G, fx); var botB = Lerp(c01.B, c11.B, fx);
+        return Color.FromRgb(Lerp(topR, botR, fy), Lerp(topG, botG, fy), Lerp(topB, botB, fy));
+    }
+
+    private static byte Lerp(byte a, byte b, double t) => (byte)Math.Round(a + (b - a) * t);
+
+    private Color SampleTexel(int x, int y, bool sixBitPalette, double factor)
+    {
+        x = Math.Clamp(x, 0, 255);
+        y = Math.Clamp(y, 0, 255);
+        var sourceIndex = GroundTexture[y * 256 + x];
+        var paletteIndex = sourceIndex * 3;
         return Color.FromRgb(
             ShadeColor(Palette[paletteIndex], sixBitPalette, factor),
             ShadeColor(Palette[paletteIndex + 1], sixBitPalette, factor),

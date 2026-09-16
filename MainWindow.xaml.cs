@@ -215,7 +215,7 @@ public partial class MainWindow : Window
     // instead of empty sea. These fields describe that crop in the same
     // pixel space so marker placement and click-to-jump can convert between
     // world units and minimap pixel coordinates.
-    private const int MinimapPixelsPerCell = 2;
+    private const int MinimapPixelsPerCell = 4;
     private const double MinimapWorldUnitsPerPixel = 512.0 / MinimapPixelsPerCell;
     private int minimapCropOffsetXPixels;
     private int minimapCropOffsetYPixels;
