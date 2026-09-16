@@ -13,8 +13,8 @@ namespace LBA2LevelEditor;
 
 public partial class MainWindow : Window
 {
-    private readonly string gameRoot = @"E:\GOG Games\Little Big Adventure 2 - Level viewer";
-    private readonly CommunityRendererBackend nativeRenderer = new();
+    private string gameRoot = EditorSettings.Current.GameDirectory;
+    private readonly CommunityRendererBackend nativeRenderer;
     private readonly TerrainType[] fallbackTiles = new TerrainType[16 * 16];
     private IslandDocument? currentIsland;
     private string activeFile = "DESERT.ILE";
@@ -41,17 +41,28 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        nativeRenderer = new CommunityRendererBackend(gameRoot);
         InitializeComponent();
         Focusable = true;
         KeyDown += MainWindow_KeyDown;
         SeedFallbackMap();
-        PopulateAssetLists();
         BuildPalette();
-        LoadIsland(Path.Combine(gameRoot, activeFile));
+        if (Directory.Exists(gameRoot))
+        {
+            PopulateAssetLists();
+            LoadIsland(Path.Combine(gameRoot, activeFile));
+        }
+        else
+        {
+            DocumentSummary.Text = "Game folder not found — set it under Settings.";
+            Settings_Click(this, new RoutedEventArgs());
+        }
     }
 
     private void PopulateAssetLists()
     {
+        IslandList.Items.Clear();
+        SceneList.Items.Clear();
         if (!Directory.Exists(gameRoot)) return;
         foreach (var path in Directory.EnumerateFiles(gameRoot, "*.ILE").Where(path => !Path.GetFileName(path).StartsWith("_", StringComparison.OrdinalIgnoreCase)))
             IslandList.Items.Add(Path.GetFileName(path));
@@ -439,6 +450,18 @@ public partial class MainWindow : Window
     private void IslandList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (IslandList.SelectedItem is string file) LoadIsland(Path.Combine(gameRoot, file)); }
     private void SceneList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (SceneList.SelectedItem is string scene) { FileLabel.Text = $"●  {scene} / SCENE.HQR"; DocumentTitle.Text = scene; DocumentSummary.Text = "Native SCENE.HQR record / object and zone data"; } }
     private void Open_Click(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
+
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsWindow { Owner = this };
+        if (dialog.ShowDialog() != true || !dialog.GameDirectoryChanged) return;
+
+        gameRoot = EditorSettings.Current.GameDirectory;
+        nativeRenderer.SetGameDirectory(gameRoot);
+        actorMarkersIsland = null;
+        PopulateAssetLists();
+        if (Directory.Exists(gameRoot)) LoadIsland(Path.Combine(gameRoot, activeFile));
+    }
     private void Save_Click(object sender, RoutedEventArgs e) => Export_Click(sender, e);
     private void Export_Click(object sender, RoutedEventArgs e) { var dialog = new SaveFileDialog { Filter = "JSON draft (*.json)|*.json", FileName = Path.GetFileNameWithoutExtension(activeFile) + ".json" }; if (dialog.ShowDialog() != true) return; var draft = new { format = "lba2-ile-draft", width = 16, height = 16, tiles = fallbackTiles }; File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(draft, new JsonSerializerOptions { WriteIndented = true })); }
 

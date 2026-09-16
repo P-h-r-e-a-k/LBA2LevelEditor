@@ -61,6 +61,7 @@
                     <TextBlock Text="LBA2 / LEVEL WORKSHOP" FontFamily="Consolas" FontSize="11" Foreground="#D6C86A" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Settings" Click="Settings_Click" Style="{StaticResource QuietButton}"/>
                     <Button Content="Open" Click="Open_Click" Style="{StaticResource QuietButton}"/>
                     <Button Content="Save" Click="Save_Click" Style="{StaticResource QuietButton}"/>
                     <Button Content="Export" Click="Export_Click" Style="{StaticResource PrimaryButton}"/>

@@ -9,7 +9,7 @@ namespace LBA2LevelEditor;
 internal sealed class CommunityRendererBackend
 {
     private readonly string enginePath;
-    private readonly string gameDirectory;
+    private string gameDirectory;
     private readonly string saveDirectory;
     private readonly string outputDirectory;
     private readonly string referenceDirectory;
@@ -20,7 +20,7 @@ internal sealed class CommunityRendererBackend
     private string directFailure = "none";
     public RendererLibraryApi? RendererLibrary { get; }
 
-    public CommunityRendererBackend()
+    public CommunityRendererBackend(string gameDirectory)
     {
         var editorRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
         var vendoredRoot = Path.Combine(editorRoot, "native", "lba2-classic-community");
@@ -31,10 +31,21 @@ internal sealed class CommunityRendererBackend
         enginePath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "lba2cc.exe");
         referenceDirectory = Path.Combine(repoRoot, "out", "named-probes");
         rendererLibraryPath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "3DEXT", "liblba2_renderer.dll");
-        gameDirectory = @"E:\GOG Games\Little Big Adventure 2 - Level viewer";
+        this.gameDirectory = gameDirectory;
         saveDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Twinsen", "LBA2", "save");
         outputDirectory = Path.Combine(Path.GetTempPath(), "LBA2LevelEditor", "native-renders");
         try { RendererLibrary = new RendererLibraryApi(rendererLibraryPath); } catch { RendererLibrary = null; }
+    }
+
+    // Called when the user changes the game folder in Settings. Tears down
+    // the active native session (if any) so the next render re-initializes
+    // and re-chdirs against the new path instead of continuing to read from
+    // the old one.
+    public void SetGameDirectory(string path)
+    {
+        if (string.Equals(gameDirectory, path, StringComparison.OrdinalIgnoreCase)) return;
+        ShutdownDirectRenderer();
+        gameDirectory = path;
     }
 
     public bool IsAvailable => File.Exists(enginePath) && Directory.Exists(gameDirectory);

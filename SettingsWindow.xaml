@@ -1,0 +1,61 @@
+<Window x:Class="LBA2LevelEditor.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings" Height="240" Width="560" MinHeight="240" MinWidth="480"
+        Background="#101418" Foreground="#E8E6DA" FontFamily="Segoe UI"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <Window.Resources>
+        <Style x:Key="QuietButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#C5C6B9"/>
+            <Setter Property="Background" Value="#182019"/>
+            <Setter Property="BorderBrush" Value="#3B4740"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="13,9"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
+            <Setter Property="Foreground" Value="#131713"/>
+            <Setter Property="Background" Value="#D6C86A"/>
+            <Setter Property="BorderBrush" Value="#D6C86A"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="Eyebrow" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#89958B"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="10"/>
+        </Style>
+        <Style x:Key="FieldBox" TargetType="Control">
+            <Setter Property="Foreground" Value="#DCE0C8"/>
+            <Setter Property="Background" Value="#151B18"/>
+            <Setter Property="BorderBrush" Value="#3A4740"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="10"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="LBA2 GAME FOLDER" Style="{StaticResource Eyebrow}"/>
+
+        <DockPanel Grid.Row="2">
+            <Button DockPanel.Dock="Right" Content="Browse..." Click="Browse_Click" Style="{StaticResource QuietButton}" Margin="8,0,0,0"/>
+            <TextBox x:Name="GameDirectoryBox" Style="{StaticResource FieldBox}" VerticalContentAlignment="Center"/>
+        </DockPanel>
+
+        <TextBlock Grid.Row="4" Text="Folder containing DESERT.ILE, RESS.HQR, SCENE.HQR, etc." FontSize="11" Foreground="#738076"/>
+        <TextBlock x:Name="ValidationText" Grid.Row="4" Text="" FontSize="11" Foreground="#E08A6A" HorizontalAlignment="Right"/>
+
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" Click="Cancel_Click" Style="{StaticResource QuietButton}" Margin="0"/>
+            <Button Content="Save" Click="Save_Click" Style="{StaticResource PrimaryButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>
