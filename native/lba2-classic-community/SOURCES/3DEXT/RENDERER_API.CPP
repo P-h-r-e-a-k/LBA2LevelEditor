@@ -127,6 +127,12 @@ static const char *kIslandNames[] = {
     "ascence", "souscelb",
 };
 
+// Bumped on every successful lba2_renderer_load_island() call so
+// lba2_renderer_set_view_target() can tell an island switch apart from a
+// same-island reposition, even when the new island happens to have data at
+// the same cube coordinates as the old one.
+static S32 islandGeneration = 0;
+
 int lba2_renderer_load_island(const char *name)
 {
     if (!name || !name[0]) return 0;
@@ -157,6 +163,7 @@ int lba2_renderer_load_island(const char *name)
         Island = islandIndex;
         ChoicePalette();
     }
+    islandGeneration++;
     return 1;
 }
 
@@ -180,16 +187,25 @@ int lba2_renderer_set_view_target(int worldX, int worldY, int worldZ)
     // they can point at a cube that was never actually loaded.
     static S32 lastViewCubeX = -1;
     static S32 lastViewCubeY = -1;
+    // Also tracked so a same-coordinate cube on a *different* island still
+    // forces a reload -- otherwise switching islands while landing on the
+    // same (cubeX, cubeY) silently kept the old island's cube data (its
+    // decor list, in particular) paired with the new island's much smaller
+    // HQR_Isle_Obj object bank, and a decor body index valid for the old
+    // island but absent from the new one crashed AffichageObjetDecorsZBuf's
+    // Return_BodyDisplay on the resulting null pointer.
+    static S32 lastViewIslandGeneration = -1;
 
     S32 cubeX = worldX / WORLD_CUBE_SIZE;
     S32 cubeY = worldZ / WORLD_CUBE_SIZE;
     if (cubeX < 0) cubeX = 0; else if (cubeX > 15) cubeX = 15;
     if (cubeY < 0) cubeY = 0; else if (cubeY > 15) cubeY = 15;
 
-    if (cubeX != lastViewCubeX || cubeY != lastViewCubeY) {
+    if (cubeX != lastViewCubeX || cubeY != lastViewCubeY || islandGeneration != lastViewIslandGeneration) {
         if (!lba2_renderer_load_cube(cubeX, cubeY)) return 0;
         lastViewCubeX = cubeX;
         lastViewCubeY = cubeY;
+        lastViewIslandGeneration = islandGeneration;
     }
 
     VueOffsetX = worldX - cubeX * WORLD_CUBE_SIZE;

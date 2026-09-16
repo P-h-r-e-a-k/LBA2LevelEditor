@@ -36,6 +36,27 @@ int RendererBootAssets(void)
     if (!Load_HQR(path, BufferFile3D, RESS_FILE3D)) return 0;
 
     LoadFicPerso();
+
+    // GivePtrBody()/GivePtrAnim() (OBJECT.CPP) read through the HQR_Bodys/
+    // HQR_Anims cache handles PERSO.CPP normally opens at boot; left NULL,
+    // HQR_Get() hands back a garbage pointer the first time a decor object
+    // needs an actual body model (e.g. an animated actor/prop -- CELEBRA2's
+    // celebration decor set has some, plain terrain decors on most other
+    // islands don't), and Return_BodyDisplay() crashes dereferencing it.
+    // AnimMem/BodyMem/ObjFixMem are sized by AdjustHQRMem() above.
+    char hqrPath[ADELINE_MAX_PATH];
+    GetResPath(hqrPath, ADELINE_MAX_PATH, ANIM_HQR_NAME);
+    HQR_Anims = HQR_Init_Ressource(hqrPath, AnimMem, AnimMem / 800);
+    if (!HQR_Anims) return 0;
+
+    GetResPath(hqrPath, ADELINE_MAX_PATH, BODY_HQR_NAME);
+    HQR_Bodys = HQR_Init_Ressource(hqrPath, BodyMem, BodyMem / 1000);
+    if (!HQR_Bodys) return 0;
+
+    GetResPath(hqrPath, ADELINE_MAX_PATH, OBJFIX_HQR_NAME);
+    HQR_ObjFix = HQR_Init_Ressource(hqrPath, ObjFixMem, ObjFixMem / 1000);
+    if (!HQR_ObjFix) return 0;
+
     InitObjects(BufferAnim, SIZE_BUFFER_ANIM, GivePtrBody, GivePtrAnim);
 
     BufferTexture = (U8 *)LoadMalloc_HQR(path, RESS_TEXTURES);
