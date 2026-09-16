@@ -78,10 +78,20 @@ public partial class MainWindow : Window
             targetX = 8 * 32768 + 16384;
             targetZ = 9 * 32768 + 16384;
 
-            nativeViewActive = false;
-            DocumentSummary.Text += " / software 3D";
             TerrainViewport.Source = currentIsland.CreatePreview();
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(RenderSoftwareTerrain));
+            if (nativeRenderer.DirectRendererReady)
+            {
+                nativeViewActive = true;
+                nativeAlpha = 240; nativeBeta = -256; nativeGamma = 0; nativeDistance = 30000;
+                DocumentSummary.Text += " / native 3D";
+                RenderNativeCamera();
+            }
+            else
+            {
+                nativeViewActive = false;
+                DocumentSummary.Text += " / software 3D";
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(RenderSoftwareTerrain));
+            }
         }
         catch (Exception error)
         {
@@ -166,7 +176,18 @@ public partial class MainWindow : Window
             if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested || request != nativeRenderRequest) return;
             Dispatcher.Invoke(() =>
             {
-                if (task.Result is null || request != nativeRenderRequest) return;
+                if (request != nativeRenderRequest) return;
+                if (task.Result is null)
+                {
+                    // This cube/camera combination failed on the native renderer
+                    // (e.g. an island whose default cube (8,9) has no data).
+                    // Fall back to the movable CPU rasterizer instead of leaving
+                    // a frozen frame on screen.
+                    nativeViewActive = false;
+                    DocumentSummary.Text = DocumentSummary.Text.Replace("native 3D", "software 3D (native unavailable)");
+                    RenderSoftwareTerrain();
+                    return;
+                }
                 TerrainViewport.Source = task.Result;
                 nativeDragTransform.X = 0;
                 nativeDragTransform.Y = 0;

@@ -15,13 +15,6 @@ extern void *GivePtrAnim(S32 index);
 extern void ScanTextureAnimation(U8 *texture, S32 size);
 extern void InitTextureAnimation(void);
 
-static U8 *RendererBufferAnim;
-static U8 *RendererBufferFile3D;
-static U8 *RendererBufferTexture;
-static U8 *RendererPtrZvExtra;
-static U8 *RendererPtrZvExtraRaw;
-static U8 *RendererPtrZvAnim3DS;
-
 int RendererBootAssets(void)
 {
     char path[ADELINE_MAX_PATH];
@@ -31,26 +24,30 @@ int RendererBootAssets(void)
     if (!PtrPalNormal) return 0;
     ChoicePalette();
 
-    RendererBufferAnim = (U8 *)malloc(SIZE_BUFFER_ANIM);
-    if (!RendererBufferAnim) return 0;
+    // These populate the same engine globals (C_EXTERN.H / GLOBAL.CPP) that
+    // PERSO.CPP normally fills during boot. Earlier versions of this function
+    // loaded into separate local buffers instead, leaving BufferAnim,
+    // BufferFile3D, BufferTexture, PtrZvExtra, PtrZvExtraRaw, and PtrZvAnim3DS
+    // allocated (via InitMemory/AdjustLba2Mem) but never written -- readers
+    // such as SearchAnim() then walked off into uninitialized heap memory.
+    BufferAnim = (U8 *)SmartMalloc(SIZE_BUFFER_ANIM);
+    if (!BufferAnim) return 0;
 
-    RendererBufferFile3D = (U8 *)malloc(HQF_ResSize(path, RESS_FILE3D) + RECOVER_AREA);
-    if (!RendererBufferFile3D) return 0;
-    if (!Load_HQR(path, RendererBufferFile3D, RESS_FILE3D)) return 0;
+    if (!Load_HQR(path, BufferFile3D, RESS_FILE3D)) return 0;
 
     LoadFicPerso();
-    InitObjects(RendererBufferAnim, SIZE_BUFFER_ANIM, GivePtrBody, GivePtrAnim);
+    InitObjects(BufferAnim, SIZE_BUFFER_ANIM, GivePtrBody, GivePtrAnim);
 
-    RendererBufferTexture = (U8 *)LoadMalloc_HQR(path, RESS_TEXTURES);
-    if (!RendererBufferTexture) return 0;
-    ScanTextureAnimation(RendererBufferTexture, 256);
+    BufferTexture = (U8 *)LoadMalloc_HQR(path, RESS_TEXTURES);
+    if (!BufferTexture) return 0;
+    ScanTextureAnimation(BufferTexture, 256);
     InitTextureAnimation();
 
-    RendererPtrZvExtra = (U8 *)LoadMalloc_HQR(path, RESS_GOODIES_GPC);
-    RendererPtrZvExtraRaw = (U8 *)LoadMalloc_HQR(path, RESS_GOODRAW_GPC);
-    if (!RendererPtrZvExtra || !RendererPtrZvExtraRaw) return 0;
+    PtrZvExtra = (S16 *)LoadMalloc_HQR(path, RESS_GOODIES_GPC);
+    PtrZvExtraRaw = (S16 *)LoadMalloc_HQR(path, RESS_GOODRAW_GPC);
+    if (!PtrZvExtra || !PtrZvExtraRaw) return 0;
 #ifndef DEMO
-    RendererPtrZvAnim3DS = (U8 *)LoadMalloc_HQR(path, RESS_ANIM3DS_GPC);
+    PtrZvAnim3DS = (S16 *)LoadMalloc_HQR(path, RESS_ANIM3DS_GPC);
 #endif
 
     GetResPath(path, ADELINE_MAX_PATH, ANIM3DS_HQR_NAME);

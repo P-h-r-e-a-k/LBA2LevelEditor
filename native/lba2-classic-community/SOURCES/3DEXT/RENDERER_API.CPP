@@ -6,6 +6,9 @@
 #include "HQR_NAMES.H"
 #include "COMMON.H"
 #include <SYSTEM/EVENTS.H>
+#include <SVGA/CLIP.H>
+#include <SVGA/INITMODE.H>
+#include <SYSTEM/WINDOW.H>
 #include "MEM.H"
 #include <SDL3/SDL.h>
 
@@ -26,17 +29,39 @@ int lba2_renderer_version(void)
 
 int lba2_renderer_initialize(void)
 {
-    IsleMapIndex = (U8 *)malloc(256);
-    GroundTexture = (U8 *)malloc(256 * 256 + RECOVER_AREA);
-    ObjTexture = (U8 *)malloc(256 * 256 + RECOVER_AREA);
-    ListTriExt = (T_LIST_TRI *)malloc(sizeof(T_LIST_TRI) * MAX_OBJ_DECORS);
+    // IsleMapIndex/GroundTexture/ObjTexture are reassigned via the engine's
+    // own Malloc (NormMalloc) inside InitMemory() and LoadIsland(), and
+    // ListTriExt via Init3DExt(); allocate with the same allocator here so
+    // whichever pointer survives to lba2_renderer_shutdown() can be freed
+    // with the matching Free() instead of crashing ucrtbase's free() on a
+    // pointer NormMalloc actually owns.
+    IsleMapIndex = (U8 *)Malloc(256);
+    GroundTexture = (U8 *)Malloc(256 * 256 + RECOVER_AREA);
+    ObjTexture = (U8 *)Malloc(256 * 256 + RECOVER_AREA);
+    ListTriExt = (T_LIST_TRI *)Malloc(sizeof(T_LIST_TRI) * MAX_OBJ_DECORS);
     if (!IsleMapIndex || !GroundTexture || !ObjTexture || !ListTriExt) return 0;
-    if (!SDL_WasInit(SDL_INIT_VIDEO) && !SDL_InitSubSystem(SDL_INIT_VIDEO)) return 0;
+
+    // InitWindow() is the prerequisite CreateWindowSurface() (called by
+    // InitGraphics() below) asserts on -- it brings up the SDL video
+    // subsystem and records windowSystemInitialized.
+    if (!IsWindowInitialized() && !InitWindow("LBA2 Level Workshop")) return 0;
+
     Mem_ConfigureScreenBuffers(640, 480);
     AdjustHQRMem();
     InitMainBuffer();
     InitMemory();
-    if (!CreateScreenMemory(640, 480)) return 0;
+
+    // InitGraphics() is PERSO.CPP's single entry point for bringing up the
+    // window/video surface and the Log/Screen buffers, and -- critically --
+    // for resetting ClipXMin/ClipYMin/ClipXMax/ClipYMax to the full mode
+    // resolution via SetClipWindow()/SetClip(). Without it ModeResX/ModeResY
+    // and the clip bounds stay at their zero-initialized defaults, so
+    // MaskVisible() flags every projected vertex as out-of-bounds and
+    // AffichageTerrainZBuf() never reaches DrawFeuillePolyZBuf(). This
+    // supersedes the separate CreateScreenMemory() call this function used
+    // to make (InitGraphics calls it internally).
+    if (!InitGraphics(640, 480, false)) return 0;
+
     if (!RendererBootAssets()) return 0;
     if (!InitEvents()) return 0;
     return InitExternalView();
@@ -58,10 +83,10 @@ void lba2_renderer_shutdown(void)
     ClearExternalView();
     EndEvents();
     Mem_TeardownMainBuffer();
-    free(IsleMapIndex); IsleMapIndex = NULL;
-    free(GroundTexture); GroundTexture = NULL;
-    free(ObjTexture); ObjTexture = NULL;
-    free(ListTriExt); ListTriExt = NULL;
+    Free(IsleMapIndex); IsleMapIndex = NULL;
+    Free(GroundTexture); GroundTexture = NULL;
+    Free(ObjTexture); ObjTexture = NULL;
+    Free(ListTriExt); ListTriExt = NULL;
 }
 
 int lba2_renderer_load_island(const char *name)
@@ -105,9 +130,14 @@ int lba2_renderer_render_frame(void)
 
 void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance)
 {
-    AlphaCam = alpha;
-    BetaCam = beta;
-    GammaCam = gamma;
+    // Camera angles are 0..4095 units per full turn everywhere else in the
+    // engine (see e.g. FOLLOWCAM.CPP, INTEXT.CPP); callers here may pass an
+    // unwrapped/negative value, and DrawHorizon2ZBuf's quadrant selection on
+    // BetaCam only checks BetaCam >= 0, so an unwrapped negative angle left
+    // TerrainTri uninitialized and crashed on first dereference.
+    AlphaCam = alpha & 4095;
+    BetaCam = beta & 4095;
+    GammaCam = gamma & 4095;
     VueDistance = distance;
     Init3DExtView();
 }
