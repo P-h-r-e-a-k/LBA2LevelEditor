@@ -47,6 +47,21 @@ LBA2_RENDERER_API void lba2_renderer_set_draw_sky(int enabled);
 LBA2_RENDERER_API void lba2_renderer_set_view_distance(int startFog, int clipFar);
 LBA2_RENDERER_API const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pitch);
 
+/* Actor (NPC) positions and patrol-route waypoints for the island loaded by
+   the most recent lba2_renderer_load_island() call, for a minimap overlay.
+   This is loading-side data only (RENDERER_ACTORS.CPP scans every exterior
+   scene belonging to the island via the real LoadScene(), then walks each
+   actor's track bytecode structurally) -- no life-script or track VM runs,
+   so this reflects each actor's initial position and the full set of
+   waypoints its track(s) reference, not where it "currently" is or which
+   track it starts on. Populated once per lba2_renderer_load_island() call;
+   O(scene count) so callers should not call it more than that. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_count(void);
+/* Returns 0 if index is out of range, 1 on success. waypointCount may be 0. */
+LBA2_RENDERER_API int lba2_renderer_get_actor(int index, int *x, int *y, int *z, int *waypointCount);
+/* Returns 0 if actorIndex/waypointIndex is out of range, 1 on success. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_waypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z);
+
 #ifdef __cplusplus
 }
 #endif

@@ -282,6 +282,10 @@ public partial class MainWindow : Window
                 MinimapImage.Source = task.Result.Bitmap;
                 UpdateMinimapMarker();
                 CenterMinimapOnMarker();
+                // Re-draw with the fresh crop offsets in case this finished
+                // after RenderNativeCamera() already drew actors using the
+                // previous island's (now stale) offsets.
+                if (actorMarkersIsland == Path.GetFileNameWithoutExtension(activeFile)) DrawActorMarkers();
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
@@ -359,8 +363,57 @@ public partial class MainWindow : Window
                     return;
                 }
                 TerrainViewport.Source = task.Result;
+                if (actorMarkersIsland != islandName)
+                {
+                    actorMarkersIsland = islandName;
+                    DrawActorMarkers();
+                }
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    // Actors are scanned natively once per lba2_renderer_load_island() call
+    // (RENDERER_ACTORS.CPP walks every exterior scene on the island); redrawn
+    // here only when the island actually changes, not on every camera pan,
+    // since the underlying data can't have changed either.
+    private string? actorMarkersIsland;
+
+    private void DrawActorMarkers()
+    {
+        MinimapActorCanvas.Children.Clear();
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null || MinimapImage.Source is null) return;
+        var count = library.GetActorCount();
+        for (var i = 0; i < count; i++)
+        {
+            if (!library.GetActor(i, out var x, out _, out var z, out var waypointCount)) continue;
+            var px = x / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
+            var pz = z / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
+
+            if (waypointCount > 0)
+            {
+                var points = new PointCollection { new Point(px, pz) };
+                for (var w = 0; w < waypointCount; w++)
+                {
+                    if (!library.GetActorWaypoint(i, w, out var wx, out _, out var wz)) continue;
+                    points.Add(new Point(wx / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels, wz / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels));
+                }
+                var route = new System.Windows.Shapes.Polyline
+                {
+                    Points = points,
+                    Stroke = Brushes.Cyan,
+                    StrokeThickness = 1,
+                    StrokeDashArray = new DoubleCollection { 2, 2 },
+                    Opacity = 0.8,
+                };
+                MinimapActorCanvas.Children.Add(route);
+            }
+
+            var dot = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = Brushes.Red };
+            Canvas.SetLeft(dot, px - 2);
+            Canvas.SetTop(dot, pz - 2);
+            MinimapActorCanvas.Children.Add(dot);
+        }
     }
     private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) => RenderSoftwareTerrain();
     private void Window_Loaded(object sender, RoutedEventArgs e) { }

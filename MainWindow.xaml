@@ -104,6 +104,7 @@
                             <ScrollViewer x:Name="MinimapScrollViewer" Width="220" Height="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                 <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
                                     <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
                                     <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
                                 </Grid>
                             </ScrollViewer>

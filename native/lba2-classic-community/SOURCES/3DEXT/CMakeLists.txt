@@ -11,7 +11,7 @@ target_include_directories(3dext PUBLIC ../../LIB386/H)
 # Editor-facing renderer library. Keep this separate from the playable game
 # executable so tools can consume the terrain/object renderer without owning
 # the game loop or gameplay input.
-add_library(lba2_renderer SHARED RENDERER_API.CPP)
+add_library(lba2_renderer SHARED RENDERER_API.CPP RENDERER_ACTORS.CPP)
 set_target_properties(lba2_renderer PROPERTIES OUTPUT_NAME "lba2_renderer")
 target_link_libraries(lba2_renderer PUBLIC lba2_renderer_engine)
 target_include_directories(lba2_renderer PUBLIC ../../LIB386/H ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/SOURCES)

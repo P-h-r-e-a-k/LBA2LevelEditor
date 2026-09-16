@@ -31,6 +31,10 @@ extern int RendererBootAssets(void);
 // twice by two different paths.
 extern S32 Island;
 extern U8 RendererDrawSky;
+extern int RendererScanIslandActors(int islandIndex);
+extern int RendererGetActorCount(void);
+extern int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount);
+extern int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z);
 
 // LoadCube() (LOADISLE.CPP) overwrites ClipZFar/StartZFog from each cube's
 // own data on every load; lba2_renderer_load_cube() re-applies these on top
@@ -182,6 +186,11 @@ int lba2_renderer_load_island(const char *name)
         ChoicePalette();
     }
     islandGeneration++;
+    // Scans every exterior scene on this island for actors/tracks (see
+    // RENDERER_ACTORS.CPP); islandIndex < 0 (e.g. citabau, which has no
+    // ordinary Island slot -- see ChoicePalette()'s special case) just
+    // leaves the actor list empty rather than scanning.
+    RendererScanIslandActors(islandIndex);
     return 1;
 }
 
@@ -282,5 +291,20 @@ const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pit
     if (height) *height = ModeDesiredY;
     if (pitch) *pitch = ModeDesiredX;
     return (const unsigned char *)Log;
+}
+
+int lba2_renderer_get_actor_count(void)
+{
+    return RendererGetActorCount();
+}
+
+int lba2_renderer_get_actor(int index, int *x, int *y, int *z, int *waypointCount)
+{
+    return RendererGetActor(index, x, y, z, waypointCount);
+}
+
+int lba2_renderer_get_actor_waypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z)
+{
+    return RendererGetActorWaypoint(actorIndex, waypointIndex, x, y, z);
 }
 

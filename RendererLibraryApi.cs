@@ -16,6 +16,9 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetCameraFn(int alpha, int beta, int gamma, int distance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSkyFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr FramebufferFn(out int width, out int height, out int pitch);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorCountFn();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFn(int index, out int x, out int y, out int z, out int waypointCount);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorWaypointFn(int actorIndex, int waypointIndex, out int x, out int y, out int z);
     private IntPtr handle;
     private VersionFn? version;
     private InitializeFn? initialize;
@@ -28,6 +31,9 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetCameraFn? setCamera;
     private SetDrawSkyFn? setDrawSky;
     private FramebufferFn? framebuffer;
+    private GetActorCountFn? getActorCount;
+    private GetActorFn? getActor;
+    private GetActorWaypointFn? getActorWaypoint;
 
     public RendererLibraryApi(string path)
     {
@@ -40,6 +46,9 @@ internal sealed class RendererLibraryApi : IDisposable
         setViewTarget = Get<SetViewTargetFn>("lba2_renderer_set_view_target");
         renderFrame = Get<RenderFrameFn>("lba2_renderer_render_frame"); setCamera = Get<SetCameraFn>("lba2_renderer_set_camera"); framebuffer = Get<FramebufferFn>("lba2_renderer_framebuffer");
         setDrawSky = Get<SetDrawSkyFn>("lba2_renderer_set_draw_sky");
+        getActorCount = Get<GetActorCountFn>("lba2_renderer_get_actor_count");
+        getActor = Get<GetActorFn>("lba2_renderer_get_actor");
+        getActorWaypoint = Get<GetActorWaypointFn>("lba2_renderer_get_actor_waypoint");
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool SetDllDirectory(string path);
@@ -60,6 +69,17 @@ internal sealed class RendererLibraryApi : IDisposable
         if (framebuffer is null) { width = height = pitch = 0; return IntPtr.Zero; }
         return framebuffer(out width, out height, out pitch);
     }
+    public int GetActorCount() => getActorCount?.Invoke() ?? 0;
+    public bool GetActor(int index, out int x, out int y, out int z, out int waypointCount)
+    {
+        if (getActor is null) { x = y = z = waypointCount = 0; return false; }
+        return getActor(index, out x, out y, out z, out waypointCount) == 1;
+    }
+    public bool GetActorWaypoint(int actorIndex, int waypointIndex, out int x, out int y, out int z)
+    {
+        if (getActorWaypoint is null) { x = y = z = 0; return false; }
+        return getActorWaypoint(actorIndex, waypointIndex, out x, out y, out z) == 1;
+    }
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 
@@ -72,5 +92,6 @@ internal sealed class RendererLibraryApi : IDisposable
         handle = IntPtr.Zero;
         version = null;
         initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; setCamera = null; setDrawSky = null; framebuffer = null;
+        getActorCount = null; getActor = null; getActorWaypoint = null;
     }
 }
