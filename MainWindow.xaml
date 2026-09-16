@@ -90,6 +90,7 @@
                         <Button Content="▦" Click="Reset_Click" ToolTip="Reset view" Style="{StaticResource IconButton}"/>
                         <TextBlock Text="PAINT TERRAIN" FontFamily="Consolas" FontSize="10" Foreground="#AEB7AB" VerticalAlignment="Center" Margin="8,0,0,0"/>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <CheckBox x:Name="SkyCheckBox" Content="Sky" IsChecked="True" Foreground="#AEB7AB" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0" Checked="SkyCheckBox_Changed" Unchecked="SkyCheckBox_Changed"/>
                             <Button Content="−" Click="ZoomOut_Click" Style="{StaticResource IconButton}"/>
                             <TextBlock x:Name="ZoomLabel" Text="100%" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="8,0"/>
                             <Button Content="+" Click="ZoomIn_Click" Style="{StaticResource IconButton}"/>
@@ -100,8 +101,8 @@
                     <Grid>
                         <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
                         <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
-                            <Grid Width="160" Height="160" Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
-                                <Image x:Name="MinimapImage" Stretch="Uniform" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            <Grid Width="300" Height="300" Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
+                                <Image x:Name="MinimapImage" Stretch="Uniform" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
                                 <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
                             </Grid>
                         </Border>

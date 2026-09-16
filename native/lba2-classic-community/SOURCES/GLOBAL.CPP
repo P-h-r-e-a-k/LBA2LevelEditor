@@ -27,6 +27,12 @@ S32 RestartMusic = FALSE;
 
 U8 FlagRain = FALSE;
 U8 FlagDrawHorizon = TRUE;
+// Renderer-only toggle (LBA2 Level Workshop's "Sky" checkbox): defaults to
+// TRUE so the full game is unaffected; only lba2_renderer_set_draw_sky()
+// (RENDERER_API.CPP) ever changes it. Gates both DrawHorizon2ZBuf() and
+// DrawSkySeaZBuf() in AffGrilleExt() (EXTFUNC.CPP) so a camera looking down
+// from high above an island isn't blocked by the sky/horizon layer.
+U8 RendererDrawSky = TRUE;
 U8 SavingEnable = TRUE;
 U8 FlagPlayAcf = FALSE;
 U8 RainEnable = FALSE;

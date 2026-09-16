@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     private bool nativeViewActive;
     private CancellationTokenSource? nativeRenderCancellation;
     private int nativeRenderRequest;
+    private int minimapRequest;
     private byte[] palette = Array.Empty<byte>();
     private byte[] shadeTable = Array.Empty<byte>();
     private int shadeLevel;
@@ -83,8 +84,9 @@ public partial class MainWindow : Window
 
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
-            MinimapImage.Source = preview;
+            MinimapImage.Source = preview; // instant placeholder while the full-detail map renders
             UpdateMinimapMarker();
+            RegenerateMinimap();
             if (nativeRenderer.DirectRendererReady)
             {
                 nativeViewActive = true;
@@ -206,8 +208,8 @@ public partial class MainWindow : Window
     {
         MinimapMarkerCanvas.Children.Clear();
         if (currentIsland is null) return;
-        var width = MinimapImage.ActualWidth > 0 ? MinimapImage.ActualWidth : 160;
-        var height = MinimapImage.ActualHeight > 0 ? MinimapImage.ActualHeight : 160;
+        var width = MinimapImage.ActualWidth > 0 ? MinimapImage.ActualWidth : 300;
+        var height = MinimapImage.ActualHeight > 0 ? MinimapImage.ActualHeight : 300;
         var fractionX = Math.Clamp(targetX / MapWorldSize, 0.0, 1.0);
         var fractionZ = Math.Clamp(targetZ / MapWorldSize, 0.0, 1.0);
         const double markerSize = 8;
@@ -222,6 +224,34 @@ public partial class MainWindow : Window
         Canvas.SetLeft(marker, fractionX * width - markerSize / 2);
         Canvas.SetTop(marker, fractionZ * height - markerSize / 2);
         MinimapMarkerCanvas.Children.Add(marker);
+    }
+
+    // Renders the full-resolution top-down map (TopDownMapRenderer) off the UI
+    // thread and swaps it into the minimap once ready. Called after every
+    // island load; also the hook to call again once terrain painting actually
+    // mutates currentIsland's data, so the minimap can be refreshed live
+    // instead of only reflecting what was true at load time.
+    private void RegenerateMinimap()
+    {
+        if (currentIsland is null) return;
+        var island = currentIsland;
+        var request = Interlocked.Increment(ref minimapRequest);
+        Task.Run(() => TopDownMapRenderer.Render(island)).ContinueWith(task =>
+        {
+            if (task.IsCanceled || task.IsFaulted || request != minimapRequest) return;
+            Dispatcher.Invoke(() =>
+            {
+                if (request != minimapRequest) return;
+                MinimapImage.Source = task.Result;
+            });
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+    }
+
+    private void SkyCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        var enabled = SkyCheckBox.IsChecked == true;
+        nativeRenderer.RendererLibrary?.SetDrawSky(enabled);
+        if (nativeViewActive) RenderNativeCamera();
     }
 
     private void Minimap_MouseDown(object sender, MouseButtonEventArgs e)

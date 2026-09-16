@@ -29,6 +29,12 @@ LBA2_RENDERER_API int lba2_renderer_load_cube(int x, int y);
 LBA2_RENDERER_API int lba2_renderer_set_view_target(int worldX, int worldY, int worldZ);
 LBA2_RENDERER_API int lba2_renderer_render_frame(void);
 LBA2_RENDERER_API void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance);
+/* Toggles the sky/horizon layer (DrawHorizon2ZBuf + DrawSkySeaZBuf) for
+   every subsequent lba2_renderer_render_frame() call. Off leaves the
+   screen-clear colour (the island's ambience fog colour) as the background
+   instead, useful when a high overhead camera would otherwise have the sky
+   filling most of the frame. Does not affect the full game. */
+LBA2_RENDERER_API void lba2_renderer_set_draw_sky(int enabled);
 LBA2_RENDERER_API const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pitch);
 
 #ifdef __cplusplus

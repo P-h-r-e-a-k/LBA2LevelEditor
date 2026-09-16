@@ -29,6 +29,7 @@ extern int RendererBootAssets(void);
 // already brought in, and MEM.H has no include guard against being reached
 // twice by two different paths.
 extern S32 Island;
+extern U8 RendererDrawSky;
 
 int lba2_renderer_version(void)
 {
@@ -232,6 +233,11 @@ void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance)
     GammaCam = gamma & 4095;
     VueDistance = distance;
     Init3DExtView();
+}
+
+void lba2_renderer_set_draw_sky(int enabled)
+{
+    RendererDrawSky = enabled ? 1 : 0;
 }
 
 const unsigned char *lba2_renderer_framebuffer(int *width, int *height, int *pitch)

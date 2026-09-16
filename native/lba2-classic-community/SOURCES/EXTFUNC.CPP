@@ -330,9 +330,9 @@ void AffGrilleExt() {
     ManageSystem(); // for streaming
 
 #ifdef LBA_EDITOR
-    if (FlagInfos & INFO_HORIZON)
+    if ((FlagInfos & INFO_HORIZON) && RendererDrawSky)
 #else
-    if (FlagDrawHorizon)
+    if (FlagDrawHorizon && RendererDrawSky)
 #endif
     {
         DrawHorizon2ZBuf();
@@ -344,7 +344,8 @@ void AffGrilleExt() {
 
     ManageSystem(); // for streaming
 
-    DrawSkySeaZBuf();
+    if (RendererDrawSky)
+        DrawSkySeaZBuf();
 
     ManageSystem(); // for streaming
 
