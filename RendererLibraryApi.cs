@@ -29,7 +29,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderBodyPreviewFn(int genBody, int genAnim, int cameraBeta);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderBodyPreviewFn(int genBody, int genAnim, int cameraBeta, int cameraDistance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
     private IntPtr handle;
     private VersionFn? version;
@@ -174,7 +174,7 @@ internal sealed class RendererLibraryApi : IDisposable
     // read the framebuffer immediately after and not assume the main view
     // is unaffected by anything except its own next render. See
     // lba2_renderer_render_body_preview's own doc comment.
-    public bool RenderBodyPreview(int genBody, int genAnim, int cameraBeta) => renderBodyPreview?.Invoke(genBody, genAnim, cameraBeta) == 1;
+    public bool RenderBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance) => renderBodyPreview?.Invoke(genBody, genAnim, cameraBeta, cameraDistance) == 1;
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 

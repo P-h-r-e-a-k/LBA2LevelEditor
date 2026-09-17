@@ -145,10 +145,17 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_bounds(int index, int *xMin, int *
    terrain/sky/decor or any real actor, so it's safe to call between
    ordinary lba2_renderer_render_frame*() calls without disturbing the main
    view (whatever real render happens next resets the camera and clears the
-   screen fully anyway). Returns 0 if genBody doesn't resolve to a drawable
-   body (e.g. NO_BODY), 1 on a successful draw -- callers should show a
-   fallback message rather than a stale/blank frame on 0. */
-LBA2_RENDERER_API int lba2_renderer_render_body_preview(int genBody, int genAnim, int cameraBeta);
+   screen fully anyway). cameraDistance has no per-body auto-fit built in
+   (there's no reliable per-body bounding box available for a synthetic
+   preview object -- see AffichageBodyPreview's own comment); callers that
+   want the body to fill the frame should measure the rendered silhouette
+   at a probe distance and solve for the right one themselves (see
+   CommunityRendererBackend.CalibrateBodyPreviewDistance in the C# editor
+   for the approach this API was designed around). Returns 0 if genBody
+   doesn't resolve to a drawable body (e.g. NO_BODY), 1 on a successful
+   draw -- callers should show a fallback message rather than a stale/blank
+   frame on 0. */
+LBA2_RENDERER_API int lba2_renderer_render_body_preview(int genBody, int genAnim, int cameraBeta, int cameraDistance);
 
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which

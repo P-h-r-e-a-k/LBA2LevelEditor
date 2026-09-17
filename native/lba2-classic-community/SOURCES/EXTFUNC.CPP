@@ -378,7 +378,18 @@ extern void StartInitObj(U8 numobj);
 // RenderIslandTopDown's own minimap snapshots already do to this same
 // shared framebuffer. Returns 0 if the body index doesn't resolve to
 // anything drawable (e.g. NO_BODY), 1 on a successful draw.
-int AffichageBodyPreview(int genBody, int genAnim, int cameraBeta)
+//
+// cameraDistance is caller-supplied rather than derived from XMin/XMax/
+// YMin/YMax/ZMin/ZMax: StartInitObj() -> InitBody() only (re)computes
+// those via InitBodyZV() when a global scratch variable (M_XMin,
+// OBJECT.CPP) happens to still hold a specific sentinel left over from
+// whatever else last called InitBody() -- not guaranteed here, and
+// confirmed empirically (logged XMin..ZMax) to come back all zero every
+// time. The caller (CommunityRendererBackend.CalibrateBodyPreviewDistance)
+// instead measures the actual rendered silhouette's pixel size at a probe
+// distance and solves for the distance that fills the frame -- this call
+// just renders at whatever distance it's told.
+int AffichageBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance)
 {
     T_OBJET *ptrobj = &ListObjet[BODY_PREVIEW_OBJ];
     if (ptrobj->GenBody != (U8)genBody || ptrobj->GenAnim != (U16)genAnim || ptrobj->Obj.Body.Num < 0) {
@@ -397,18 +408,21 @@ int AffichageBodyPreview(int genBody, int genAnim, int cameraBeta)
     }
     if (ptrobj->Obj.Body.Num < 0) return 0; // genBody didn't resolve to anything (e.g. NO_BODY)
 
-    // A fixed distance rather than one derived from XMin/XMax/YMin/YMax/
-    // ZMin/ZMax: StartInitObj() -> InitBody() only (re)computes those via
-    // InitBodyZV() when a global scratch variable (M_XMin, OBJECT.CPP)
-    // happens to still hold a specific sentinel left over from whatever
-    // else last called InitBody() -- not guaranteed here, and confirmed
-    // empirically (logged XMin..ZMax) to come back all zero every time.
-    // 5000 (roughly human-character scale in this engine, confirmed
-    // visually) is a reasonable single distance for the common case; a
-    // hero-sized preview a rat or a building-sized boss might not frame as
-    // well is an acceptable trade against the complexity of deriving real
-    // bounds another way.
-    S32 camDistance = 5000;
+    // The preview object sits exactly at the camera's look-at target (world
+    // origin, below), so its camera-space Z after LongWorldRotatePoint is
+    // always exactly 0 -- LongProjectPoint3D (LPROJ3DF.CPP) rejects any
+    // point whose z exceeds CameraZrClip, and CameraZrClip works out to
+    // (camDistance - NearClip) here (SetFollowCamera pushes CameraZr back
+    // by camDistance from the target's own, also-zero, rotated Z). Once
+    // camDistance drops below NearClip that goes negative, so 0 > a
+    // negative clip and the object silently fails to project at all --
+    // confirmed by temporary logging showing exactly this (X0=Y0=Z0=0,
+    // CameraZrClip negative) whenever the auto-fit calibration picked a
+    // distance under NearClip for a small body. Clamping here (rather than
+    // in the C# calibrator, which has no visibility into NearClip) keeps
+    // the fix correct regardless of what NearClip is configured to.
+    S32 camDistance = cameraDistance > 0 ? cameraDistance : 5000;
+    if (camDistance < NearClip + 200) camDistance = NearClip + 200;
 
     ptrobj->Obj.X = 0;
     ptrobj->Obj.Y = 0;

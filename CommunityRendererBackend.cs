@@ -113,12 +113,12 @@ internal sealed class CommunityRendererBackend
     // threads at once. Returns null if the body doesn't resolve to anything
     // drawable (e.g. NO_BODY) or the renderer isn't ready; the caller should
     // show a fallback message rather than a stale frame in that case.
-    public BitmapSource? RenderBodyPreview(int genBody, int genAnim, int cameraBeta, byte[] paletteBytes)
+    public BitmapSource? RenderBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance, byte[] paletteBytes)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
         lock (directRenderLock)
         {
-            if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, cameraBeta)) return null;
+            if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, cameraBeta, cameraDistance)) return null;
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
             var pixels = new byte[width * height];
@@ -126,6 +126,54 @@ internal sealed class CommunityRendererBackend
             var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
             bitmap.Freeze();
             return bitmap;
+        }
+    }
+
+    // Solves for a camera distance that fills roughly targetFraction of the
+    // frame with the body's own silhouette, since there's no reliable
+    // per-body bounding box available here (see AffichageBodyPreview's own
+    // comment) -- a rat and a building-sized boss both render fine, just at
+    // very different natural distances. Renders once at a known probe
+    // distance, measures the actual non-background pixel footprint (the
+    // frame corner is always pure background for this isolated, otherwise-
+    // empty preview -- unlike a real terrain shot, nothing else is ever
+    // drawn into it), and scales the probe distance by how far off that
+    // footprint is from the target size (apparent size under perspective is
+    // roughly proportional to 1/distance, so distance scales linearly with
+    // the size ratio). Returns null if nothing drew (e.g. NO_BODY) or the
+    // renderer isn't ready; callers should fall back to a fixed distance.
+    public int? CalibrateBodyPreviewDistance(int genBody, int genAnim, byte[] paletteBytes, double targetFraction = 0.8)
+    {
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
+        const int probeDistance = 5000;
+        lock (directRenderLock)
+        {
+            if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, 0, probeDistance)) return null;
+            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
+            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
+
+            var backgroundIndex = Marshal.ReadByte(pointer); // corner pixel; see comment above
+            var row = new byte[width];
+            int minX = width, maxX = -1, minY = height, maxY = -1;
+            for (var y = 0; y < height; y++)
+            {
+                Marshal.Copy(pointer + y * pitch, row, 0, width);
+                for (var x = 0; x < width; x++)
+                {
+                    if (row[x] == backgroundIndex) continue;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            if (maxX < minX || maxY < minY) return null; // nothing drawn at all
+
+            var silhouetteSize = Math.Max(maxX - minX, maxY - minY);
+            if (silhouetteSize < 4) return null; // degenerate -- avoid dividing into an absurd distance
+            var targetSize = Math.Min(width, height) * targetFraction;
+            var distance = (int)(probeDistance * silhouetteSize / targetSize);
+            return Math.Clamp(distance, 200, 40000);
         }
     }
 
