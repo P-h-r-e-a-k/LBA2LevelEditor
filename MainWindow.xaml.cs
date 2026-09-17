@@ -113,6 +113,7 @@ public partial class MainWindow : Window
             ActorInspectorPanel.Visibility = Visibility.Collapsed;
             ActorMarkerCanvas.Children.Clear();
             lastNativeActorScreens = null;
+            lastNativeActorRoutes = null;
             RegenerateMinimap();
             if (nativeRenderer.DirectRendererReady)
             {
@@ -224,9 +225,38 @@ public partial class MainWindow : Window
         var count = library.GetActorCount();
         for (var i = 0; i < count; i++)
         {
-            if (!library.GetActor(i, out var x, out var y, out var z, out _)) continue;
+            if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
             var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
             if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var screenX, out var screenY)) continue;
+
+            if (waypointCount > 0)
+            {
+                var brush = new SolidColorBrush(ActorRouteColors[i % ActorRouteColors.Length]);
+                var points = new PointCollection { new Point(screenX, screenY) };
+                for (var w = 0; w < waypointCount; w++)
+                {
+                    if (!library.GetActorWaypoint(i, w, out var wx, out var wy, out var wz)) continue;
+                    var waypointWorld = new System.Windows.Media.Media3D.Point3D(wx, wy, wz);
+                    if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, waypointWorld, out var wsx, out var wsy)) continue;
+                    points.Add(new Point(wsx, wsy));
+                }
+                if (points.Count > 1)
+                {
+                    var route = new System.Windows.Shapes.Polyline
+                    {
+                        Points = points,
+                        Stroke = brush,
+                        StrokeThickness = 1.5,
+                        StrokeDashArray = new DoubleCollection { 3, 3 },
+                        Opacity = 0.85,
+                        IsHitTestVisible = false,
+                    };
+                    ActorMarkerCanvas.Children.Add(route);
+                    for (var w = 1; w < points.Count; w++)
+                        ActorMarkerCanvas.Children.Add(CreateRouteFlag(points[w].X, points[w].Y, brush));
+                }
+            }
+
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
 
             var selected = selectedActorIndex == i;
@@ -265,6 +295,7 @@ public partial class MainWindow : Window
     // the one that actually produced the displayed frame -- visible as the
     // markers "swimming" a few pixels relative to the terrain.
     private List<(int Index, double ScreenX, double ScreenY)>? lastNativeActorScreens;
+    private List<(int ActorIndex, List<Point> ScreenPoints)>? lastNativeActorRoutes;
 
     private void DrawNativeActorOverlay()
     {
@@ -279,6 +310,27 @@ public partial class MainWindow : Window
         if (fbPtr == IntPtr.Zero || fbWidth < 1 || fbHeight < 1) return;
         var scaleX = width / (double)fbWidth;
         var scaleY = height / (double)fbHeight;
+
+        if (lastNativeActorRoutes is not null)
+        {
+            foreach (var (actorIndex, screenPoints) in lastNativeActorRoutes)
+            {
+                var brush = new SolidColorBrush(ActorRouteColors[actorIndex % ActorRouteColors.Length]);
+                var points = new PointCollection(screenPoints.Select(p => new Point(p.X * scaleX, p.Y * scaleY)));
+                var route = new System.Windows.Shapes.Polyline
+                {
+                    Points = points,
+                    Stroke = brush,
+                    StrokeThickness = 1.5,
+                    StrokeDashArray = new DoubleCollection { 3, 3 },
+                    Opacity = 0.85,
+                    IsHitTestVisible = false,
+                };
+                ActorMarkerCanvas.Children.Add(route);
+                for (var w = 1; w < points.Count; w++)
+                    ActorMarkerCanvas.Children.Add(CreateRouteFlag(points[w].X, points[w].Y, brush));
+            }
+        }
 
         foreach (var (index, sx, sy) in lastNativeActorScreens)
         {
@@ -488,18 +540,31 @@ public partial class MainWindow : Window
         {
             if (useNative)
             {
-                var presentCubes = new List<(int CubeX, int CubeY)>();
-                for (var cy = minY; cy <= maxY; cy++)
-                for (var cx = minX; cx <= maxX; cx++)
-                    if ((island.CubeAt(cx, cy) & 0x7F) != 0)
-                        presentCubes.Add((cx, cy));
-                var native = nativeRenderer.RenderIslandTopDown(islandName, palette, presentCubes, minX, minY, maxX - minX + 1, maxY - minY + 1);
-                if (native is not null) return native;
+                try
+                {
+                    var presentCubes = new List<(int CubeX, int CubeY)>();
+                    for (var cy = minY; cy <= maxY; cy++)
+                    for (var cx = minX; cx <= maxX; cx++)
+                        if ((island.CubeAt(cx, cy) & 0x7F) != 0)
+                            presentCubes.Add((cx, cy));
+                    var native = nativeRenderer.RenderIslandTopDown(islandName, palette, presentCubes, minX, minY, maxX - minX + 1, maxY - minY + 1);
+                    if (native is not null) return native;
+                }
+                catch
+                {
+                    // Fall through to the CPU rasterizer below. A thrown
+                    // exception here (as opposed to RenderIslandTopDown's own
+                    // null-on-failure paths) previously faulted this whole
+                    // Task, which this same method's ContinueWith treats as
+                    // "leave the minimap as whatever it last showed" -- on a
+                    // fresh island load with nothing shown yet, that reads as
+                    // the minimap going solid black instead of falling back.
+                }
             }
 
-            // Fallback: no native renderer available (or this island failed
-            // to render through it) -- the CPU rasterizer instead of leaving
-            // the minimap blank.
+            // Fallback: no native renderer available (this island failed to
+            // render through it, or it threw) -- the CPU rasterizer instead
+            // of leaving the minimap blank.
             var full = TopDownMapRenderer.Render(island, MinimapPixelsPerCell);
             var cropWidth = (maxX - minX + 1) * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
             var cropHeight = (maxY - minY + 1) * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
@@ -592,20 +657,43 @@ public partial class MainWindow : Window
         var islandName = Path.GetFileNameWithoutExtension(activeFile);
         var token = nativeRenderCancellation.Token;
         var library = nativeRenderer.RendererLibrary;
+        // RenderIslandTopDown() (the minimap) turns sky off natively for its
+        // own straight-down snapshots and has no reason to turn it back on
+        // afterward -- it doesn't know what the checkbox says. Since that's
+        // the same shared native renderer instance the main view uses,
+        // leaving that unset here meant the very first minimap regeneration
+        // silently killed sky rendering for the main view for the rest of
+        // the session, regardless of the checkbox: every pan/zoom re-render
+        // reasserts the checkbox's actual state instead of trusting
+        // whatever the native flag happened to be left at.
+        library?.SetDrawSky(SkyCheckBox.IsChecked == true);
         List<(int, double, double)>? projected = null;
+        List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
         _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
             afterRenderBeforeUnlock: () =>
             {
                 if (library is null) return;
                 var count = library.GetActorCount();
                 var list = new List<(int, double, double)>(count);
+                var routes = new List<(int, List<Point>)>();
                 for (var i = 0; i < count; i++)
                 {
-                    if (!library.GetActor(i, out var x, out var y, out var z, out _)) continue;
+                    if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
                     if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
                     list.Add((i, sx, sy));
+
+                    if (waypointCount <= 0) continue;
+                    var points = new List<Point> { new(sx, sy) };
+                    for (var w = 0; w < waypointCount; w++)
+                    {
+                        if (!library.GetActorWaypoint(i, w, out var wx, out var wy, out var wz)) continue;
+                        if (!library.ProjectPoint(wx, wy, wz, out var wsx, out var wsy)) continue;
+                        points.Add(new Point(wsx, wsy));
+                    }
+                    if (points.Count > 1) routes.Add((i, points));
                 }
                 projected = list;
+                projectedRoutes = routes;
             }), token).ContinueWith(task =>
         {
             if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested || request != nativeRenderRequest) return;
@@ -630,6 +718,7 @@ public partial class MainWindow : Window
                     DrawActorMarkers();
                 }
                 lastNativeActorScreens = projected;
+                lastNativeActorRoutes = projectedRoutes;
                 DrawNativeActorOverlay();
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);

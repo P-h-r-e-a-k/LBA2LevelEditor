@@ -126,7 +126,23 @@ internal sealed class CommunityRendererBackend
     // re-verifying against a fresh corner projection.
     private const int TopDownAlpha = 1023;
     private const int TopDownDistance = 50000;
-    private const int TopDownCropX0 = 124, TopDownCropY0 = 44, TopDownCropSize = 392;
+
+    // The exact calibrated crop is [124,44]-[516,436] (392x392, see the
+    // corner-projection note above), but cropping to precisely that leaves a
+    // visible seam of background color between adjacent cube tiles: the
+    // terrain rasterizer doesn't quite draw all the way to the true cube
+    // edge (by a handful of pixels, most likely rounding/clip-cone slack
+    // rather than the exact-corner projection being wrong), so a tile
+    // cropped to exactly its own bounds has a thin unrendered strip along
+    // each edge, and two such strips meeting at a shared boundary show up as
+    // a solid line. Overscanning -- sampling a margin wider than one cube
+    // on every side, still centered the same -- means that strip gets
+    // painted over by content spilling in from the *next* cube's own
+    // overscanned tile, since compositing just writes cube tiles in whatever
+    // order presentCubes lists them. The ~4% larger world footprint per tile
+    // this implies is not worth correcting for a minimap.
+    private const int TopDownOverscanMargin = 40;
+    private const int TopDownCropX0 = 124 - TopDownOverscanMargin, TopDownCropY0 = 44 - TopDownOverscanMargin, TopDownCropSize = 392 + TopDownOverscanMargin * 2;
     private const int TopDownTileSize = 256;
 
     // Renders a full island top-down, cube by cube, through the community
@@ -187,6 +203,11 @@ internal sealed class CommunityRendererBackend
 
                 var tileOffsetX = (cubeX - minCubeX) * TopDownTileSize;
                 var tileOffsetY = (cubeY - minCubeY) * TopDownTileSize;
+                // Defensive: a presentCubes entry outside [minCubeX,minCubeX+cubeSpanX)
+                // x [minCubeY,minCubeY+cubeSpanY) would otherwise write past the
+                // master array and throw, faulting the whole minimap render for
+                // an island that's otherwise fine.
+                if (tileOffsetX < 0 || tileOffsetY < 0 || tileOffsetX + TopDownTileSize > masterWidth || tileOffsetY + TopDownTileSize > masterHeight) continue;
                 for (var ty = 0; ty < TopDownTileSize; ty++)
                 {
                     // Native Z maps inversely to screen/crop row (larger world Z
