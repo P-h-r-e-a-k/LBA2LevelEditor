@@ -93,6 +93,18 @@ public partial class MainWindow : Window
                 targetX = cubeX * 32768 + 16384;
                 targetZ = cubeY * 32768 + 16384;
             }
+
+            // Scrollbar range matches the island's actual present-cube bounds,
+            // not the full 16x16 grid: most islands only occupy a fraction of
+            // it, so a fixed full-grid range left most of each scrollbar's
+            // travel mapped to open sea the camera can never actually reach --
+            // dragging to the visible end of the track landed on an invalid
+            // cube and snapped back well short of the real edge.
+            var (presentMinX, presentMinY, presentMaxX, presentMaxY) = currentIsland.PresentCubeBounds;
+            PanHorizontalScrollBar.Minimum = presentMinX * 32768;
+            PanHorizontalScrollBar.Maximum = (presentMaxX + 1) * 32768 - 1;
+            PanVerticalScrollBar.Minimum = presentMinY * 32768;
+            PanVerticalScrollBar.Maximum = (presentMaxY + 1) * 32768 - 1;
             SyncPanScrollBars();
 
             var preview = currentIsland.CreatePreview();
@@ -112,9 +124,11 @@ public partial class MainWindow : Window
             else
             {
                 nativeViewActive = false;
+                cameraDistance = DefaultCameraDistance;
                 DocumentSummary.Text += " / software 3D";
                 Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(RenderSoftwareTerrain));
             }
+            UpdateZoomLabel();
         }
         catch (Exception error)
         {
@@ -440,34 +454,58 @@ public partial class MainWindow : Window
         MinimapScrollViewer.ScrollToVerticalOffset(pz - MinimapScrollViewer.ViewportHeight / 2);
     }
 
-    // Renders the full-resolution top-down map (TopDownMapRenderer) off the UI
-    // thread, crops it to the island's present-cube bounding box (so the
+    // Renders the island top-down through the community engine itself
+    // (CommunityRendererBackend.RenderIslandTopDown -- a per-cube stitch
+    // through the same texture/lighting pipeline the main 3D view uses,
+    // since the classic exterior renderer only ever has one cube's terrain
+    // loaded at a time and so can't do it in a single wide shot) off the UI
+    // thread, crops to the island's present-cube bounding box (so the
     // minimap shows the island zoomed in instead of mostly empty sea), and
-    // swaps it into the minimap once ready. Called after every island load;
-    // also the hook to call again once terrain painting actually mutates
-    // currentIsland's data, so the minimap can be refreshed live instead of
-    // only reflecting what was true at load time.
+    // swaps it into the minimap once ready. Falls back to the from-scratch
+    // CPU rasterizer (TopDownMapRenderer) only if the native renderer isn't
+    // available at all. Called after every island load; also the hook to
+    // call again once terrain painting actually mutates currentIsland's
+    // data, so the minimap can be refreshed live instead of only reflecting
+    // what was true at load time.
     private void RegenerateMinimap()
     {
         if (currentIsland is null) return;
         var island = currentIsland;
         var request = Interlocked.Increment(ref minimapRequest);
+        var islandName = Path.GetFileNameWithoutExtension(activeFile);
+        var useNative = nativeRenderer.DirectRendererReady;
+
+        var (minX, minY, maxX, maxY) = island.PresentCubeBounds;
+        const int padding = 1;
+        minX = Math.Max(0, minX - padding);
+        minY = Math.Max(0, minY - padding);
+        maxX = Math.Min(15, maxX + padding);
+        maxY = Math.Min(15, maxY + padding);
+        var offsetX = minX * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
+        var offsetY = minY * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
+
         Task.Run(() =>
         {
+            if (useNative)
+            {
+                var presentCubes = new List<(int CubeX, int CubeY)>();
+                for (var cy = minY; cy <= maxY; cy++)
+                for (var cx = minX; cx <= maxX; cx++)
+                    if ((island.CubeAt(cx, cy) & 0x7F) != 0)
+                        presentCubes.Add((cx, cy));
+                var native = nativeRenderer.RenderIslandTopDown(islandName, palette, presentCubes, minX, minY, maxX - minX + 1, maxY - minY + 1);
+                if (native is not null) return native;
+            }
+
+            // Fallback: no native renderer available (or this island failed
+            // to render through it) -- the CPU rasterizer instead of leaving
+            // the minimap blank.
             var full = TopDownMapRenderer.Render(island, MinimapPixelsPerCell);
-            var (minX, minY, maxX, maxY) = island.PresentCubeBounds;
-            const int padding = 1;
-            minX = Math.Max(0, minX - padding);
-            minY = Math.Max(0, minY - padding);
-            maxX = Math.Min(15, maxX + padding);
-            maxY = Math.Min(15, maxY + padding);
-            var offsetX = minX * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
-            var offsetY = minY * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
             var cropWidth = (maxX - minX + 1) * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
             var cropHeight = (maxY - minY + 1) * TopDownMapRenderer.CellsPerCube * MinimapPixelsPerCell;
             var cropped = new CroppedBitmap(full, new Int32Rect(offsetX, offsetY, cropWidth, cropHeight));
             cropped.Freeze();
-            return (Bitmap: (BitmapSource)cropped, offsetX, offsetY);
+            return (BitmapSource)cropped;
         }).ContinueWith(task =>
         {
             if (task.IsCanceled || request != minimapRequest) return;
@@ -475,9 +513,9 @@ public partial class MainWindow : Window
             Dispatcher.Invoke(() =>
             {
                 if (request != minimapRequest) return;
-                minimapCropOffsetXPixels = task.Result.offsetX;
-                minimapCropOffsetYPixels = task.Result.offsetY;
-                MinimapImage.Source = task.Result.Bitmap;
+                minimapCropOffsetXPixels = offsetX;
+                minimapCropOffsetYPixels = offsetY;
+                MinimapImage.Source = task.Result;
                 UpdateMinimapMarker();
                 CenterMinimapOnMarker();
                 // Re-draw with the fresh crop offsets in case this finished
@@ -510,9 +548,20 @@ public partial class MainWindow : Window
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
     }
 
+    // 100% is each view's own default distance (both happen to default to
+    // 30000) so switching between native and software mid-session doesn't
+    // jump the displayed percentage; zooming in (smaller distance) reads as
+    // >100%, matching how "zoom" reads on a camera or a document viewer.
+    private const double DefaultCameraDistance = 30000;
+    private void UpdateZoomLabel()
+    {
+        var distance = nativeViewActive ? nativeDistance : cameraDistance;
+        ZoomLabel.Text = $"{Math.Round(DefaultCameraDistance / distance * 100)}%";
+    }
+
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
-    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } }
-    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
     private void TerrainViewport_MouseMove(object sender, MouseEventArgs e)
     {
@@ -533,7 +582,7 @@ public partial class MainWindow : Window
         }
     }
     private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; TerrainViewport.ReleaseMouseCapture(); }
-    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } }
+    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     private void RenderNativeCamera()
     {
         if (!nativeViewActive) return;
@@ -592,6 +641,20 @@ public partial class MainWindow : Window
     // since the underlying data can't have changed either.
     private string? actorMarkersIsland;
 
+    // A fixed, hand-picked palette of visually distinct hues (avoiding the
+    // minimap's own greens/browns/blues) so two actors whose routes cross or
+    // run parallel stay tellable apart -- a single uniform cyan for every
+    // route (the previous behavior) made that impossible whenever more than
+    // one NPC patrolled the same area. Cycles for islands with more actors
+    // than colors; two actors then share a color but that's still far
+    // better than every actor sharing one.
+    private static readonly Color[] ActorRouteColors =
+    {
+        Colors.Red, Colors.Orange, Colors.Yellow, Colors.Magenta,
+        Colors.DeepSkyBlue, Colors.Lime, Colors.HotPink, Colors.White,
+        Colors.Violet, Colors.Gold, Colors.Cyan, Colors.OrangeRed,
+    };
+
     private void DrawActorMarkers()
     {
         MinimapActorCanvas.Children.Clear();
@@ -603,6 +666,7 @@ public partial class MainWindow : Window
             if (!library.GetActor(i, out var x, out _, out var z, out var waypointCount)) continue;
             var px = x / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
             var pz = z / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
+            var brush = new SolidColorBrush(ActorRouteColors[i % ActorRouteColors.Length]);
 
             if (waypointCount > 0)
             {
@@ -610,24 +674,52 @@ public partial class MainWindow : Window
                 for (var w = 0; w < waypointCount; w++)
                 {
                     if (!library.GetActorWaypoint(i, w, out var wx, out _, out var wz)) continue;
-                    points.Add(new Point(wx / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels, wz / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels));
+                    var wpx = wx / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
+                    var wpz = wz / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
+                    points.Add(new Point(wpx, wpz));
+                    MinimapActorCanvas.Children.Add(CreateRouteFlag(wpx, wpz, brush));
                 }
                 var route = new System.Windows.Shapes.Polyline
                 {
                     Points = points,
-                    Stroke = Brushes.Cyan,
+                    Stroke = brush,
                     StrokeThickness = 1,
                     StrokeDashArray = new DoubleCollection { 2, 2 },
-                    Opacity = 0.8,
+                    Opacity = 0.85,
                 };
                 MinimapActorCanvas.Children.Add(route);
             }
 
-            var dot = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = Brushes.Red };
-            Canvas.SetLeft(dot, px - 2);
-            Canvas.SetTop(dot, pz - 2);
+            var dot = new System.Windows.Shapes.Ellipse { Width = 5, Height = 5, Fill = brush, Stroke = Brushes.Black, StrokeThickness = 0.5 };
+            Canvas.SetLeft(dot, px - 2.5);
+            Canvas.SetTop(dot, pz - 2.5);
             MinimapActorCanvas.Children.Add(dot);
         }
+    }
+
+    // A small pole-and-pennant flag glyph (not a literal render of the
+    // actor's body -- there's no cheap way to shrink the native 3D body
+    // renderer added for the main view down to a minimap-scale icon) marking
+    // one track waypoint, in the same color as that actor's route line and
+    // start dot so a glance at a cluster of flags says which NPC's patrol
+    // they belong to.
+    private static System.Windows.Shapes.Path CreateRouteFlag(double x, double y, Brush brush)
+    {
+        const double poleHeight = 8, pennantWidth = 5, pennantHeight = 4;
+        var geometry = new PathGeometry();
+        var pole = new LineSegment(new Point(x, y - poleHeight), true);
+        var poleFigure = new PathFigure(new Point(x, y), new PathSegment[] { pole }, false);
+        geometry.Figures.Add(poleFigure);
+        var pennantFigure = new PathFigure(
+            new Point(x, y - poleHeight),
+            new PathSegment[]
+            {
+                new LineSegment(new Point(x + pennantWidth, y - poleHeight + pennantHeight / 2), true),
+                new LineSegment(new Point(x, y - poleHeight + pennantHeight), true),
+            },
+            true);
+        geometry.Figures.Add(pennantFigure);
+        return new System.Windows.Shapes.Path { Data = geometry, Stroke = Brushes.Black, StrokeThickness = 0.5, Fill = brush };
     }
     private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (nativeViewActive) DrawNativeActorOverlay(); else RenderSoftwareTerrain(); }
     private void Window_Loaded(object sender, RoutedEventArgs e) { }

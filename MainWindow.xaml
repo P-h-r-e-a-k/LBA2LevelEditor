@@ -116,10 +116,10 @@
                             </Border>
                         </Grid>
                         <ScrollBar x:Name="PanVerticalScrollBar" Grid.Row="0" Grid.Column="1" Orientation="Vertical"
-                                   Minimum="0" Maximum="524288" ViewportSize="65536" SmallChange="8192" LargeChange="65536"
+                                   SmallChange="8192" LargeChange="65536"
                                    Scroll="PanVerticalScrollBar_Scroll"/>
                         <ScrollBar x:Name="PanHorizontalScrollBar" Grid.Row="1" Grid.Column="0" Orientation="Horizontal"
-                                   Minimum="0" Maximum="524288" ViewportSize="65536" SmallChange="8192" LargeChange="65536"
+                                   SmallChange="8192" LargeChange="65536"
                                    Scroll="PanHorizontalScrollBar_Scroll"/>
                     </Grid>
                 </Border>

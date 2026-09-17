@@ -97,6 +97,118 @@ internal sealed class CommunityRendererBackend
         }
     }
 
+    // Alpha=+1023 (of the engine's 4096-per-turn angle unit -- COMMON.H's
+    // MAX_ANGLE) orbits the follow-camera to within one unit of directly
+    // overhead; beta/gamma control yaw/roll and stay at 0 so north stays
+    // "up" and there's no roll to correct for. The sign matters a lot more
+    // than it looks: alpha is a polar elevation for the camera's *position*
+    // around the target (SetFollowCamera/CAMERA.CPP), not a look-direction
+    // angle, so -1023 doesn't mirror +1023 the way it would for a pure tilt
+    // -- it orbits the camera to the opposite pole, i.e. *underground*
+    // looking up through the terrain from below. That's not a subtle
+    // artifact: real rendered coverage collapses to under 1% of the frame
+    // (confirmed by sweeping alpha and counting non-background pixels,
+    // 49% at +1023 vs. <1% at -1023 with everything else identical), so a
+    // sign flip here silently reintroduces an almost-empty minimap, not a
+    // visibly-wrong one.
+    //
+    // At Distance=50000 the cube exactly fills the square screen region
+    // [124,44]-[516,436] of the fixed 640x480 framebuffer -- centered on the
+    // frame's own center (320,240) with no perspective skew, confirmed by
+    // projecting a cube's four corners individually
+    // (lba2_renderer_project_point) and finding world X maps straight to
+    // screen X and world Z inversely and linearly to screen Y, with no cross
+    // term. That match to a plain axis-aligned crop (rather than a
+    // quadrilateral needing a perspective warp) is what makes stitching
+    // per-cube snapshots into one image tractable at all; it isn't
+    // guaranteed by the math in general, only verified empirically for this
+    // specific angle/distance pair, so changing either constant needs
+    // re-verifying against a fresh corner projection.
+    private const int TopDownAlpha = 1023;
+    private const int TopDownDistance = 50000;
+    private const int TopDownCropX0 = 124, TopDownCropY0 = 44, TopDownCropSize = 392;
+    private const int TopDownTileSize = 256;
+
+    // Renders a full island top-down, cube by cube, through the community
+    // engine's real terrain/texture/lighting pipeline (the same one the main
+    // 3D view uses) instead of TopDownMapRenderer's from-scratch CPU
+    // rasterizer -- so the minimap actually reflects what the "main
+    // rendering engine" would show from above, texture quirks and all,
+    // rather than a separate reimplementation that can drift out of sync
+    // with it. The renderer only ever has one cube's terrain loaded at a
+    // time (this session's own "single area cube" limitation, noted
+    // elsewhere), so there's no single wide-shot alternative to stitching --
+    // presentCubes lists which of the island's cubes actually have terrain,
+    // one lba2_renderer_render_frame() call happens per entry.
+    //
+    // The palette-indexed framebuffer can't be smoothly downscaled (there's
+    // no such thing as "halfway between palette index 12 and 40" -- blending
+    // them like RGB would produce a wrong color, not an intermediate one),
+    // so each cube's 392x392 crop is nearest-neighbor sampled down to a
+    // TopDownTileSize tile; the result reads a little more blocky than the
+    // old bilinear-filtered renderer but is honest about being the same
+    // point-sampled palette data the 3D view itself draws with.
+    public BitmapSource? RenderIslandTopDown(string islandName, byte[] paletteBytes, IReadOnlyList<(int CubeX, int CubeY)> presentCubes, int minCubeX, int minCubeY, int cubeSpanX, int cubeSpanY)
+    {
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady || presentCubes.Count == 0) { directFailure = "renderer DLL unavailable"; return null; }
+        lock (directRenderLock)
+        {
+            var baseName = islandName.ToLowerInvariant();
+            if (!directSession)
+            {
+                if (!RendererLibrary.SetDataRoot(gameDirectory)) { directFailure = "set data root failed"; return null; }
+                if (!RendererLibrary.Initialize()) { directFailure = "native initialize failed"; return null; }
+                directSession = true;
+            }
+            if (!string.Equals(directIsland, baseName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (RendererLibrary.LoadIsland(baseName) == 0) { directFailure = $"load island failed: {baseName}"; return null; }
+                directIsland = baseName;
+            }
+            RendererLibrary.SetDrawSky(false);
+
+            var masterWidth = cubeSpanX * TopDownTileSize;
+            var masterHeight = cubeSpanY * TopDownTileSize;
+            var master = new byte[masterWidth * masterHeight];
+            var crop = new byte[TopDownCropSize * TopDownCropSize];
+
+            foreach (var (cubeX, cubeY) in presentCubes)
+            {
+                var worldX = cubeX * 32768 + 16384;
+                var worldZ = cubeY * 32768 + 16384;
+                if (RendererLibrary.SetViewTarget(worldX, 3000, worldZ) == 0) continue;
+                RendererLibrary.SetCamera(TopDownAlpha, 0, 0, TopDownDistance);
+                if (RendererLibrary.RenderFrame() == 0) continue;
+                var pointer = RendererLibrary.GetFramebuffer(out var fbWidth, out var fbHeight, out var pitch);
+                if (pointer == IntPtr.Zero || fbWidth < TopDownCropX0 + TopDownCropSize || fbHeight < TopDownCropY0 + TopDownCropSize) continue;
+
+                for (var row = 0; row < TopDownCropSize; row++)
+                    Marshal.Copy(pointer + (TopDownCropY0 + row) * pitch + TopDownCropX0, crop, row * TopDownCropSize, TopDownCropSize);
+
+                var tileOffsetX = (cubeX - minCubeX) * TopDownTileSize;
+                var tileOffsetY = (cubeY - minCubeY) * TopDownTileSize;
+                for (var ty = 0; ty < TopDownTileSize; ty++)
+                {
+                    // Native Z maps inversely to screen/crop row (larger world Z
+                    // -> smaller row); flipping here restores the "larger Z ->
+                    // larger pixel row" convention the rest of the minimap code
+                    // (actor markers, click-to-jump, TopDownMapRenderer before
+                    // it) already assumes.
+                    var srcRow = ty * TopDownCropSize / TopDownTileSize;
+                    var destRow = tileOffsetY + (TopDownTileSize - 1 - ty);
+                    var destRowStart = destRow * masterWidth + tileOffsetX;
+                    var srcRowStart = srcRow * TopDownCropSize;
+                    for (var tx = 0; tx < TopDownTileSize; tx++)
+                        master[destRowStart + tx] = crop[srcRowStart + tx * TopDownCropSize / TopDownTileSize];
+                }
+            }
+
+            var bitmap = BitmapSource.Create(masterWidth, masterHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), master, masterWidth);
+            bitmap.Freeze();
+            return bitmap;
+        }
+    }
+
     private static BitmapPalette CreatePalette(byte[] paletteBytes)
     {
         var colors = new List<Color>(256);
