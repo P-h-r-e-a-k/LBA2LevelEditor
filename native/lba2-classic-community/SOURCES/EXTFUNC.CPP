@@ -424,32 +424,46 @@ void AffGrilleExtWide(int radiusCubes) {
             S32 cx = centerCubeX + dx, cy = centerCubeY + dy;
             if (cx < 0 || cx > 15 || cy < 0 || cy > 15) continue;
 
-            if (dx != 0 || dy != 0) {
-                S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
-                S32 localOffsetZ = centerWorldZ - cy * WIDE_WORLD_CUBE_SIZE;
-                // RendererLoadNeighborCubeData (not a raw LoadCube() call)
-                // re-applies the editor's widened fog/clip distance on top
-                // of this cube's own, much narrower, shipped defaults --
-                // skipping that left every neighbor cube's terrain fogged
-                // as if the camera were still only its own cube's usual
-                // viewing distance away, which is short enough that
-                // farther neighbors washed out to the fog color almost
-                // entirely.
-                if (!RendererLoadNeighborCubeData(cx, cy)) {
-                    // No terrain data at all for this cube (open sea/void).
-                    // The engine's own convention for this -- see the
-                    // LBA_EDITOR-only phantom-cube preview code elsewhere in
-                    // this file, which does the same LoadCube-fails-so-draw-
-                    // sea-instead fallback -- is a flat sea plane, not
-                    // nothing; leaving this cube undrawn showed as a solid
-                    // black hole (ClsTerrainZBuf's clear color) in the
-                    // middle of an otherwise-normal wide view.
-                    SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
-                    if (RendererDrawSea) DrawOneSea(Y_SEA);
-                    continue;
-                }
+            S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
+            S32 localOffsetZ = centerWorldZ - cy * WIDE_WORLD_CUBE_SIZE;
+            // Every cube in the loop -- including (dx,dy)==(0,0), the
+            // primary/camera-target cube -- reloads its own terrain/scene
+            // here, with no special case that skips it. An earlier version
+            // treated (0,0) as "already loaded, just draw it" and skipped
+            // the reload, on the assumption that its data would still be
+            // sitting in the (shared, single-cube-sized) terrain grid by the
+            // time the loop reached it. That's only true if (0,0) happens to
+            // be the *first* iteration; for any radius >= 1 the loop order
+            // (dy outer, dx inner, both from -radius to +radius) visits
+            // several neighbors first, each overwriting that same shared
+            // grid with its own data -- so the primary cube silently drew
+            // whichever neighbor's terrain was loaded last, at the primary
+            // cube's own camera position. That mismatch (right camera,
+            // wrong terrain/fog-depth for what's actually being drawn) is
+            // what showed up as a patch of visibly wrong/washed-out terrain
+            // exactly in the primary cube's own area -- and only at radius
+            // >= 1, since radius 0 never entered this loop.
+            //
+            // RendererLoadNeighborCubeData (not a raw LoadCube() call)
+            // re-applies the editor's widened fog/clip distance on top of
+            // each cube's own, much narrower, shipped defaults -- skipping
+            // that left every reloaded cube's terrain fogged as if the
+            // camera were only its own cube's usual viewing distance away,
+            // which is short enough that farther cubes washed out to the
+            // fog color almost entirely.
+            if (!RendererLoadNeighborCubeData(cx, cy)) {
+                // No terrain data at all for this cube (open sea/void). The
+                // engine's own convention for this -- see the LBA_EDITOR-
+                // only phantom-cube preview code elsewhere in this file,
+                // which does the same LoadCube-fails-so-draw-sea-instead
+                // fallback -- is a flat sea plane, not nothing; leaving this
+                // cube undrawn showed as a solid black hole (ClsTerrainZBuf's
+                // clear color) in the middle of an otherwise-normal wide view.
                 SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
+                if (RendererDrawSea) DrawOneSea(Y_SEA);
+                continue;
             }
+            SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
 
             AffichageTerrainZBuf();
             AffichageActorsZBuf();

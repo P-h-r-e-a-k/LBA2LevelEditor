@@ -624,6 +624,40 @@ public partial class MainWindow : Window
         ZoomLabel.Text = $"{Math.Round(DefaultCameraDistance / distance * 100)}%";
     }
 
+    private void ZoomLabel_GotFocus(object sender, RoutedEventArgs e) => ZoomLabel.SelectAll();
+
+    private void ZoomLabel_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        ApplyZoomFromTextBox();
+        Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    private void ZoomLabel_LostFocus(object sender, RoutedEventArgs e) => ApplyZoomFromTextBox();
+
+    private void ApplyZoomFromTextBox()
+    {
+        var text = ZoomLabel.Text.Trim().TrimEnd('%');
+        if (!double.TryParse(text, out var percent) || percent <= 0)
+        {
+            UpdateZoomLabel();
+            return;
+        }
+        var distance = DefaultCameraDistance / (percent / 100.0);
+        if (nativeViewActive)
+        {
+            nativeDistance = (int)Math.Clamp(distance, 3000, 50000);
+            RenderNativeCamera();
+        }
+        else
+        {
+            cameraDistance = Math.Clamp(distance, 12000, 120000);
+            RenderSoftwareTerrain();
+        }
+        UpdateZoomLabel();
+    }
+
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
     private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
