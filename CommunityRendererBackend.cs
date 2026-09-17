@@ -256,13 +256,27 @@ internal sealed class CommunityRendererBackend
                 if (tileOffsetX < 0 || tileOffsetY < 0 || tileOffsetX + TopDownTileSize > masterWidth || tileOffsetY + TopDownTileSize > masterHeight) continue;
                 for (var ty = 0; ty < TopDownTileSize; ty++)
                 {
-                    // Native Z maps inversely to screen/crop row (larger world Z
-                    // -> smaller row); flipping here restores the "larger Z ->
-                    // larger pixel row" convention the rest of the minimap code
-                    // (actor markers, click-to-jump, TopDownMapRenderer before
-                    // it) already assumes.
+                    // Larger world Z maps directly to larger screen/crop row
+                    // at TopDownAlpha=+1023 -- no flip needed here, matching
+                    // the "larger Z -> larger pixel row" convention the rest
+                    // of the minimap code (actor markers, click-to-jump,
+                    // TopDownMapRenderer before it) already assumes. This
+                    // used to flip, from calibration done at alpha=-1023
+                    // before that sign turned out to orbit the camera to the
+                    // wrong pole (see RenderIslandDirect's own comment on
+                    // why +1023 is correct) -- the coverage fix changed
+                    // which screen direction Z maps to as a side effect, but
+                    // this flip was never re-verified against the new sign,
+                    // so every tile was quietly composited upside down. Each
+                    // tile still looked individually plausible (a mirrored
+                    // coastline still reads as "a coastline"), which is why
+                    // it passed a "does this look reasonable" visual check;
+                    // only comparing against the real cube layout (or,
+                    // cheaper, re-deriving the mapping from a fresh corner
+                    // projection any time the camera sign changes) exposes
+                    // it as wrong.
                     var srcRow = ty * TopDownCropSize / TopDownTileSize;
-                    var destRow = tileOffsetY + (TopDownTileSize - 1 - ty);
+                    var destRow = tileOffsetY + ty;
                     var destRowStart = destRow * masterWidth + tileOffsetX;
                     var srcRowStart = srcRow * TopDownCropSize;
                     for (var tx = 0; tx < TopDownTileSize; tx++)
