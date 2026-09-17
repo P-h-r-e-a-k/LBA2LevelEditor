@@ -28,6 +28,19 @@ LBA2_RENDERER_API int lba2_renderer_load_cube(int x, int y);
    has no data. */
 LBA2_RENDERER_API int lba2_renderer_set_view_target(int worldX, int worldY, int worldZ);
 LBA2_RENDERER_API int lba2_renderer_render_frame(void);
+/* Like lba2_renderer_render_frame(), but also loads and draws radiusCubes
+   rings of neighboring cubes around the one lba2_renderer_set_view_target()
+   last landed on, compositing them into the same frame via the engine's own
+   per-cube Z-buffer (see AffGrilleExtWide in EXTFUNC.CPP for exactly how and
+   why this doesn't need the terrain/decor/actor data structures -- all
+   fixed-size and single-cube -- to be resized). radiusCubes=0 behaves like
+   lba2_renderer_render_frame(). Costs roughly (2*radiusCubes+1)^2 cube loads
+   per call, so reserve it for camera distances where a single cube visibly
+   runs out before the horizon does. Restores the primary cube's own
+   terrain/actors before returning, so a later lba2_renderer_render_frame()
+   or lba2_renderer_project_point() call still sees the cube the camera
+   nominally targets. */
+LBA2_RENDERER_API int lba2_renderer_render_frame_wide(int radiusCubes);
 LBA2_RENDERER_API void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance);
 /* Toggles the sky/horizon layer (DrawHorizon2ZBuf + DrawSkySeaZBuf) for
    every subsequent lba2_renderer_render_frame() call. Off leaves the

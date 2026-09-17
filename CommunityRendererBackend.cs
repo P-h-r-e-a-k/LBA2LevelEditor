@@ -65,7 +65,7 @@ internal sealed class CommunityRendererBackend
     // (from rapid dragging) could have already changed that shared state --
     // the visible symptom of that race was actor markers "swimming" a few
     // pixels out of sync with the terrain while panning.
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null)
+    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -84,7 +84,16 @@ internal sealed class CommunityRendererBackend
             }
             if (RendererLibrary.SetViewTarget(worldX, worldY, worldZ) == 0) { directFailure = $"set view target failed: {baseName} {worldX},{worldY},{worldZ}"; return null; }
             RendererLibrary.SetCamera(alpha, beta, gamma, distance);
-            if (RendererLibrary.RenderFrame() == 0) { directFailure = "native render returned failure"; return null; }
+            // wideRadiusCubes>0 loads and draws neighboring cubes into the
+            // same frame (AffGrilleExtWide) instead of just the one under
+            // the camera target -- see its own comment for why that doesn't
+            // need the terrain/decor/actor arrays resized. Reserved for
+            // zoomed-out views where a single cube's terrain would otherwise
+            // visibly run out before the horizon does; the extra cube loads
+            // cost real time (roughly (2*radius+1)^2 vs. 1 per frame), so
+            // callers should only ask for it at distances that need it.
+            var renderOk = wideRadiusCubes > 0 ? RendererLibrary.RenderFrameWide(wideRadiusCubes) : RendererLibrary.RenderFrame();
+            if (renderOk == 0) { directFailure = "native render returned failure"; return null; }
             afterRenderBeforeUnlock?.Invoke();
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }

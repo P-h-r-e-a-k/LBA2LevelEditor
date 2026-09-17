@@ -358,6 +358,112 @@ void AffichageActorsZBuf(void) {
     }
 }
 
+// Matches RENDERER_API.CPP's own WORLD_CUBE_SIZE (HOLO.H's SCE: 32768 world
+// units per exterior cube), duplicated rather than shared to keep this
+// file's only dependency on the renderer API boundary at zero.
+#define WIDE_WORLD_CUBE_SIZE 32768
+
+extern int RendererLoadCubeScene(int cubeX, int cubeY);
+extern int RendererLoadNeighborCubeData(int cubeX, int cubeY);
+
+// Renders `radiusCubes` rings of neighboring cubes around the currently-
+// loaded one (CurrentCubeX/CurrentCubeY) into the same frame, instead of
+// just the one cube AffGrilleExt() draws. The classic exterior renderer's
+// terrain grid, decor list and actor list (MapSommetY, ListDecors,
+// ListObjet, ...) are all fixed-size, single-cube buffers -- there's no
+// making them hold several cubes' data at once without resizing and
+// rebasing coordinate math throughout terrain/decor/object rendering, a
+// much larger and riskier change. Instead, this reuses those buffers
+// exactly as they already work: load one cube's data, draw it, load the
+// next cube's data in its place, draw that too -- into the *same*
+// Z-buffered color/depth buffer, cleared only once at the very start of
+// the frame rather than per cube (see ClsTerrainZBuf()). As long as every
+// cube's camera is positioned at the same real-world stance (just expressed
+// in that cube's own local 0-32768 frame, the same way lba2_renderer_set_
+// view_target() already re-expresses a world position for whichever cube
+// contains it), depth values computed independently per cube are still
+// directly comparable, so ordinary Z-buffer occlusion composites them
+// correctly with no awareness on either side that it's happening -- nearer
+// terrain from one cube's pass correctly hides farther terrain from
+// another's, actors occlude neighboring cubes' terrain and vice versa, etc.
+//
+// This does make each wide frame cost roughly (2*radiusCubes+1)^2 cube
+// loads instead of one, so it trades per-frame cost for coverage; callers
+// should reserve it for when the camera is pulled back enough that a
+// single cube's worth of terrain visibly runs out before the horizon does,
+// not use it for every frame regardless of zoom.
+void AffGrilleExtWide(int radiusCubes) {
+    S32 centerCubeX = CurrentCubeX, centerCubeY = CurrentCubeY;
+    S32 centerWorldX = centerCubeX * WIDE_WORLD_CUBE_SIZE + VueOffsetX;
+    S32 centerWorldY = VueOffsetY;
+    S32 centerWorldZ = centerCubeY * WIDE_WORLD_CUBE_SIZE + VueOffsetZ;
+
+    SetFollowCamera(VueOffsetX, VueOffsetY, VueOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
+    SetLightVector(AlphaLight, BetaLight, 0);
+
+    Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
+    ClearAniPoly();
+    ClsTerrainZBuf();
+
+    ManageSystem();
+
+#ifdef LBA_EDITOR
+    if ((FlagInfos & INFO_HORIZON) && RendererDrawSky)
+#else
+    if (FlagDrawHorizon && RendererDrawSky)
+#endif
+    {
+        DrawHorizon2ZBuf();
+    }
+
+    ManageSystem();
+
+    for (S32 dy = -radiusCubes; dy <= radiusCubes; dy++) {
+        for (S32 dx = -radiusCubes; dx <= radiusCubes; dx++) {
+            S32 cx = centerCubeX + dx, cy = centerCubeY + dy;
+            if (cx < 0 || cx > 15 || cy < 0 || cy > 15) continue;
+
+            if (dx != 0 || dy != 0) {
+                // RendererLoadNeighborCubeData (not a raw LoadCube() call)
+                // re-applies the editor's widened fog/clip distance on top
+                // of this cube's own, much narrower, shipped defaults --
+                // skipping that left every neighbor cube's terrain fogged
+                // as if the camera were still only its own cube's usual
+                // viewing distance away, which is short enough that
+                // farther neighbors washed out to the fog color almost
+                // entirely.
+                if (!RendererLoadNeighborCubeData(cx, cy)) continue;
+                S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
+                S32 localOffsetZ = centerWorldZ - cy * WIDE_WORLD_CUBE_SIZE;
+                SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
+            }
+
+            AffichageTerrainZBuf();
+            AffichageActorsZBuf();
+        }
+    }
+
+    // Restore the primary cube's own terrain/actors/camera so callers that
+    // run after this (lba2_renderer_project_point, another ordinary
+    // lba2_renderer_render_frame, etc.) keep seeing the cube the camera
+    // nominally targets, not whichever neighbor was drawn last.
+    RendererLoadNeighborCubeData(centerCubeX, centerCubeY);
+    SetFollowCamera(VueOffsetX, VueOffsetY, VueOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
+
+    ManageSystem();
+
+    if (RendererDrawSky)
+        DrawSkySeaZBuf();
+
+    ManageSystem();
+
+    FiltreAnimatedPolys();
+
+    Switch_Fillers(FILL_POLY_TEXTURES);
+
+    CopyScreen(Log, Screen);
+}
+
 void AffGrilleExt() {
     SetFollowCamera(VueOffsetX, VueOffsetY, VueOffsetZ,
                     AlphaCam, BetaCam, GammaCam,

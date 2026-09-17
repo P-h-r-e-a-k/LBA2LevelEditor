@@ -200,17 +200,22 @@ int lba2_renderer_load_island(const char *name)
 extern int RendererLoadCubeScene(int cubeX, int cubeY);
 extern S32 NbObjets;
 
-int lba2_renderer_load_cube(int x, int y)
+// Loads one cube's terrain+actors and re-applies the editor's wider view
+// distance on top (LoadCube() resets ClipZFar/StartZFog from the cube's own,
+// much narrower, shipped data every time it's called -- see the note on
+// lba2_renderer_set_view_distance below). Shared by lba2_renderer_load_cube()
+// (the primary/camera-target cube, which also updates CurrentCubeX/Y) and
+// AffGrilleExtWide's neighbor-cube loop (EXTFUNC.CPP -- which must *not*
+// update CurrentCubeX/Y, since lba2_renderer_project_point() uses those to
+// know which cube's local frame a world point should be re-expressed in
+// before projecting, and every point in a wide frame needs to be re-expressed
+// relative to the same primary cube the camera is actually anchored to,
+// regardless of which cube's terrain happens to contain it).
+static int RendererLoadCubeData(S32 x, S32 y)
 {
-    CurrentCubeX = x;
-    CurrentCubeY = y;
     S32 result = LoadCube(x, y);
     if (result) {
         Init3DExtGame();
-        // LoadCube() just overwrote ClipZFar/StartZFog from this cube's own
-        // data (LOADISLE.CPP) and re-ran SetFog() with them; re-apply the
-        // wider editor defaults on top so every cube gets the same generous
-        // view distance regardless of what it shipped with.
         lba2_renderer_set_view_distance(RendererStartFog, RendererClipFar);
 
         // LoadCube() only loads terrain (ISLAND.HQR); actors live in a
@@ -224,6 +229,26 @@ int lba2_renderer_load_cube(int x, int y)
         if (!RendererLoadCubeScene(x, y)) NbObjets = 1;
     }
     return result;
+}
+
+int lba2_renderer_load_cube(int x, int y)
+{
+    CurrentCubeX = x;
+    CurrentCubeY = y;
+    return RendererLoadCubeData(x, y);
+}
+
+// Used by AffGrilleExtWide (EXTFUNC.CPP) to load a neighboring cube's
+// terrain/actors -- same as lba2_renderer_load_cube() but deliberately
+// leaves CurrentCubeX/Y (and therefore lba2_renderer_project_point()'s
+// frame of reference) pointed at the primary cube. See RendererLoadCubeData's
+// own comment for why that matters. Ordinary C++ linkage (like
+// RendererLoadCubeScene below it, called the same cross-file way) -- not
+// part of the extern "C" DLL-export boundary those other functions share,
+// since this one is only ever called from within the native library itself.
+int RendererLoadNeighborCubeData(int x, int y)
+{
+    return RendererLoadCubeData(x, y);
 }
 
 // Matches HOLO.H's SCE ("SizeXZ Cube Exterieur"): each exterior cube spans
@@ -300,6 +325,15 @@ int lba2_renderer_project_point(int worldX, int worldY, int worldZ, int *screenX
 int lba2_renderer_render_frame(void)
 {
     AffGrilleExt();
+    return 1;
+}
+
+extern void AffGrilleExtWide(int radiusCubes);
+
+int lba2_renderer_render_frame_wide(int radiusCubes)
+{
+    if (radiusCubes < 0) radiusCubes = 0;
+    AffGrilleExtWide(radiusCubes);
     return 1;
 }
 

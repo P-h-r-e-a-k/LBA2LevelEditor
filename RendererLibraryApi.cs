@@ -13,6 +13,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int LoadCubeFn(int x, int y);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetViewTargetFn(int worldX, int worldY, int worldZ);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderFrameFn();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderFrameWideFn(int radiusCubes);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetCameraFn(int alpha, int beta, int gamma, int distance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSkyFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr FramebufferFn(out int width, out int height, out int pitch);
@@ -31,6 +32,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private LoadCubeFn? loadCube;
     private SetViewTargetFn? setViewTarget;
     private RenderFrameFn? renderFrame;
+    private RenderFrameWideFn? renderFrameWide;
     private SetCameraFn? setCamera;
     private SetDrawSkyFn? setDrawSky;
     private FramebufferFn? framebuffer;
@@ -51,6 +53,7 @@ internal sealed class RendererLibraryApi : IDisposable
         loadIsland = Get<LoadIslandFn>("lba2_renderer_load_island"); loadCube = Get<LoadCubeFn>("lba2_renderer_load_cube");
         setViewTarget = Get<SetViewTargetFn>("lba2_renderer_set_view_target");
         renderFrame = Get<RenderFrameFn>("lba2_renderer_render_frame"); setCamera = Get<SetCameraFn>("lba2_renderer_set_camera"); framebuffer = Get<FramebufferFn>("lba2_renderer_framebuffer");
+        renderFrameWide = Get<RenderFrameWideFn>("lba2_renderer_render_frame_wide");
         setDrawSky = Get<SetDrawSkyFn>("lba2_renderer_set_draw_sky");
         getActorCount = Get<GetActorCountFn>("lba2_renderer_get_actor_count");
         getActor = Get<GetActorFn>("lba2_renderer_get_actor");
@@ -71,6 +74,13 @@ internal sealed class RendererLibraryApi : IDisposable
     public int LoadCube(int x, int y) => loadCube?.Invoke(x, y) ?? 0;
     public int SetViewTarget(int worldX, int worldY, int worldZ) => setViewTarget?.Invoke(worldX, worldY, worldZ) ?? 0;
     public int RenderFrame() => renderFrame?.Invoke() ?? 0;
+    // radiusCubes=0 behaves exactly like RenderFrame(); >0 also loads and
+    // draws that many rings of neighboring cubes into the same frame (see
+    // AffGrilleExtWide/lba2_renderer_render_frame_wide for how). Costs
+    // roughly (2*radiusCubes+1)^2 cube loads, so callers should reserve
+    // larger radii for camera distances where a single cube's terrain
+    // visibly runs out before the horizon does.
+    public int RenderFrameWide(int radiusCubes) => renderFrameWide?.Invoke(radiusCubes) ?? RenderFrame();
     public void SetCamera(int alpha, int beta, int gamma, int distance) => setCamera?.Invoke(alpha, beta, gamma, distance);
     public void SetDrawSky(bool enabled) => setDrawSky?.Invoke(enabled ? 1 : 0);
     public IntPtr GetFramebuffer(out int width, out int height, out int pitch)
@@ -120,7 +130,7 @@ internal sealed class RendererLibraryApi : IDisposable
         NativeLibrary.Free(handle);
         handle = IntPtr.Zero;
         version = null;
-        initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; setCamera = null; setDrawSky = null; framebuffer = null;
+        initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; renderFrameWide = null; setCamera = null; setDrawSky = null; framebuffer = null;
         getActorCount = null; getActor = null; getActorWaypoint = null; getActorAttributes = null; getActorScript = null; projectPoint = null;
     }
 }
