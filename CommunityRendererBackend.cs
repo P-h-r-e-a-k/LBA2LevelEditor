@@ -127,22 +127,29 @@ internal sealed class CommunityRendererBackend
     private const int TopDownAlpha = 1023;
     private const int TopDownDistance = 50000;
 
-    // The exact calibrated crop is [124,44]-[516,436] (392x392, see the
-    // corner-projection note above), but cropping to precisely that leaves a
-    // visible seam of background color between adjacent cube tiles: the
-    // terrain rasterizer doesn't quite draw all the way to the true cube
-    // edge (by a handful of pixels, most likely rounding/clip-cone slack
-    // rather than the exact-corner projection being wrong), so a tile
-    // cropped to exactly its own bounds has a thin unrendered strip along
-    // each edge, and two such strips meeting at a shared boundary show up as
-    // a solid line. Overscanning -- sampling a margin wider than one cube
-    // on every side, still centered the same -- means that strip gets
-    // painted over by content spilling in from the *next* cube's own
-    // overscanned tile, since compositing just writes cube tiles in whatever
-    // order presentCubes lists them. The ~4% larger world footprint per tile
-    // this implies is not worth correcting for a minimap.
-    private const int TopDownOverscanMargin = 40;
-    private const int TopDownCropX0 = 124 - TopDownOverscanMargin, TopDownCropY0 = 44 - TopDownOverscanMargin, TopDownCropSize = 392 + TopDownOverscanMargin * 2;
+    // The exact calibrated cube bounds are [124,44]-[516,436] (392x392, see
+    // the corner-projection note above), but cropping to precisely that
+    // leaves a visible seam of background color between adjacent cube
+    // tiles: the terrain rasterizer only reliably draws within roughly a
+    // 185px radius of frame center at this distance (measured directly --
+    // walking outward from center on all four sides across 8 different
+    // cubes and finding where each row/column turns solidly into
+    // background color; the true per-cube edge is at radius 196, so
+    // anywhere from a handful up to ~14 px past that measured radius is
+    // simply never drawn, apparently a clip-cone rounding effect rather
+    // than the corner projection being wrong). A first attempt at fixing
+    // this by overscanning (cropping *wider* than one cube, on the theory
+    // that a neighboring cube's own overscanned tile would paint over the
+    // gap) made it worse: every cube's render is independent and centered
+    // on itself, so there's no actual neighboring content anywhere in a
+    // single cube's own framebuffer to spill over -- overscanning just
+    // captured proportionally *more* of the same background. Cropping
+    // *tighter* than one cube instead, to a radius safely inside what's
+    // reliably drawn everywhere, and stretching that up to fill the same
+    // output tile, keeps every sampled pixel real; the corresponding
+    // ~7% per-tile zoom-in is not worth correcting for a minimap.
+    private const int TopDownSafeRadius = 180;
+    private const int TopDownCropX0 = 320 - TopDownSafeRadius, TopDownCropY0 = 240 - TopDownSafeRadius, TopDownCropSize = TopDownSafeRadius * 2;
     private const int TopDownTileSize = 256;
 
     // Renders a full island top-down, cube by cube, through the community

@@ -667,6 +667,15 @@ public partial class MainWindow : Window
         // reasserts the checkbox's actual state instead of trusting
         // whatever the native flag happened to be left at.
         library?.SetDrawSky(SkyCheckBox.IsChecked == true);
+        // Only the currently-loaded cube has terrain drawn at all (the
+        // "single area cube" limitation), so an actor or waypoint sitting in
+        // any other cube still projects to *some* on-screen position -- with
+        // nothing rendered underneath it, which read as routes/flags
+        // floating in mid-air with no ground beneath them. Restricting the
+        // overlay to the loaded cube keeps everything drawn pinned to
+        // terrain that's actually visible.
+        var currentCubeX = (int)Math.Floor(targetX / 32768.0);
+        var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
         List<(int, double, double)>? projected = null;
         List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
         _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
@@ -679,6 +688,7 @@ public partial class MainWindow : Window
                 for (var i = 0; i < count; i++)
                 {
                     if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
+                    if ((int)Math.Floor(x / 32768.0) != currentCubeX || (int)Math.Floor(z / 32768.0) != currentCubeY) continue;
                     if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
                     list.Add((i, sx, sy));
 
@@ -687,6 +697,11 @@ public partial class MainWindow : Window
                     for (var w = 0; w < waypointCount; w++)
                     {
                         if (!library.GetActorWaypoint(i, w, out var wx, out var wy, out var wz)) continue;
+                        // A waypoint the actor's own patrol route reaches
+                        // outside the loaded cube would be just as un-pinned
+                        // as an actor would be -- truncate the route there
+                        // rather than drawing a segment into empty space.
+                        if ((int)Math.Floor(wx / 32768.0) != currentCubeX || (int)Math.Floor(wz / 32768.0) != currentCubeY) break;
                         if (!library.ProjectPoint(wx, wy, wz, out var wsx, out var wsy)) continue;
                         points.Add(new Point(wsx, wsy));
                     }
