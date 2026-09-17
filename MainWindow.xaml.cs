@@ -33,7 +33,10 @@ public partial class MainWindow : Window
     private bool orbiting;
     private bool nativeViewActive;
     private CancellationTokenSource? nativeRenderCancellation;
-    private int nativeRenderRequest;
+    private readonly object nativeRenderGate = new();
+    private bool nativeRenderInFlight;
+    private bool nativeRenderDirty;
+    private bool desiredSkyEnabled = true;
     private int minimapRequest;
     private byte[] palette = Array.Empty<byte>();
     private byte[] shadeTable = Array.Empty<byte>();
@@ -685,101 +688,143 @@ public partial class MainWindow : Window
     private void RenderNativeCamera()
     {
         if (!nativeViewActive) return;
-        nativeRenderCancellation?.Cancel();
-        nativeRenderCancellation = new CancellationTokenSource();
-        var request = Interlocked.Increment(ref nativeRenderRequest);
-        var islandName = Path.GetFileNameWithoutExtension(activeFile);
-        var token = nativeRenderCancellation.Token;
-        var library = nativeRenderer.RendererLibrary;
         // RenderIslandTopDown() (the minimap) turns sky off natively for its
         // own straight-down snapshots and has no reason to turn it back on
-        // afterward -- it doesn't know what the checkbox says. Since that's
-        // the same shared native renderer instance the main view uses,
-        // leaving that unset here meant the very first minimap regeneration
-        // silently killed sky rendering for the main view for the rest of
-        // the session, regardless of the checkbox: every pan/zoom re-render
+        // afterward -- it doesn't know what the checkbox says. Read it here,
+        // on the UI thread (the render loop below runs on a background
+        // thread and can't touch a WPF control directly), so every render
         // reasserts the checkbox's actual state instead of trusting
         // whatever the native flag happened to be left at.
-        library?.SetDrawSky(SkyCheckBox.IsChecked == true);
-        // Same reasoning as SetDrawSky just above: the minimap turns sea off
-        // for its own top-down snapshots and never turns it back on, since
-        // it has no reason to know the main view wants it -- reassert on
-        // every render so a minimap regeneration can't leave the main view's
-        // sea silently disabled.
-        library?.SetDrawSea(true);
-        // Past a certain zoom-out level, a single cube's terrain visibly
-        // runs out before the horizon does -- AffGrilleExtWide loads and
-        // draws neighboring cubes into the same frame to cover that, at the
-        // cost of roughly (2*radius+1)^2 cube loads instead of 1, so it's
-        // only worth asking for once the camera is far back enough to need
-        // it. The actor/waypoint overlay filter below uses this same radius
-        // so it shows exactly the actors sitting on terrain this frame
-        // actually drew, whichever cube each one happens to be in.
-        var wideRadius = nativeDistance < 20000 ? 0 : nativeDistance < 35000 ? 1 : 2;
-        var currentCubeX = (int)Math.Floor(targetX / 32768.0);
-        var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
-        List<(int, double, double)>? projected = null;
-        List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
-        _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
-            wideRadiusCubes: wideRadius,
-            afterRenderBeforeUnlock: () =>
-            {
-                if (library is null) return;
-                var count = library.GetActorCount();
-                var list = new List<(int, double, double)>(count);
-                var routes = new List<(int, List<Point>)>();
-                for (var i = 0; i < count; i++)
-                {
-                    if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
-                    if (Math.Abs((int)Math.Floor(x / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(z / 32768.0) - currentCubeY) > wideRadius) continue;
-                    if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
-                    list.Add((i, sx, sy));
-
-                    if (waypointCount <= 0) continue;
-                    var points = new List<Point> { new(sx, sy) };
-                    for (var w = 0; w < waypointCount; w++)
-                    {
-                        if (!library.GetActorWaypoint(i, w, out var wx, out var wy, out var wz)) continue;
-                        // A waypoint outside the drawn radius would be just
-                        // as un-pinned as an actor would be -- truncate the
-                        // route there rather than drawing a segment into
-                        // empty space.
-                        if (Math.Abs((int)Math.Floor(wx / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(wz / 32768.0) - currentCubeY) > wideRadius) break;
-                        if (!library.ProjectPoint(wx, wy, wz, out var wsx, out var wsy)) continue;
-                        points.Add(new Point(wsx, wsy));
-                    }
-                    if (points.Count > 1) routes.Add((i, points));
-                }
-                projected = list;
-                projectedRoutes = routes;
-            }), token).ContinueWith(task =>
+        desiredSkyEnabled = SkyCheckBox.IsChecked == true;
+        nativeRenderCancellation ??= new CancellationTokenSource();
+        var token = nativeRenderCancellation.Token;
+        lock (nativeRenderGate)
         {
-            if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested || request != nativeRenderRequest) return;
-            Dispatcher.Invoke(() =>
-            {
-                if (request != nativeRenderRequest) return;
-                if (task.Result is null)
+            nativeRenderDirty = true;
+            if (nativeRenderInFlight) return;
+            nativeRenderInFlight = true;
+        }
+        // Runs as a loop rather than spawning one task per call: mouse-drag
+        // and wheel events fire dozens of times a second, and at
+        // wideRadius>=1 every render reloads/redraws up to 25 cubes
+        // (AffGrilleExtWide) through the single shared directRenderLock --
+        // spawning a full render per event just queued them up behind that
+        // lock, so the view kept grinding through already-superseded frames
+        // long after the mouse had moved on (reported as "slow to react" at
+        // zoom <=150%, i.e. wideRadius>=1). Only one render is ever in
+        // flight; a call that arrives mid-render just sets nativeRenderDirty
+        // so the loop goes around again with the latest field values,
+        // instead of a second task queuing its own redundant pass.
+        _ = Task.Run(() => RunNativeRenderLoop(token), token);
+    }
+
+    private void RunNativeRenderLoop(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            lock (nativeRenderGate) { nativeRenderDirty = false; }
+
+            var islandName = Path.GetFileNameWithoutExtension(activeFile);
+            var library = nativeRenderer.RendererLibrary;
+            library?.SetDrawSky(desiredSkyEnabled);
+            // Same reasoning as SetDrawSky just above: the minimap turns sea
+            // off for its own top-down snapshots and never turns it back on,
+            // since it has no reason to know the main view wants it --
+            // reassert on every render so a minimap regeneration can't leave
+            // the main view's sea silently disabled.
+            library?.SetDrawSea(true);
+            // Past a certain zoom-out level, a single cube's terrain visibly
+            // runs out before the horizon does -- AffGrilleExtWide loads and
+            // draws neighboring cubes into the same frame to cover that, at
+            // the cost of roughly (2*radius+1)^2 cube loads instead of 1, so
+            // it's only worth asking for once the camera is far back enough
+            // to need it. The actor/waypoint overlay filter below uses this
+            // same radius so it shows exactly the actors sitting on terrain
+            // this frame actually drew, whichever cube each one happens to
+            // be in.
+            var wideRadius = nativeDistance < 20000 ? 0 : nativeDistance < 35000 ? 1 : 2;
+            var currentCubeX = (int)Math.Floor(targetX / 32768.0);
+            var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
+            List<(int, double, double)>? projected = null;
+            List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
+
+            var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
+                wideRadiusCubes: wideRadius,
+                afterRenderBeforeUnlock: () =>
                 {
-                    // The current world position has no loaded cube data (should
-                    // only happen if a caller bypasses TryPan's clamping). Fall
-                    // back to the movable CPU rasterizer instead of leaving a
-                    // frozen frame on screen.
-                    nativeViewActive = false;
-                    DocumentSummary.Text = DocumentSummary.Text.Replace("native 3D", "software 3D (native unavailable)");
-                    RenderSoftwareTerrain();
+                    if (library is null) return;
+                    var count = library.GetActorCount();
+                    var list = new List<(int, double, double)>(count);
+                    var routes = new List<(int, List<Point>)>();
+                    for (var i = 0; i < count; i++)
+                    {
+                        if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
+                        if (Math.Abs((int)Math.Floor(x / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(z / 32768.0) - currentCubeY) > wideRadius) continue;
+                        if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
+                        list.Add((i, sx, sy));
+
+                        if (waypointCount <= 0) continue;
+                        var points = new List<Point> { new(sx, sy) };
+                        for (var w = 0; w < waypointCount; w++)
+                        {
+                            if (!library.GetActorWaypoint(i, w, out var wx, out var wy, out var wz)) continue;
+                            // A waypoint outside the drawn radius would be just
+                            // as un-pinned as an actor would be -- truncate the
+                            // route there rather than drawing a segment into
+                            // empty space.
+                            if (Math.Abs((int)Math.Floor(wx / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(wz / 32768.0) - currentCubeY) > wideRadius) break;
+                            if (!library.ProjectPoint(wx, wy, wz, out var wsx, out var wsy)) continue;
+                            points.Add(new Point(wsx, wsy));
+                        }
+                        if (points.Count > 1) routes.Add((i, points));
+                    }
+                    projected = list;
+                    projectedRoutes = routes;
+                });
+
+            var stopLoop = false;
+            if (!token.IsCancellationRequested)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (token.IsCancellationRequested) return;
+                    if (bitmap is null)
+                    {
+                        // The current world position has no loaded cube data
+                        // (should only happen if a caller bypasses TryPan's
+                        // clamping). Fall back to the movable CPU rasterizer
+                        // instead of leaving a frozen frame on screen, and
+                        // stop this loop -- nativeViewActive is now false, so
+                        // there's nothing left for it to render.
+                        nativeViewActive = false;
+                        DocumentSummary.Text = DocumentSummary.Text.Replace("native 3D", "software 3D (native unavailable)");
+                        RenderSoftwareTerrain();
+                        stopLoop = true;
+                        return;
+                    }
+                    TerrainViewport.Source = bitmap;
+                    if (actorMarkersIsland != islandName)
+                    {
+                        actorMarkersIsland = islandName;
+                        DrawActorMarkers();
+                    }
+                    lastNativeActorScreens = projected;
+                    lastNativeActorRoutes = projectedRoutes;
+                    DrawNativeActorOverlay();
+                });
+            }
+
+            lock (nativeRenderGate)
+            {
+                if (stopLoop || !nativeRenderDirty || token.IsCancellationRequested)
+                {
+                    nativeRenderInFlight = false;
                     return;
                 }
-                TerrainViewport.Source = task.Result;
-                if (actorMarkersIsland != islandName)
-                {
-                    actorMarkersIsland = islandName;
-                    DrawActorMarkers();
-                }
-                lastNativeActorScreens = projected;
-                lastNativeActorRoutes = projectedRoutes;
-                DrawNativeActorOverlay();
-            });
-        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }
+        }
+
+        lock (nativeRenderGate) { nativeRenderInFlight = false; }
     }
 
     // Actors are scanned natively once per lba2_renderer_load_island() call
