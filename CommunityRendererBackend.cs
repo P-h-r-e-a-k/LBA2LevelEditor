@@ -54,7 +54,18 @@ internal sealed class CommunityRendererBackend
     public bool DirectRendererLoaded => RendererLibrary?.IsLoaded == true;
     public bool DirectRendererReady => RendererLibrary?.IsRendererReady == true;
 
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000)
+    // afterRenderBeforeUnlock runs (if given) immediately after a successful
+    // RenderFrame(), still inside directRenderLock -- i.e. before any other
+    // thread can call SetViewTarget/SetCamera/RenderFrame again and move the
+    // native camera state (LongWorldRotatePoint's MatriceWorld, X0/Y0/Z0,
+    // etc.) out from under it. Used by the actor-marker overlay to compute
+    // lba2_renderer_project_point() results for the exact camera that
+    // produced the frame it's about to be drawn on top of, instead of
+    // reprojecting later from the UI thread where a newer in-flight render
+    // (from rapid dragging) could have already changed that shared state --
+    // the visible symptom of that race was actor markers "swimming" a few
+    // pixels out of sync with the terrain while panning.
+    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -74,6 +85,7 @@ internal sealed class CommunityRendererBackend
             if (RendererLibrary.SetViewTarget(worldX, worldY, worldZ) == 0) { directFailure = $"set view target failed: {baseName} {worldX},{worldY},{worldZ}"; return null; }
             RendererLibrary.SetCamera(alpha, beta, gamma, distance);
             if (RendererLibrary.RenderFrame() == 0) { directFailure = "native render returned failure"; return null; }
+            afterRenderBeforeUnlock?.Invoke();
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }
             var pixels = new byte[width * height];

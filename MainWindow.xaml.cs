@@ -100,6 +100,7 @@ public partial class MainWindow : Window
             selectedActorIndex = null;
             ActorInspectorPanel.Visibility = Visibility.Collapsed;
             ActorMarkerCanvas.Children.Clear();
+            lastNativeActorScreens = null;
             RegenerateMinimap();
             if (nativeRenderer.DirectRendererReady)
             {
@@ -191,51 +192,27 @@ public partial class MainWindow : Window
     // ShowActorInspector) instead.
     private int? selectedActorIndex;
 
+    // Software view only: no real body-mesh rendering exists on this path
+    // (SoftwareTerrainRenderer is a from-scratch CPU rasterizer, not the
+    // community engine), so a dot is the only representation available.
+    // Native view uses DrawNativeActorOverlay() instead -- see its own
+    // comment for why.
     private void UpdateActorMarkersOverlay()
     {
         ActorMarkerCanvas.Children.Clear();
-        if (currentIsland is null) return;
+        if (currentIsland is null || nativeViewActive) return;
         var library = nativeRenderer.RendererLibrary;
         if (library is null) return;
         var width = (int)TerrainViewport.ActualWidth;
         var height = (int)TerrainViewport.ActualHeight;
         if (width < 1 || height < 1) return;
 
-        // Native view: the community renderer already built a camera matrix
-        // for whatever it just drew (RenderIslandDirect -> lba2_renderer_
-        // render_frame), so lba2_renderer_project_point() reuses that exact
-        // matrix (LongWorldRotatePoint/LongProjectPoint -- the same pair the
-        // engine itself uses to place actor sprites) instead of guessing at
-        // the native perspective/alpha-beta-gamma math in C#. Its output is
-        // in the renderer's fixed framebuffer resolution, so it's rescaled
-        // to whatever size Stretch="Fill" is actually displaying at.
-        double fbScaleX = 1, fbScaleY = 1;
-        if (nativeViewActive)
-        {
-            var fbPtr = library.GetFramebuffer(out var fbWidth, out var fbHeight, out _);
-            if (fbPtr == IntPtr.Zero || fbWidth < 1 || fbHeight < 1) return;
-            fbScaleX = width / (double)fbWidth;
-            fbScaleY = height / (double)fbHeight;
-        }
-
         var count = library.GetActorCount();
         for (var i = 0; i < count; i++)
         {
             if (!library.GetActor(i, out var x, out var y, out var z, out _)) continue;
-            double screenX, screenY;
-            if (nativeViewActive)
-            {
-                if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
-                screenX = sx * fbScaleX;
-                screenY = sy * fbScaleY;
-            }
-            else
-            {
-                var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
-                if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var wx, out var wy)) continue;
-                screenX = wx;
-                screenY = wy;
-            }
+            var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
+            if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var screenX, out var screenY)) continue;
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
 
             var selected = selectedActorIndex == i;
@@ -256,12 +233,79 @@ public partial class MainWindow : Window
         }
     }
 
+    // Native view: actors render with their real bodies as part of the
+    // native bitmap itself (EXTFUNC.CPP's AffichageActorsZBuf(), called from
+    // AffGrilleExt() during lba2_renderer_render_frame()), so no dot is
+    // drawn here -- only an invisible click target per actor (so the
+    // inspector panel still works) plus a highlight ring around whichever
+    // actor is currently selected.
+    //
+    // The screen positions come from RenderNativeCamera()'s render call,
+    // computed via lba2_renderer_project_point() *while still holding the
+    // native renderer's lock*, immediately after the frame that they match
+    // was drawn (see CommunityRendererBackend.RenderIslandDirect's
+    // afterRenderBeforeUnlock parameter). Computing them here instead, after
+    // the fact, was the original bug: with rapid panning, a newer in-flight
+    // render could already have moved the shared native camera state before
+    // this ran, so the markers projected against a different camera than
+    // the one that actually produced the displayed frame -- visible as the
+    // markers "swimming" a few pixels relative to the terrain.
+    private List<(int Index, double ScreenX, double ScreenY)>? lastNativeActorScreens;
+
+    private void DrawNativeActorOverlay()
+    {
+        ActorMarkerCanvas.Children.Clear();
+        if (!nativeViewActive || lastNativeActorScreens is null) return;
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null) return;
+        var width = (int)TerrainViewport.ActualWidth;
+        var height = (int)TerrainViewport.ActualHeight;
+        if (width < 1 || height < 1) return;
+        var fbPtr = library.GetFramebuffer(out var fbWidth, out var fbHeight, out _);
+        if (fbPtr == IntPtr.Zero || fbWidth < 1 || fbHeight < 1) return;
+        var scaleX = width / (double)fbWidth;
+        var scaleY = height / (double)fbHeight;
+
+        foreach (var (index, sx, sy) in lastNativeActorScreens)
+        {
+            var screenX = sx * scaleX;
+            var screenY = sy * scaleY;
+            if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
+
+            var selected = selectedActorIndex == index;
+            var hit = new System.Windows.Shapes.Ellipse
+            {
+                Width = 24,
+                Height = 24,
+                Fill = Brushes.Transparent,
+                Stroke = selected ? Brushes.Yellow : null,
+                StrokeThickness = 2,
+                Cursor = Cursors.Hand,
+                Tag = index,
+            };
+            hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+            Canvas.SetLeft(hit, screenX - hit.Width / 2);
+            Canvas.SetTop(hit, screenY - hit.Height / 2);
+            ActorMarkerCanvas.Children.Add(hit);
+        }
+    }
+
+    // Re-draws whichever overlay is active for the current view (dots for
+    // software, invisible hit targets + selection ring for native) after a
+    // selection change -- native re-projects nothing new here, it just
+    // redraws from the last camera-accurate projection already cached in
+    // lastNativeActorScreens.
+    private void RefreshActorOverlayForSelection()
+    {
+        if (nativeViewActive) DrawNativeActorOverlay(); else UpdateActorMarkersOverlay();
+    }
+
     private void ActorMarker_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is not int index) return;
         e.Handled = true;
         selectedActorIndex = index;
-        UpdateActorMarkersOverlay();
+        RefreshActorOverlayForSelection();
         ShowActorInspector(index);
     }
 
@@ -284,7 +328,7 @@ public partial class MainWindow : Window
     {
         selectedActorIndex = null;
         ActorInspectorPanel.Visibility = Visibility.Collapsed;
-        UpdateActorMarkersOverlay();
+        RefreshActorOverlayForSelection();
     }
 
     // Islands are a 16x16 grid of cubes, each spanning 32768 world units
@@ -498,7 +542,22 @@ public partial class MainWindow : Window
         var request = Interlocked.Increment(ref nativeRenderRequest);
         var islandName = Path.GetFileNameWithoutExtension(activeFile);
         var token = nativeRenderCancellation.Token;
-        _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance), token).ContinueWith(task =>
+        var library = nativeRenderer.RendererLibrary;
+        List<(int, double, double)>? projected = null;
+        _ = Task.Run(() => nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
+            afterRenderBeforeUnlock: () =>
+            {
+                if (library is null) return;
+                var count = library.GetActorCount();
+                var list = new List<(int, double, double)>(count);
+                for (var i = 0; i < count; i++)
+                {
+                    if (!library.GetActor(i, out var x, out var y, out var z, out _)) continue;
+                    if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
+                    list.Add((i, sx, sy));
+                }
+                projected = list;
+            }), token).ContinueWith(task =>
         {
             if (task.IsCanceled || task.IsFaulted || token.IsCancellationRequested || request != nativeRenderRequest) return;
             Dispatcher.Invoke(() =>
@@ -521,7 +580,8 @@ public partial class MainWindow : Window
                     actorMarkersIsland = islandName;
                     DrawActorMarkers();
                 }
-                UpdateActorMarkersOverlay();
+                lastNativeActorScreens = projected;
+                DrawNativeActorOverlay();
             });
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
@@ -569,7 +629,7 @@ public partial class MainWindow : Window
             MinimapActorCanvas.Children.Add(dot);
         }
     }
-    private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (nativeViewActive) UpdateActorMarkersOverlay(); else RenderSoftwareTerrain(); }
+    private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (nativeViewActive) DrawNativeActorOverlay(); else RenderSoftwareTerrain(); }
     private void Window_Loaded(object sender, RoutedEventArgs e) { }
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

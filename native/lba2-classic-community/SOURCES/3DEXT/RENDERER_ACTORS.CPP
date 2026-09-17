@@ -50,6 +50,15 @@ static std::vector<S32> g_waypointX;
 static std::vector<S32> g_waypointY;
 static std::vector<S32> g_waypointZ;
 
+// Scene index for each of the island's 16x16 cubes (-1 where no exterior
+// scene covers that cube), filled in by RendererScanIslandActors() -- it
+// already visits every scene and reads each one's (cubeX, cubeY) via
+// PeekSceneCube(), so this is a free byproduct of that scan rather than a
+// second pass. Used by RendererLoadCubeScene() to find which scene to load
+// -- with real actor data and initialized bodies -- for whichever cube the
+// camera has just moved to.
+static S32 g_sceneForCube[16][16];
+
 // ---------------------------------------------------------------------
 // Read-only script disassembly.
 //
@@ -635,6 +644,9 @@ int RendererScanIslandActors(int islandIndex)
     g_waypointX.clear();
     g_waypointY.clear();
     g_waypointZ.clear();
+    for (S32 cy = 0; cy < 16; cy++)
+        for (S32 cx = 0; cx < 16; cx++)
+            g_sceneForCube[cy][cx] = -1;
     if (islandIndex < 0) return 0;
 
     S32 savedFlagLoadGame = FlagLoadGame;
@@ -657,6 +669,7 @@ int RendererScanIslandActors(int islandIndex)
     for (S32 scene = 0; scene <= 221; scene++) {
         S32 cubeX, cubeY;
         if (!PeekSceneCube(scene, islandIndex, &cubeX, &cubeY)) continue;
+        if (cubeX >= 0 && cubeX < 16 && cubeY >= 0 && cubeY < 16) g_sceneForCube[cubeY][cubeX] = scene;
         if (!LoadScene(scene)) continue;
 
         S32 baseX = cubeX * ACTORS_WORLD_CUBE_SIZE;
@@ -687,6 +700,62 @@ int RendererScanIslandActors(int islandIndex)
     FlagLoadGame = savedFlagLoadGame;
     LastCubeMode = savedLastCubeMode;
     return (int)g_actors.size();
+}
+
+extern void StartInitAllObjs(void);
+
+// Loads the real scene for the cube the camera has just moved to -- with
+// live NbObjets/ListObjet actor data and (via StartInitAllObjs(), which the
+// engine's own ChangeCube() calls for the same reason on a real cube
+// transition) each actor's body/anim actually initialized, ready for
+// AffichageActorsZBuf() (EXTFUNC.CPP) to draw. Called from
+// lba2_renderer_load_cube() only when the cube actually changes.
+//
+// Deliberately does NOT call the full ChangeCube(): that also repositions
+// the hero from NewPosX/Y/Z-style gameplay state this headless renderer
+// never sets, which would be wrong here. This calls LoadScene() +
+// StartInitAllObjs() directly instead -- the two calls ChangeCube() itself
+// makes for the same reason on a real cube transition -- to get body/anim
+// initialization without the hero-reposition/save-state logic that comes
+// with the rest of ChangeCube().
+//
+// Unlike RendererScanIslandActors() above, this does NOT set
+// FlagLoadGame=TRUE: LoadScene() (DISKFUNC.CPP) only loads each object's
+// PtrFile3D (the per-object generic-body-name table SearchBody() walks to
+// resolve a GenBody index to an actual HQR_Bodys entry -- see FICHE.CPP)
+// when FlagLoadGame is false, and StartInitAllObjs()'s InitBody() calls
+// crash dereferencing a null PtrFile3D otherwise (confirmed: SearchBody()
+// segfault, gdb-bisected while adding this). FlagLoadGame=FALSE also
+// enables LoadScene()'s fade-to-black -- but only when CubeMode+
+// LastCubeMode != 2 (matching CUBE_EXTERIEUR to CUBE_EXTERIEUR sums to
+// exactly that), so keeping LastCubeMode=CUBE_EXTERIEUR set here (as the
+// actor scan also does) skips the fade the same way FlagLoadGame=TRUE would
+// have. FlagDrawHorizon is intentionally left alone (already TRUE) since
+// its own OR-branch of that same condition would otherwise force the fade
+// regardless of the CubeMode sum.
+//
+// A cube with no scene (g_sceneForCube == -1, e.g. open sea) leaves
+// NbObjets/ListObjet however LoadCube() left them; AffichageActorsZBuf()
+// looping over stale actors from a previous cube would draw them in the
+// wrong place, so the caller must not skip this and must treat a false
+// return as "no actors for this cube" by clearing NbObjets itself.
+int RendererLoadCubeScene(int cubeX, int cubeY)
+{
+    if (cubeX < 0 || cubeX >= 16 || cubeY < 0 || cubeY >= 16) return 0;
+    S32 scene = g_sceneForCube[cubeY][cubeX];
+    if (scene < 0) return 0;
+
+    S32 savedFlagLoadGame = FlagLoadGame;
+    S32 savedLastCubeMode = LastCubeMode;
+    FlagLoadGame = FALSE;
+    LastCubeMode = CUBE_EXTERIEUR;
+
+    S32 ok = LoadScene(scene);
+    if (ok) StartInitAllObjs();
+
+    FlagLoadGame = savedFlagLoadGame;
+    LastCubeMode = savedLastCubeMode;
+    return ok ? 1 : 0;
 }
 
 int RendererGetActorCount()

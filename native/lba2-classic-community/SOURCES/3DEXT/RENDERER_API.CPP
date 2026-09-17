@@ -197,6 +197,9 @@ int lba2_renderer_load_island(const char *name)
     return 1;
 }
 
+extern int RendererLoadCubeScene(int cubeX, int cubeY);
+extern S32 NbObjets;
+
 int lba2_renderer_load_cube(int x, int y)
 {
     CurrentCubeX = x;
@@ -209,6 +212,16 @@ int lba2_renderer_load_cube(int x, int y)
         // wider editor defaults on top so every cube gets the same generous
         // view distance regardless of what it shipped with.
         lba2_renderer_set_view_distance(RendererStartFog, RendererClipFar);
+
+        // LoadCube() only loads terrain (ISLAND.HQR); actors live in a
+        // separate SCENE.HQR record keyed by (island, cubeX, cubeY), so this
+        // cube's real NPCs (with bodies initialized, ready for
+        // AffichageActorsZBuf() -- EXTFUNC.CPP) have to be loaded
+        // separately. A cube with no scene (open sea) has no actors to draw
+        // this frame, so NbObjets is reset to 1 (object 0 is always the
+        // hero slot) rather than leaving stale actors from whichever cube
+        // was loaded previously.
+        if (!RendererLoadCubeScene(x, y)) NbObjets = 1;
     }
     return result;
 }

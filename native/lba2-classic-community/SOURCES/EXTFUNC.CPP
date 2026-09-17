@@ -314,6 +314,50 @@ void InitGrilleExt(U32 numcube) {
 
 /*──────────────────────────────────────────────────────────────────────────*/
 // Affiche la grille complète à la position actuelle de la caméra
+// Draws every non-hero object's real 3D body/anim (ObjectDisplay --
+// OBJECT/AFF_OBJ.H) into the same Z-buffered pass terrain and static decor
+// already draw into (AffichageObjetDecorsZBuf(), called from inside
+// AffichageTerrainZBuf() itself), so actors correctly occlude and get
+// occluded by both. This is the same rotate/project/set-interframe/display
+// sequence AffOneObject() (OBJECT.CPP) uses for the TYPE_OBJ_3D case and
+// CREDITS.CPP's minimal actor-drawing loop uses directly, without
+// AffOneObject's T_SORT/shadow/dirty-rect/background-copy bookkeeping --
+// none of that is needed for a single full redraw with no previous frame to
+// diff against.
+//
+// Requires ListObjet/NbObjets to already reflect the currently-loaded
+// cube's scene with each object's body initialized (see
+// RendererLoadCubeScene() in RENDERER_ACTORS.CPP, called from
+// lba2_renderer_load_cube()); if that never ran (e.g. NbObjets is still 0
+// or 1 from boot), this is a no-op.
+void AffichageActorsZBuf(void) {
+    for (S32 n = 1; n < NbObjets; n++) {
+        T_OBJET *ptrobj = &ListObjet[n];
+
+        // Sprite-based objects (pickups, flat decor) need a different draw
+        // call (InitSprite's path, not InitBody's) -- see StartInitObj's own
+        // SPRITE_3D branch. Left for later; this covers real 3D-bodied NPCs.
+        if (ptrobj->Flags & SPRITE_3D) continue;
+        if (ptrobj->Obj.Body.Num < 0) continue; // no body assigned/loaded
+
+        LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+        if (!LongProjectPoint(X0, Y0, Z0)) continue;
+
+        S32 zr = CameraZr - Z0;
+        if (zr > ClipZFar) continue;
+
+        SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
+        Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
+
+        if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
+            ObjectSetInterFrame(&ptrobj->Obj);
+        }
+
+        UnsetClip();
+        ObjectDisplay(&ptrobj->Obj);
+    }
+}
+
 void AffGrilleExt() {
     SetFollowCamera(VueOffsetX, VueOffsetY, VueOffsetZ,
                     AlphaCam, BetaCam, GammaCam,
@@ -341,6 +385,10 @@ void AffGrilleExt() {
     ManageSystem(); // for streaming
 
     AffichageTerrainZBuf();
+
+    ManageSystem(); // for streaming
+
+    AffichageActorsZBuf();
 
     ManageSystem(); // for streaming
 
