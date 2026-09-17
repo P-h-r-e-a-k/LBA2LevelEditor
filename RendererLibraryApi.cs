@@ -23,6 +23,9 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorWaypointFn(int actorIndex, int waypointIndex, out int x, out int y, out int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorAttributesFn(int index, out int beta, out int body, out int anim, out int lifePoint, out int armor, out int hitForce, out int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorScriptFn(int index, [Out] byte[]? buffer, int bufferSize);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorAttributesFn(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorPositionFn(int index, int worldX, int worldY, int worldZ);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int AddActorFn(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
     private IntPtr handle;
     private VersionFn? version;
@@ -43,6 +46,9 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetActorWaypointFn? getActorWaypoint;
     private GetActorAttributesFn? getActorAttributes;
     private GetActorScriptFn? getActorScript;
+    private SetActorAttributesFn? setActorAttributes;
+    private SetActorPositionFn? setActorPosition;
+    private AddActorFn? addActor;
     private ProjectPointFn? projectPoint;
 
     public RendererLibraryApi(string path)
@@ -63,6 +69,9 @@ internal sealed class RendererLibraryApi : IDisposable
         getActorWaypoint = Get<GetActorWaypointFn>("lba2_renderer_get_actor_waypoint");
         getActorAttributes = Get<GetActorAttributesFn>("lba2_renderer_get_actor_attributes");
         getActorScript = Get<GetActorScriptFn>("lba2_renderer_get_actor_script");
+        setActorAttributes = Get<SetActorAttributesFn>("lba2_renderer_set_actor_attributes");
+        setActorPosition = Get<SetActorPositionFn>("lba2_renderer_set_actor_position");
+        addActor = Get<AddActorFn>("lba2_renderer_add_actor");
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
 
@@ -123,6 +132,16 @@ internal sealed class RendererLibraryApi : IDisposable
         if (projectPoint is null) { screenX = screenY = 0; return false; }
         return projectPoint(worldX, worldY, worldZ, out screenX, out screenY) == 1;
     }
+    // Session-only: not written to disk by these calls alone. See
+    // lba2_renderer_set_actor_attributes's own doc comment (RENDERER_API.H)
+    // for exactly what "session-only" means here (live, survives panning,
+    // but gone on next app launch until a separate save operation exists).
+    public bool SetActorAttributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
+        => setActorAttributes?.Invoke(index, beta, body, anim, lifePoint, armor, hitForce, move) == 1;
+    public bool SetActorPosition(int index, int worldX, int worldY, int worldZ)
+        => setActorPosition?.Invoke(index, worldX, worldY, worldZ) == 1;
+    public int AddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
+        => addActor?.Invoke(worldX, worldY, worldZ, beta, body, anim, lifePoint, armor, hitForce, move) ?? -1;
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 

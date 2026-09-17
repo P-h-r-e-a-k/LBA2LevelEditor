@@ -8,10 +8,10 @@ namespace LBA2LevelEditor;
 // script. Replaces the old cramped, fixed-height, read-only TextBox that
 // used to live in the main window's right sidebar (squeezed in next to the
 // terrain-palette tools) with room to actually work, plus opcode/snippet
-// autocomplete. There is no script encoder anywhere in this project yet
-// (native or managed) -- see Lba2ScriptOpcodes's header comment -- so edits
-// made here are not written back to the game's SCENE.HQR; this window is
-// the editing *experience* landing first, ahead of persistence.
+// autocomplete. MainWindow opens one of these per actor (keyed by actor
+// index) rather than reusing a single instance, so several actors' scripts
+// can be open side by side, each as its own taskbar entry; closing one only
+// removes that actor's entry.
 public partial class ActorScriptWindow : Window
 {
     private sealed record SuggestionItem(string Signature, string Description, string InsertText);
@@ -20,6 +20,7 @@ public partial class ActorScriptWindow : Window
     private List<SuggestionItem> suggestionPool = new();
     private int currentWordStart;
     private bool suppressTextChanged;
+    private int actorIndex;
 
     internal ActorScriptWindow(RendererLibraryApi? library)
     {
@@ -28,10 +29,11 @@ public partial class ActorScriptWindow : Window
     }
 
     // Called both to first open the window for an actor and to re-point an
-    // already-open window at a newly clicked actor -- MainWindow keeps a
-    // single instance alive rather than spawning a new window per click.
+    // already-open window at a newly re-selected actor.
     public void ShowActor(int actorIndex)
     {
+        this.actorIndex = actorIndex;
+        Title = $"Actor {actorIndex} Script";
         TitleLabel.Text = $"Actor {actorIndex}";
         StatsLabel.Text = "(actor data unavailable)";
         var script = "(no script)";
@@ -172,12 +174,4 @@ public partial class ActorScriptWindow : Window
         ScriptTextBox.Focus();
     }
 
-    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
-    {
-        // Hide instead of a real close: MainWindow keeps one instance and
-        // reuses it for the next actor clicked, so the window shouldn't be
-        // disposed just because the user closed it once.
-        e.Cancel = true;
-        Hide();
-    }
 }

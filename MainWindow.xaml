@@ -102,7 +102,7 @@
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
-                        <Grid Grid.Row="0" Grid.Column="0">
+                        <Grid Grid.Row="0" Grid.Column="0" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown">
                             <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
                             <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
                             <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">

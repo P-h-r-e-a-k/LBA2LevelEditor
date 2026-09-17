@@ -288,6 +288,7 @@ public partial class MainWindow : Window
                 Tag = i,
             };
             dot.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+            dot.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
             Canvas.SetLeft(dot, screenX - dot.Width / 2);
             Canvas.SetTop(dot, screenY - dot.Height / 2);
             ActorMarkerCanvas.Children.Add(dot);
@@ -367,6 +368,7 @@ public partial class MainWindow : Window
                 Tag = index,
             };
             hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+            hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
             Canvas.SetLeft(hit, screenX - hit.Width / 2);
             Canvas.SetTop(hit, screenY - hit.Height / 2);
             ActorMarkerCanvas.Children.Add(hit);
@@ -383,6 +385,36 @@ public partial class MainWindow : Window
         if (nativeViewActive) DrawNativeActorOverlay(); else UpdateActorMarkersOverlay();
     }
 
+    // Right-clicking empty terrain (anywhere that isn't an actor marker --
+    // ActorMarker_MouseRightButtonDown handles those and marks the event
+    // Handled, which stops it bubbling up to this container handler) offers
+    // adding a new actor. It spawns at the current camera target rather than
+    // the exact clicked point -- this editor has no screen-to-world terrain
+    // raycast today, only the camera-target/pan math already used elsewhere
+    // -- so the new actor lands where the camera is looking, with the
+    // attributes window open right away to reposition it precisely.
+    private void TerrainViewport_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (currentIsland is null || !nativeViewActive) return;
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null) return;
+        e.Handled = true;
+
+        var menu = new ContextMenu();
+        var addHere = new MenuItem { Header = "Add Actor Here" };
+        addHere.Click += (_, _) =>
+        {
+            var index = library.AddActor((int)targetX, (int)targetY, (int)targetZ, 0, 0, 0, 255, 0, 0, 0);
+            if (index < 0) { MessageBox.Show(this, "Couldn't add an actor here -- this cube may already be at its 100-actor limit.", "Add Actor", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            selectedActorIndex = index;
+            RenderNativeCamera();
+            OpenActorAttributesWindow(index);
+        };
+        menu.Items.Add(addHere);
+        ((FrameworkElement)sender).ContextMenu = menu;
+        menu.IsOpen = true;
+    }
+
     private void ActorMarker_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is not int index) return;
@@ -390,6 +422,7 @@ public partial class MainWindow : Window
         selectedActorIndex = index;
         RefreshActorOverlayForSelection();
         ShowActorInspector(index);
+        if (e.ClickCount >= 2) OpenActorAttributesWindow(index);
     }
 
     private void ShowActorInspector(int index)
@@ -406,18 +439,72 @@ public partial class MainWindow : Window
         ActorInspectorPanel.Visibility = Visibility.Visible;
 
         // Keep an already-open script window in sync with whichever actor is
-        // now selected, but don't pop it open on every click -- only the
-        // "Open Script Editor" button does that.
-        if (actorScriptWindow is { IsVisible: true }) actorScriptWindow.ShowActor(index);
+        // now selected, but don't pop one open on every click -- only
+        // explicit actions (the sidebar button, double-click, context menu)
+        // do that.
+        if (openScriptWindows.TryGetValue(index, out var openScript)) openScript.ShowActor(index);
     }
 
-    private ActorScriptWindow? actorScriptWindow;
+    // One independent, non-modal window per actor per kind (script/
+    // attributes), each with its own taskbar entry -- keyed by actor index so
+    // double-clicking (or right-clicking) the same actor again re-activates
+    // its existing window instead of spawning a duplicate, while a different
+    // actor still gets its own. Entries are removed as soon as their window
+    // actually closes (Closed, not just hidden), so re-opening the same
+    // actor later creates a fresh window rather than resurrecting a stale one.
+    private readonly Dictionary<int, ActorScriptWindow> openScriptWindows = new();
+    private readonly Dictionary<int, ActorAttributesWindow> openAttributesWindows = new();
 
     private void OpenScriptEditor_Click(object sender, RoutedEventArgs e)
     {
-        if (selectedActorIndex is not int index) return;
-        actorScriptWindow ??= new ActorScriptWindow(nativeRenderer.RendererLibrary) { Owner = this };
-        actorScriptWindow.ShowActor(index);
+        if (selectedActorIndex is int index) OpenActorScriptWindow(index);
+    }
+
+    private void OpenActorScriptWindow(int index)
+    {
+        if (openScriptWindows.TryGetValue(index, out var existing))
+        {
+            existing.ShowActor(index);
+            existing.Activate();
+            return;
+        }
+        var window = new ActorScriptWindow(nativeRenderer.RendererLibrary) { Owner = this };
+        window.Closed += (_, _) => openScriptWindows.Remove(index);
+        openScriptWindows[index] = window;
+        window.ShowActor(index);
+    }
+
+    private void OpenActorAttributesWindow(int index)
+    {
+        if (openAttributesWindows.TryGetValue(index, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+        var window = new ActorAttributesWindow(nativeRenderer, index) { Owner = this };
+        window.OpenScriptRequested += OpenActorScriptWindow;
+        window.Closed += (_, _) => openAttributesWindows.Remove(index);
+        openAttributesWindows[index] = window;
+        window.Show();
+    }
+
+    private void ActorMarker_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is not int index) return;
+        e.Handled = true;
+        selectedActorIndex = index;
+        RefreshActorOverlayForSelection();
+        ShowActorInspector(index);
+
+        var menu = new ContextMenu();
+        var editAttributes = new MenuItem { Header = "Edit Attributes…" };
+        editAttributes.Click += (_, _) => OpenActorAttributesWindow(index);
+        var editScript = new MenuItem { Header = "Edit Script…" };
+        editScript.Click += (_, _) => OpenActorScriptWindow(index);
+        menu.Items.Add(editAttributes);
+        menu.Items.Add(editScript);
+        ((FrameworkElement)sender).ContextMenu = menu;
+        menu.IsOpen = true;
     }
 
     private void CloseActorInspector_Click(object sender, RoutedEventArgs e)

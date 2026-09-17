@@ -13,6 +13,7 @@
 
 #include <SYSTEM/HQRLOAD.H>
 #include <vector>
+#include <map>
 #include <string>
 #include <cstdio>
 #include <cstring>
@@ -43,12 +44,62 @@ struct RendererActor {
     U8 Move;
     std::string LifeScript;
     std::string TrackScript;
+    // Where this actor actually lives on disk -- needed only for the
+    // editor's write path (SceneEdit below), not for anything read-only.
+    // ObjectSlot is -1 for a newly-added actor until it's actually been
+    // placed into ListObjet by ReapplyPendingEditsToListObjet() at least
+    // once (its final slot depends on NbObjets at that time, which can
+    // still change if more actors get added first).
+    S32 SceneIndex = -1;
+    S32 ObjectSlot = -1;
+    S32 CubeX = -1;
+    S32 CubeY = -1;
 };
 
 static std::vector<RendererActor> g_actors;
 static std::vector<S32> g_waypointX;
 static std::vector<S32> g_waypointY;
 static std::vector<S32> g_waypointZ;
+
+// Session edits (attribute changes, re-encoded scripts, new actors) that
+// haven't been written back to SCENE.HQR yet, keyed by scene index -- see
+// SceneEdit's own comment block further down for the full design.
+struct PendingAttributeEdit {
+    bool HasPosition = false;
+    S32 X = 0, Y = 0, Z = 0; // cube-local, matching what the record itself stores
+    bool HasAttributes = false;
+    S16 Beta = 0;
+    U8 GenBody = 0;
+    U16 GenAnim = 0;
+    S16 LifePoint = 0;
+    U8 Armure = 0;
+    U8 HitForce = 0;
+    U8 Move = 0;
+};
+struct PendingScriptEdit {
+    std::vector<U8> LifeBytes;
+    std::vector<U8> TrackBytes;
+};
+struct PendingNewActor {
+    S32 X = 0, Y = 0, Z = 0; // cube-local
+    S16 Beta = 0;
+    U8 GenBody = 0;
+    U16 GenAnim = 0;
+    S16 LifePoint = 0;
+    U8 Armure = 0;
+    U8 HitForce = 0;
+    U8 Move = 0;
+    std::vector<U8> LifeBytes;
+    std::vector<U8> TrackBytes;
+    S32 FlatIndex = -1; // index into g_actors, so ObjectSlot can be filled in once assigned
+};
+struct ScenePendingEdits {
+    std::map<S32, PendingAttributeEdit> AttributeEdits; // keyed by ObjectSlot
+    std::map<S32, PendingScriptEdit> ScriptEdits;        // keyed by ObjectSlot
+    std::vector<PendingNewActor> NewActors;
+    bool Dirty = false;
+};
+static std::map<S32, ScenePendingEdits> g_pendingEdits; // keyed by SceneIndex
 
 // Scene index for each of the island's 16x16 cubes (-1 where no exterior
 // scene covers that cube), filled in by RendererScanIslandActors() -- it
@@ -644,6 +695,10 @@ int RendererScanIslandActors(int islandIndex)
     g_waypointX.clear();
     g_waypointY.clear();
     g_waypointZ.clear();
+    // Scene indices are per-island; a stale edit keyed by scene 5 from the
+    // previous island would otherwise silently apply to scene 5 of whatever
+    // island loads next.
+    g_pendingEdits.clear();
     for (S32 cy = 0; cy < 16; cy++)
         for (S32 cx = 0; cx < 16; cx++)
             g_sceneForCube[cy][cx] = -1;
@@ -693,6 +748,10 @@ int RendererScanIslandActors(int islandIndex)
             actor.WaypointCount = (S32)g_waypointX.size() - actor.WaypointStart;
             DecodeLifeScript(ptrobj, actor.LifeScript);
             DecodeTrackScript(ptrobj, actor.TrackScript);
+            actor.SceneIndex = scene;
+            actor.ObjectSlot = n;
+            actor.CubeX = cubeX;
+            actor.CubeY = cubeY;
             g_actors.push_back(actor);
         }
     }
@@ -739,6 +798,8 @@ extern void StartInitAllObjs(void);
 // looping over stale actors from a previous cube would draw them in the
 // wrong place, so the caller must not skip this and must treat a false
 // return as "no actors for this cube" by clearing NbObjets itself.
+static void ReapplyPendingEditsToListObjet(S32 sceneIndex);
+
 int RendererLoadCubeScene(int cubeX, int cubeY)
 {
     if (cubeX < 0 || cubeX >= 16 || cubeY < 0 || cubeY >= 16) return 0;
@@ -751,7 +812,16 @@ int RendererLoadCubeScene(int cubeX, int cubeY)
     LastCubeMode = CUBE_EXTERIEUR;
 
     S32 ok = LoadScene(scene);
-    if (ok) StartInitAllObjs();
+    if (ok) {
+        StartInitAllObjs();
+        // LoadScene() just repopulated ListObjet/NbObjets straight off disk,
+        // discarding any session edits made earlier -- reapply them now so
+        // an edited actor doesn't appear to "revert" every time the camera
+        // pans back onto its cube (which happens constantly with wide-radius
+        // rendering; see AffGrilleExtWide's own comment on how often cubes
+        // reload).
+        ReapplyPendingEditsToListObjet(scene);
+    }
 
     FlagLoadGame = savedFlagLoadGame;
     LastCubeMode = savedLastCubeMode;
@@ -818,4 +888,218 @@ int RendererGetActorScript(int index, char *buffer, int bufferSize)
         buffer[toCopy] = '\0';
     }
     return needed;
+}
+
+// ---------------------------------------------------------------------
+// Session editing: attribute/position/script edits and new actors, kept in
+// g_pendingEdits (keyed by scene index, see its own struct comments above)
+// until either the scene reloads (ReapplyPendingEditsToListObjet patches
+// them straight back into the freshly-loaded ListObjet, so they don't
+// appear to "revert" while panning) or the editor explicitly saves them to
+// SCENE.HQR (a separate, not-yet-written piece -- these functions only ever
+// touch in-memory state; nothing here writes to disk).
+//
+// Deliberately restricted to real scene actors (ObjectSlot/NewActor, never
+// slot 0): the hero object has special-cased behavior throughout the engine
+// (InitBody's own ChoiceHeroBody() override, save-state fields elsewhere)
+// that a generic "edit any actor" tool has no business overriding.
+// ---------------------------------------------------------------------
+
+extern void InitBody(U8 gennewbody, U8 numobj);
+extern S32 InitAnim(U16 gennewanim, U8 flag, U8 numobj);
+extern void InitObject(U8 numobj);
+extern S32 NewCube;
+
+static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
+{
+    // This whole project builds as C++98 (CMakeLists.txt's own
+    // CMAKE_CXX_STANDARD 98) -- no auto, no range-based for, no std::move,
+    // matching the style of every other function in this file.
+    std::map<S32, ScenePendingEdits>::iterator it = g_pendingEdits.find(sceneIndex);
+    if (it == g_pendingEdits.end()) return;
+    ScenePendingEdits &edits = it->second;
+
+    for (std::map<S32, PendingAttributeEdit>::iterator ait = edits.AttributeEdits.begin(); ait != edits.AttributeEdits.end(); ++ait) {
+        S32 slot = ait->first;
+        if (slot < 1 || slot >= NbObjets) continue; // slot 0 excluded; new actors not yet placed handled below
+        const PendingAttributeEdit &e = ait->second;
+        T_OBJET *ptrobj = &ListObjet[slot];
+        if (e.HasPosition) {
+            ptrobj->Obj.X = e.X; ptrobj->Obj.Y = e.Y; ptrobj->Obj.Z = e.Z;
+            ptrobj->OldPosX = e.X; ptrobj->OldPosY = e.Y; ptrobj->OldPosZ = e.Z;
+        }
+        if (e.HasAttributes) {
+            ptrobj->Obj.Beta = e.Beta;
+            ptrobj->LifePoint = e.LifePoint;
+            ptrobj->Armure = e.Armure;
+            ptrobj->HitForce = e.HitForce;
+            ptrobj->Move = e.Move;
+            if (ptrobj->GenBody != e.GenBody) { ptrobj->GenBody = e.GenBody; InitBody(e.GenBody, (U8)slot); }
+            if (ptrobj->GenAnim != e.GenAnim) { ptrobj->GenAnim = e.GenAnim; InitAnim(e.GenAnim, ANIM_REPEAT, (U8)slot); }
+        }
+    }
+
+    for (std::map<S32, PendingScriptEdit>::iterator sit = edits.ScriptEdits.begin(); sit != edits.ScriptEdits.end(); ++sit) {
+        S32 slot = sit->first;
+        if (slot < 1 || slot >= NbObjets) continue;
+        // Points straight at the pending edit's own owned buffer rather than
+        // copying -- safe as long as this function (which re-derives every
+        // pointer fresh) is the only thing ever handing these out, and it's
+        // re-run after every mutation of g_pendingEdits (see the Set*/Add*
+        // functions below), so a stale pointer from a resized vector never
+        // survives past the mutation that could have invalidated it.
+        ListObjet[slot].PtrTrack = sit->second.TrackBytes.empty() ? NULL : &sit->second.TrackBytes[0];
+        ListObjet[slot].PtrLife = sit->second.LifeBytes.empty() ? NULL : &sit->second.LifeBytes[0];
+    }
+
+    // A real object's PtrFile3D/IndexFile3D (the per-object "generic body
+    // name" conversion table SearchBody() walks -- FICHE.CPP) is set by
+    // LoadScene()'s own per-object loop (DISKFUNC.CPP: "ptrobj->PtrFile3D =
+    // LoadFile3D(indexfile3d);") before StartInitObj() ever runs for that
+    // slot. InitObject() only zeroes a slot, so a synthetic slot never gets
+    // this -- and SearchBody() dereferences PtrFile3D with no NULL check,
+    // so calling StartInitObj() (which calls InitBody() -> SearchBody())
+    // without it segfaults immediately, one call in. Slot 1, if this scene
+    // already has any real actor, has already been through that real load
+    // and is safe to copy from; LoadFile3D(0) (BufferFile3D is a global
+    // boot-time resource, loaded once regardless of which scene/actors
+    // exist) is the fallback for a scene with none.
+    U8 *fallbackPtrFile3D = NbObjets > 1 ? ListObjet[1].PtrFile3D : (U8 *)LoadFile3D(0);
+    S16 fallbackIndexFile3D = NbObjets > 1 ? ListObjet[1].IndexFile3D : (S16)0;
+
+    for (size_t i = 0; i < edits.NewActors.size(); i++) {
+        if (NbObjets >= MAX_OBJETS) break; // full; RendererAddActor already refuses beyond this
+        PendingNewActor &newActor = edits.NewActors[i];
+        S32 slot = NbObjets++;
+        InitObject((U8)slot);
+        T_OBJET *ptrobj = &ListObjet[slot];
+        ptrobj->PtrFile3D = fallbackPtrFile3D;
+        ptrobj->IndexFile3D = fallbackIndexFile3D;
+        ptrobj->Obj.X = newActor.X; ptrobj->Obj.Y = newActor.Y; ptrobj->Obj.Z = newActor.Z;
+        ptrobj->OldPosX = newActor.X; ptrobj->OldPosY = newActor.Y; ptrobj->OldPosZ = newActor.Z;
+        ptrobj->Obj.Beta = newActor.Beta;
+        ptrobj->GenBody = newActor.GenBody;
+        ptrobj->GenAnim = newActor.GenAnim;
+        ptrobj->LifePoint = newActor.LifePoint;
+        ptrobj->Armure = newActor.Armure;
+        ptrobj->HitForce = newActor.HitForce;
+        ptrobj->Move = newActor.Move;
+        if (ptrobj->PtrFile3D) StartInitObj((U8)slot); // still refuse to call in if even the fallback came back null
+        ptrobj->PtrTrack = newActor.TrackBytes.empty() ? NULL : &newActor.TrackBytes[0];
+        ptrobj->PtrLife = newActor.LifeBytes.empty() ? NULL : &newActor.LifeBytes[0];
+        if (newActor.FlatIndex >= 0 && newActor.FlatIndex < (S32)g_actors.size())
+            g_actors[(size_t)newActor.FlatIndex].ObjectSlot = slot;
+    }
+}
+
+// Re-applies pending edits for whichever scene is currently loaded into
+// ListObjet, if any -- for immediate visual feedback right after an edit,
+// without waiting for the next cube transition to trigger
+// RendererLoadCubeScene's own reapply.
+static void ReapplyIfCurrentlyLoaded(S32 sceneIndex)
+{
+    if (NewCube == sceneIndex) ReapplyPendingEditsToListObjet(sceneIndex);
+}
+
+int RendererSetActorAttributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    RendererActor &a = g_actors[(size_t)index];
+    if (a.ObjectSlot == 0) return 0; // hero excluded, see file header comment
+    a.Beta = (S16)beta;
+    a.GenBody = (U8)body;
+    a.GenAnim = (U16)anim;
+    a.LifePoint = (S16)lifePoint;
+    a.Armure = (U8)armor;
+    a.HitForce = (U8)hitForce;
+    a.Move = (U8)move;
+
+    PendingAttributeEdit &edit = g_pendingEdits[a.SceneIndex].AttributeEdits[a.ObjectSlot];
+    edit.HasAttributes = true;
+    edit.Beta = a.Beta; edit.GenBody = a.GenBody; edit.GenAnim = a.GenAnim;
+    edit.LifePoint = a.LifePoint; edit.Armure = a.Armure; edit.HitForce = a.HitForce; edit.Move = a.Move;
+    g_pendingEdits[a.SceneIndex].Dirty = true;
+
+    ReapplyIfCurrentlyLoaded(a.SceneIndex);
+    return 1;
+}
+
+int RendererSetActorPosition(int index, int worldX, int worldY, int worldZ)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    RendererActor &a = g_actors[(size_t)index];
+    if (a.ObjectSlot == 0) return 0;
+    a.X = worldX; a.Y = worldY; a.Z = worldZ;
+
+    PendingAttributeEdit &edit = g_pendingEdits[a.SceneIndex].AttributeEdits[a.ObjectSlot];
+    edit.HasPosition = true;
+    edit.X = worldX - a.CubeX * ACTORS_WORLD_CUBE_SIZE;
+    edit.Y = worldY;
+    edit.Z = worldZ - a.CubeY * ACTORS_WORLD_CUBE_SIZE;
+    g_pendingEdits[a.SceneIndex].Dirty = true;
+
+    ReapplyIfCurrentlyLoaded(a.SceneIndex);
+    return 1;
+}
+
+// Adds a new actor to the scene covering (worldX, worldZ)'s cube, with the
+// given starting attributes and a trivial one-opcode (END) life and track
+// script. Returns the new actor's g_actors index (usable with every other
+// Get/Set actor API right away), or -1 if that world position isn't on any
+// loaded scene, or the target scene is already at MAX_OBJETS.
+int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
+{
+    S32 cubeX = worldX / ACTORS_WORLD_CUBE_SIZE;
+    S32 cubeY = worldZ / ACTORS_WORLD_CUBE_SIZE;
+    if (cubeX < 0 || cubeX >= 16 || cubeY < 0 || cubeY >= 16) return -1;
+    S32 sceneIndex = g_sceneForCube[cubeY][cubeX];
+    if (sceneIndex < 0) return -1;
+
+    S32 existingSlots = 1; // hero always counts as one
+    std::map<S32, ScenePendingEdits>::iterator pendingIt = g_pendingEdits.find(sceneIndex);
+    S32 pendingNewCount = pendingIt != g_pendingEdits.end() ? (S32)pendingIt->second.NewActors.size() : 0;
+    for (size_t i = 0; i < g_actors.size(); i++) if (g_actors[i].SceneIndex == sceneIndex) existingSlots++;
+    if (existingSlots + pendingNewCount >= MAX_OBJETS) return -1;
+
+    PendingNewActor newActor;
+    newActor.X = worldX - cubeX * ACTORS_WORLD_CUBE_SIZE;
+    newActor.Y = worldY;
+    newActor.Z = worldZ - cubeY * ACTORS_WORLD_CUBE_SIZE;
+    newActor.Beta = (S16)beta;
+    newActor.GenBody = (U8)body;
+    newActor.GenAnim = (U16)anim;
+    newActor.LifePoint = (S16)lifePoint;
+    newActor.Armure = (U8)armor;
+    newActor.HitForce = (U8)hitForce;
+    newActor.Move = (U8)move;
+    newActor.LifeBytes.push_back((U8)LM_END);
+    newActor.TrackBytes.push_back((U8)TM_END);
+
+    RendererActor actor;
+    actor.X = worldX; actor.Y = worldY; actor.Z = worldZ;
+    actor.WaypointStart = 0;
+    actor.WaypointCount = 0;
+    actor.Beta = newActor.Beta;
+    actor.GenBody = newActor.GenBody;
+    actor.GenAnim = newActor.GenAnim;
+    actor.LifePoint = newActor.LifePoint;
+    actor.Armure = newActor.Armure;
+    actor.HitForce = newActor.HitForce;
+    actor.Move = newActor.Move;
+    actor.LifeScript = "END\n";
+    actor.TrackScript = "END\n";
+    actor.SceneIndex = sceneIndex;
+    actor.ObjectSlot = -1; // filled in once ReapplyPendingEditsToListObjet places it
+    actor.CubeX = cubeX;
+    actor.CubeY = cubeY;
+    g_actors.push_back(actor);
+    S32 flatIndex = (S32)g_actors.size() - 1;
+
+    ScenePendingEdits &edits = g_pendingEdits[sceneIndex];
+    newActor.FlatIndex = flatIndex;
+    edits.NewActors.push_back(newActor);
+    edits.Dirty = true;
+
+    ReapplyIfCurrentlyLoaded(sceneIndex);
+    return flatIndex;
 }

@@ -38,6 +38,9 @@ extern int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCoun
 extern int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z);
 extern int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move);
 extern int RendererGetActorScript(int index, char *buffer, int bufferSize);
+extern int RendererSetActorAttributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+extern int RendererSetActorPosition(int index, int worldX, int worldY, int worldZ);
+extern int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 
 
 // LoadCube() (LOADISLE.CPP) overwrites ClipZFar/StartZFog from each cube's
@@ -405,5 +408,20 @@ int lba2_renderer_get_actor_attributes(int index, int *beta, int *body, int *ani
 int lba2_renderer_get_actor_script(int index, char *buffer, int bufferSize)
 {
     return RendererGetActorScript(index, buffer, bufferSize);
+}
+
+int lba2_renderer_set_actor_attributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
+{
+    return RendererSetActorAttributes(index, beta, body, anim, lifePoint, armor, hitForce, move);
+}
+
+int lba2_renderer_set_actor_position(int index, int worldX, int worldY, int worldZ)
+{
+    return RendererSetActorPosition(index, worldX, worldY, worldZ);
+}
+
+int lba2_renderer_add_actor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
+{
+    return RendererAddActor(worldX, worldY, worldZ, beta, body, anim, lifePoint, armor, hitForce, move);
 }
 

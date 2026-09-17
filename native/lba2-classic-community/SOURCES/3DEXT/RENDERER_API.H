@@ -98,6 +98,29 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_attributes(int index, int *beta, i
    of range. */
 LBA2_RENDERER_API int lba2_renderer_get_actor_script(int index, char *buffer, int bufferSize);
 
+/* Session-only edits: none of these three write anything to disk. They
+   update the in-memory actor snapshot (so the next lba2_renderer_get_actor*
+   call reflects the change immediately) and, if the affected scene is the
+   one currently loaded for rendering, patch it live into the renderer's
+   working actor list too -- and re-patch it again every time that scene
+   next reloads (which happens often; see AffGrilleExtWide), so the edit
+   doesn't appear to "revert" while panning around. All three refuse to
+   touch actor slot 0 (the hero), which has special-cased behavior
+   elsewhere in the engine this generic editor has no business overriding.
+   Persisting these edits to the game's SCENE.HQR is a separate operation
+   (not yet exposed here). */
+
+/* Returns 0 if index is out of range or refers to the hero, 1 on success. */
+LBA2_RENDERER_API int lba2_renderer_set_actor_attributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+/* Returns 0 if index is out of range or refers to the hero, 1 on success. */
+LBA2_RENDERER_API int lba2_renderer_set_actor_position(int index, int worldX, int worldY, int worldZ);
+/* Adds a new actor to whichever scene covers (worldX, worldZ)'s cube, with a
+   trivial one-opcode (END) life and track script. Returns the new actor's
+   index (usable with every other actor API immediately), or -1 if that
+   world position isn't on any loaded scene or the scene is already at its
+   100-actor limit. */
+LBA2_RENDERER_API int lba2_renderer_add_actor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which
    engine functions this reuses). Returns 0 if the point is beyond the far
