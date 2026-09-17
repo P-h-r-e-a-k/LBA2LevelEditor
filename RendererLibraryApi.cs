@@ -26,6 +26,10 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorAttributesFn(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorPositionFn(int index, int worldX, int worldY, int worldZ);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int AddActorFn(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderBodyPreviewFn(int genBody, int genAnim, int cameraBeta);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
     private IntPtr handle;
     private VersionFn? version;
@@ -49,6 +53,10 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetActorAttributesFn? setActorAttributes;
     private SetActorPositionFn? setActorPosition;
     private AddActorFn? addActor;
+    private GetActorFlagsFn? getActorFlags;
+    private SetActorFlagsFn? setActorFlags;
+    private GetActorBoundsFn? getActorBounds;
+    private RenderBodyPreviewFn? renderBodyPreview;
     private ProjectPointFn? projectPoint;
 
     public RendererLibraryApi(string path)
@@ -72,6 +80,10 @@ internal sealed class RendererLibraryApi : IDisposable
         setActorAttributes = Get<SetActorAttributesFn>("lba2_renderer_set_actor_attributes");
         setActorPosition = Get<SetActorPositionFn>("lba2_renderer_set_actor_position");
         addActor = Get<AddActorFn>("lba2_renderer_add_actor");
+        getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
+        setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
+        getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
+        renderBodyPreview = Get<RenderBodyPreviewFn>("lba2_renderer_render_body_preview");
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
 
@@ -142,6 +154,27 @@ internal sealed class RendererLibraryApi : IDisposable
         => setActorPosition?.Invoke(index, worldX, worldY, worldZ) == 1;
     public int AddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
         => addActor?.Invoke(worldX, worldY, worldZ, beta, body, anim, lifePoint, armor, hitForce, move) ?? -1;
+    public bool GetActorFlags(int index, out uint flags)
+    {
+        if (getActorFlags is null) { flags = 0; return false; }
+        return getActorFlags(index, out flags) == 1;
+    }
+    public bool SetActorFlags(int index, uint flags) => setActorFlags?.Invoke(index, flags) == 1;
+    // Only succeeds for an actor whose scene is currently loaded/rendered
+    // and that has a body assigned -- see lba2_renderer_get_actor_bounds's
+    // own doc comment. Callers should fall back to a fixed-size hit target
+    // when this returns false.
+    public bool GetActorBounds(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax)
+    {
+        if (getActorBounds is null) { xMin = xMax = yMin = yMax = zMin = zMax = 0; return false; }
+        return getActorBounds(index, out xMin, out xMax, out yMin, out yMax, out zMin, out zMax) == 1;
+    }
+    // Renders into the same shared framebuffer GetFramebuffer() reads --
+    // safe to call between ordinary main-view renders, but the caller must
+    // read the framebuffer immediately after and not assume the main view
+    // is unaffected by anything except its own next render. See
+    // lba2_renderer_render_body_preview's own doc comment.
+    public bool RenderBodyPreview(int genBody, int genAnim, int cameraBeta) => renderBodyPreview?.Invoke(genBody, genAnim, cameraBeta) == 1;
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 

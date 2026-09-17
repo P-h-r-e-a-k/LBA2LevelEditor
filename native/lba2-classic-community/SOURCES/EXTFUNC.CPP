@@ -358,6 +358,87 @@ void AffichageActorsZBuf(void) {
     }
 }
 
+// Scratch object slot for AffichageBodyPreview() below -- beyond any real
+// actor (MAX_OBJETS-1), so it never collides with NbObjets/ListObjet[0..
+// NbObjets) or disturbs the real scene.
+#define BODY_PREVIEW_OBJ (MAX_OBJETS - 1)
+
+extern void InitObject(U8 numobj);
+extern void StartInitObj(U8 numobj);
+
+// Renders one body, alone against a cleared background, for the actor-
+// attributes editor's preview panel -- reuses AffichageActorsZBuf's own
+// per-object draw sequence (immediately above) for the scratch slot, with
+// the *camera* orbiting around it (cameraBeta) rather than the object
+// itself, which looks identical from an otherwise-empty view and is
+// simpler than re-deriving the object's own rotation state every call.
+// Deliberately touches no terrain/sky/decor/real-actor state, so it's safe
+// to call between ordinary frames -- whatever real render happens next
+// clears the screen and resets the camera fully anyway, exactly like
+// RenderIslandTopDown's own minimap snapshots already do to this same
+// shared framebuffer. Returns 0 if the body index doesn't resolve to
+// anything drawable (e.g. NO_BODY), 1 on a successful draw.
+int AffichageBodyPreview(int genBody, int genAnim, int cameraBeta)
+{
+    T_OBJET *ptrobj = &ListObjet[BODY_PREVIEW_OBJ];
+    if (ptrobj->GenBody != (U8)genBody || ptrobj->GenAnim != (U16)genAnim || ptrobj->Obj.Body.Num < 0) {
+        InitObject(BODY_PREVIEW_OBJ);
+        ptrobj->GenBody = (U8)genBody;
+        ptrobj->GenAnim = (U16)genAnim;
+        // A scratch slot never goes through LoadScene's real per-object
+        // LoadFile3D() call, and SearchBody()/SearchAnim() (FICHE.CPP)
+        // dereference PtrFile3D with no null check -- same fix
+        // RendererAddActor needed (RENDERER_ACTORS.CPP), for the same
+        // reason, confirmed there by a real crash before it was added.
+        ptrobj->PtrFile3D = NbObjets > 1 ? ListObjet[1].PtrFile3D : (U8 *)LoadFile3D(0);
+        ptrobj->IndexFile3D = NbObjets > 1 ? ListObjet[1].IndexFile3D : (S16)0;
+        if (!ptrobj->PtrFile3D) return 0;
+        StartInitObj(BODY_PREVIEW_OBJ);
+    }
+    if (ptrobj->Obj.Body.Num < 0) return 0; // genBody didn't resolve to anything (e.g. NO_BODY)
+
+    // A fixed distance rather than one derived from XMin/XMax/YMin/YMax/
+    // ZMin/ZMax: StartInitObj() -> InitBody() only (re)computes those via
+    // InitBodyZV() when a global scratch variable (M_XMin, OBJECT.CPP)
+    // happens to still hold a specific sentinel left over from whatever
+    // else last called InitBody() -- not guaranteed here, and confirmed
+    // empirically (logged XMin..ZMax) to come back all zero every time.
+    // 5000 (roughly human-character scale in this engine, confirmed
+    // visually) is a reasonable single distance for the common case; a
+    // hero-sized preview a rat or a building-sized boss might not frame as
+    // well is an acceptable trade against the complexity of deriving real
+    // bounds another way.
+    S32 camDistance = 5000;
+
+    ptrobj->Obj.X = 0;
+    ptrobj->Obj.Y = 0;
+    ptrobj->Obj.Z = 0;
+    ptrobj->Obj.Beta = 0;
+
+    ClearAniPoly();
+    ClsTerrainZBuf();
+    Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
+    SetLightVector(600, -600, 0);
+    SetFollowCamera(0, 0, 0, 200, cameraBeta, 0, camDistance);
+    ManageSystem();
+
+    LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+    if (LongProjectPoint(X0, Y0, Z0)) {
+        S32 zr = CameraZr - Z0;
+        if (zr <= ClipZFar) {
+            SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
+            if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) ObjectSetInterFrame(&ptrobj->Obj);
+            UnsetClip();
+            ObjectDisplay(&ptrobj->Obj);
+        }
+    }
+
+    FiltreAnimatedPolys();
+    Switch_Fillers(FILL_POLY_TEXTURES);
+    CopyScreen(Log, Screen);
+    return 1;
+}
+
 // Matches RENDERER_API.CPP's own WORLD_CUBE_SIZE (HOLO.H's SCE: 32768 world
 // units per exterior cube), duplicated rather than shared to keep this
 // file's only dependency on the renderer API boundary at zero.

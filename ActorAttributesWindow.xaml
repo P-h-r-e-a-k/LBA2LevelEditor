@@ -73,15 +73,11 @@
                 <TextBlock Text="Facing (beta)" Style="{StaticResource FieldLabel}"/>
                 <TextBox x:Name="BetaBox" Style="{StaticResource FieldBox}"/>
 
-                <TextBlock Text="Body index" Style="{StaticResource FieldLabel}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBox x:Name="BodyBox" Grid.Column="0" Style="{StaticResource FieldBox}" TextChanged="BodyBox_TextChanged"/>
-                    <TextBlock x:Name="BodyHintLabel" Grid.Column="2" Text="" Foreground="#89958B" FontSize="10" VerticalAlignment="Center"/>
-                </Grid>
+                <TextBlock Text="Body" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="BodyCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True"/>
 
-                <TextBlock Text="Animation index" Style="{StaticResource FieldLabel}"/>
-                <TextBox x:Name="AnimBox" Style="{StaticResource FieldBox}"/>
+                <TextBlock Text="Animation" Style="{StaticResource FieldLabel}"/>
+                <ComboBox x:Name="AnimCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True"/>
 
                 <TextBlock Text="Life points" Style="{StaticResource FieldLabel}"/>
                 <TextBox x:Name="LifePointBox" Style="{StaticResource FieldBox}"/>
@@ -94,6 +90,16 @@
 
                 <TextBlock Text="Move type" Style="{StaticResource FieldLabel}"/>
                 <TextBox x:Name="MoveBox" Style="{StaticResource FieldBox}"/>
+
+                <TextBlock Text="Flags" Style="{StaticResource FieldLabel}"/>
+                <ItemsControl x:Name="FlagsList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                      ToolTip="{Binding Description}" Foreground="#DCE0C8" Margin="0,3,0,3"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
 
                 <TextBlock x:Name="WaypointsLabel" Text="" Foreground="#78847B" FontFamily="Consolas" FontSize="10" Margin="0,16,0,0"/>
             </StackPanel>

@@ -312,7 +312,7 @@ public partial class MainWindow : Window
     // this ran, so the markers projected against a different camera than
     // the one that actually produced the displayed frame -- visible as the
     // markers "swimming" a few pixels relative to the terrain.
-    private List<(int Index, double ScreenX, double ScreenY)>? lastNativeActorScreens;
+    private List<(int Index, double ScreenX, double ScreenY, double HitHalfWidth, double HitHalfHeight)>? lastNativeActorScreens;
     private List<(int ActorIndex, List<Point> ScreenPoints)>? lastNativeActorRoutes;
 
     private void DrawNativeActorOverlay()
@@ -350,17 +350,25 @@ public partial class MainWindow : Window
             }
         }
 
-        foreach (var (index, sx, sy) in lastNativeActorScreens)
+        foreach (var (index, sx, sy, hitHalfWidth, hitHalfHeight) in lastNativeActorScreens)
         {
             var screenX = sx * scaleX;
             var screenY = sy * scaleY;
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
 
             var selected = selectedActorIndex == index;
+            // Sized to the actor's own real body bounds (projected alongside
+            // its position in the same locked render pass -- see where
+            // lastNativeActorScreens gets built) instead of a fixed 24x24,
+            // so a large/close body is fully clickable and a small/far one
+            // doesn't get an oversized target -- both were reported as hard
+            // to click reliably before this.
+            var hitWidth = Math.Max(hitHalfWidth * 2 * scaleX, 20);
+            var hitHeight = Math.Max(hitHalfHeight * 2 * scaleY, 20);
             var hit = new System.Windows.Shapes.Ellipse
             {
-                Width = 24,
-                Height = 24,
+                Width = hitWidth,
+                Height = hitHeight,
                 Fill = Brushes.Transparent,
                 Stroke = selected ? Brushes.Yellow : null,
                 StrokeThickness = 2,
@@ -481,7 +489,7 @@ public partial class MainWindow : Window
             existing.Activate();
             return;
         }
-        var window = new ActorAttributesWindow(nativeRenderer, index) { Owner = this };
+        var window = new ActorAttributesWindow(nativeRenderer, palette, index) { Owner = this };
         window.OpenScriptRequested += OpenActorScriptWindow;
         window.Closed += (_, _) => openAttributesWindows.Remove(index);
         openAttributesWindows[index] = window;
@@ -859,7 +867,7 @@ public partial class MainWindow : Window
             var wideRadius = nativeDistance < 20000 ? 0 : nativeDistance < 35000 ? 1 : 2;
             var currentCubeX = (int)Math.Floor(targetX / 32768.0);
             var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
-            List<(int, double, double)>? projected = null;
+            List<(int, double, double, double, double)>? projected = null;
             List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
 
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
@@ -868,14 +876,33 @@ public partial class MainWindow : Window
                 {
                     if (library is null) return;
                     var count = library.GetActorCount();
-                    var list = new List<(int, double, double)>(count);
+                    var list = new List<(int, double, double, double, double)>(count);
                     var routes = new List<(int, List<Point>)>();
                     for (var i = 0; i < count; i++)
                     {
                         if (!library.GetActor(i, out var x, out var y, out var z, out var waypointCount)) continue;
                         if (Math.Abs((int)Math.Floor(x / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(z / 32768.0) - currentCubeY) > wideRadius) continue;
                         if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
-                        list.Add((i, sx, sy));
+
+                        // A click target sized to the actor's own real body
+                        // bounds, projected in this same locked pass (so it
+                        // uses the identical camera state the position above
+                        // did -- computing this later, e.g. in
+                        // DrawNativeActorOverlay, could race a newer in-flight
+                        // render moving the shared camera first, the same
+                        // "swimming" bug the position projection above
+                        // already had to avoid once). Falls back to a fixed
+                        // half-size for an actor with no body (NO_BODY) or
+                        // whose bounds aren't available for some other reason.
+                        double hitHalfW = 12, hitHalfH = 12;
+                        if (library.GetActorBounds(i, out var xMin, out var xMax, out var yMin, out var yMax, out _, out _)
+                            && library.ProjectPoint(x + xMin, y + yMax, z, out var cx1, out var cy1)
+                            && library.ProjectPoint(x + xMax, y + yMin, z, out var cx2, out var cy2))
+                        {
+                            hitHalfW = Math.Max(Math.Max(Math.Abs(cx2 - cx1), Math.Abs(cy2 - cy1)), 12) / 2;
+                            hitHalfH = hitHalfW;
+                        }
+                        list.Add((i, sx, sy, hitHalfW, hitHalfH));
 
                         if (waypointCount <= 0) continue;
                         var points = new List<Point> { new(sx, sy) };

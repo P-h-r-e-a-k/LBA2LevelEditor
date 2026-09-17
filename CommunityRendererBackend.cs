@@ -106,6 +106,29 @@ internal sealed class CommunityRendererBackend
         }
     }
 
+    // For the actor-attributes editor's rotating body preview. Shares
+    // directRenderLock with RenderIslandDirect/RenderIslandTopDown above --
+    // without it, a preview tick landing mid-frame of an in-flight main-view
+    // render would touch the same native camera/framebuffer state from two
+    // threads at once. Returns null if the body doesn't resolve to anything
+    // drawable (e.g. NO_BODY) or the renderer isn't ready; the caller should
+    // show a fallback message rather than a stale frame in that case.
+    public BitmapSource? RenderBodyPreview(int genBody, int genAnim, int cameraBeta, byte[] paletteBytes)
+    {
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
+        lock (directRenderLock)
+        {
+            if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, cameraBeta)) return null;
+            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
+            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
+            var pixels = new byte[width * height];
+            for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            bitmap.Freeze();
+            return bitmap;
+        }
+    }
+
     // Alpha=+1023 (of the engine's 4096-per-turn angle unit -- COMMON.H's
     // MAX_ANGLE) orbits the follow-camera to within one unit of directly
     // overhead; beta/gamma control yaw/roll and stay at 0 so north stays

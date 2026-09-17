@@ -121,6 +121,35 @@ LBA2_RENDERER_API int lba2_renderer_set_actor_position(int index, int worldX, in
    100-actor limit. */
 LBA2_RENDERER_API int lba2_renderer_add_actor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 
+/* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
+   water-lava-reaction toggles) -- lba2_renderer_get_actor_attributes only
+   covers the handful of scalar fields the original inspector panel showed.
+   Same session-only semantics and hero exclusion as the Set* calls above. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_flags(int index, unsigned int *flags);
+LBA2_RENDERER_API int lba2_renderer_set_actor_flags(int index, unsigned int flags);
+
+/* The actor's own local bounding box (its body model's real extent), for a
+   screen-space hit-test box sized to match the actual rendered body instead
+   of a fixed guess. Only succeeds for an actor whose scene is the one
+   currently loaded and rendered, and that has a body assigned -- callers
+   should fall back to a fixed-size hit target when this returns 0. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_bounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
+
+/* Renders one body model, alone against a cleared background, into the same
+   shared framebuffer lba2_renderer_framebuffer() reads -- for the actor-
+   attributes editor's rotating preview. Call with a slowly increasing
+   cameraBeta (the same 0-4096-per-turn angle unit as lba2_renderer_
+   set_camera's alpha/beta/gamma) across successive calls to animate an
+   orbit around the body; genBody/genAnim use the same per-object "generic"
+   index space as lba2_renderer_set_actor_attributes. This does not touch
+   terrain/sky/decor or any real actor, so it's safe to call between
+   ordinary lba2_renderer_render_frame*() calls without disturbing the main
+   view (whatever real render happens next resets the camera and clears the
+   screen fully anyway). Returns 0 if genBody doesn't resolve to a drawable
+   body (e.g. NO_BODY), 1 on a successful draw -- callers should show a
+   fallback message rather than a stale/blank frame on 0. */
+LBA2_RENDERER_API int lba2_renderer_render_body_preview(int genBody, int genAnim, int cameraBeta);
+
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which
    engine functions this reuses). Returns 0 if the point is beyond the far

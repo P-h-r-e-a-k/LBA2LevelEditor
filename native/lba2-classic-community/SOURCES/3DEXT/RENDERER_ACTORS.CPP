@@ -42,6 +42,7 @@ struct RendererActor {
     U8 Armure;
     U8 HitForce;
     U8 Move;
+    U32 Flags;
     std::string LifeScript;
     std::string TrackScript;
     // Where this actor actually lives on disk -- needed only for the
@@ -75,6 +76,8 @@ struct PendingAttributeEdit {
     U8 Armure = 0;
     U8 HitForce = 0;
     U8 Move = 0;
+    bool HasFlags = false;
+    U32 Flags = 0;
 };
 struct PendingScriptEdit {
     std::vector<U8> LifeBytes;
@@ -89,6 +92,7 @@ struct PendingNewActor {
     U8 Armure = 0;
     U8 HitForce = 0;
     U8 Move = 0;
+    U32 Flags = CHECK_OBJ_COL | CHECK_BRICK_COL | CHECK_ZONE | CHECK_CODE_JEU; // sane defaults for a new NPC
     std::vector<U8> LifeBytes;
     std::vector<U8> TrackBytes;
     S32 FlatIndex = -1; // index into g_actors, so ObjectSlot can be filled in once assigned
@@ -308,13 +312,27 @@ static const char *LmName(U8 op)
 // comportement blocks) rather than all 131; anything past LM_BETA (80), and
 // a handful of rarer gaps below it (camera scripting, palette/lightning FX,
 // buggy init), reports as unsupported instead of guessing.
-static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out)
+// outInitialBody/outInitialAnim (both optional) recover the actor's actual
+// starting body/animation -- the *disk* GenBody/GenAnim fields this method's
+// only caller (RendererScanIslandActors) would otherwise use are frequently
+// just a placeholder (GEN_BODY_NORMAL/GEN_ANIM_RIEN, both 0) that the
+// script's own opening BODY/ANIM lines immediately override on the actor's
+// first tick (GERELIFE.CPP's DoLife() runs from offset 0 the very first time
+// it's called -- see PERSO.CPP's OffsetLife check), which this pure
+// loading-side scan never simulates. Capturing the first BODY/ANIM seen
+// *before any branch* mirrors exactly what DoLife() would have executed
+// unconditionally on that first tick; a branch (IF/AND_IF/.../ELSE/OFFSET)
+// makes everything after it conditional, so scanning stops trusting further
+// BODY/ANIM lines as "definitely the starting one" at that point (though the
+// text decode below keeps going for display).
+static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialBody = NULL, U16 *outInitialAnim = NULL)
 {
     if (!ptrobj->PtrLife) { out = "(no life script)\n"; return; }
     U8 *base = ptrobj->PtrLife;
     const S32 maxBytes = 16384;
     S32 offset = 0;
     char line[160];
+    bool unconditional = true;
 
     while (offset < maxBytes) {
         U8 op = base[offset];
@@ -335,13 +353,13 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out)
         case LM_STOP_L_TRACK: out += "STOP_L_TRACK\n"; break;
         case LM_RESTORE_L_TRACK: out += "RESTORE_L_TRACK\n"; break;
 
-        case LM_IF: ok = DecodeLifeCondition(base, &offset, maxBytes, "IF", out); break;
-        case LM_AND_IF: ok = DecodeLifeCondition(base, &offset, maxBytes, "AND_IF", out); break;
-        case LM_OR_IF: ok = DecodeLifeCondition(base, &offset, maxBytes, "OR_IF", out); break;
-        case LM_SWIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "SWIF", out); break;
-        case LM_SNIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "SNIF", out); break;
-        case LM_ONEIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "ONEIF", out); break;
-        case LM_NEVERIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "NEVERIF", out); break;
+        case LM_IF: ok = DecodeLifeCondition(base, &offset, maxBytes, "IF", out); unconditional = false; break;
+        case LM_AND_IF: ok = DecodeLifeCondition(base, &offset, maxBytes, "AND_IF", out); unconditional = false; break;
+        case LM_OR_IF: ok = DecodeLifeCondition(base, &offset, maxBytes, "OR_IF", out); unconditional = false; break;
+        case LM_SWIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "SWIF", out); unconditional = false; break;
+        case LM_SNIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "SNIF", out); unconditional = false; break;
+        case LM_ONEIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "ONEIF", out); unconditional = false; break;
+        case LM_NEVERIF: ok = DecodeLifeCondition(base, &offset, maxBytes, "NEVERIF", out); unconditional = false; break;
 
         case LM_OFFSET:
         case LM_ELSE:
@@ -351,10 +369,21 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out)
                 std::snprintf(line, sizeof(line), "%s -> goto %d\n", op == LM_OFFSET ? "OFFSET" : "ELSE", (int)target);
                 out += line;
             }
+            unconditional = false;
+            break;
+
+        case LM_BODY:
+            if (offset >= maxBytes) { ok = false; break; }
+            {
+                U8 a = base[offset]; offset++;
+                if (unconditional && outInitialBody) *outInitialBody = (S16)a;
+                std::snprintf(line, sizeof(line), "%s %d\n", LmName(op), (int)a);
+                out += line;
+            }
             break;
 
         // One-byte operand (usually an object number or a small constant).
-        case LM_BODY: case LM_FALLABLE: case LM_SET_DIR: case LM_CAM_FOLLOW:
+        case LM_FALLABLE: case LM_SET_DIR: case LM_CAM_FOLLOW:
         case LM_COMPORTEMENT_HERO: case LM_COMPORTEMENT: case LM_KILL_OBJ:
         case LM_FOUND_OBJECT: case LM_GIVE_BONUS: case LM_CHANGE_CUBE:
         case LM_OBJ_COL: case LM_BRICK_COL: case LM_INVISIBLE: case LM_POS_POINT:
@@ -395,8 +424,18 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out)
             }
             break;
 
+        case LM_ANIM:
+            if (offset + 1 >= maxBytes) { ok = false; break; }
+            {
+                S16 v = *(S16 *)(base + offset); offset += 2;
+                if (unconditional && outInitialAnim) *outInitialAnim = (U16)v;
+                std::snprintf(line, sizeof(line), "%s %d\n", LmName(op), (int)v);
+                out += line;
+            }
+            break;
+
         // Two-byte operand: a single S16 value.
-        case LM_ANIM: case LM_MESSAGE: case LM_SET_TRACK: case LM_SET_COMPORTEMENT:
+        case LM_MESSAGE: case LM_SET_TRACK: case LM_SET_COMPORTEMENT:
         case LM_GIVE_GOLD_PIECES: case LM_ADD_GOLD_PIECES: case LM_SET_DOOR_LEFT:
         case LM_SET_DOOR_RIGHT: case LM_SET_DOOR_UP: case LM_SET_DOOR_DOWN: case LM_BETA:
             if (offset + 1 >= maxBytes) { ok = false; break; }
@@ -743,10 +782,15 @@ int RendererScanIslandActors(int islandIndex)
             actor.Armure = ptrobj->Armure;
             actor.HitForce = ptrobj->HitForce;
             actor.Move = ptrobj->Move;
+            actor.Flags = ptrobj->Flags;
             actor.WaypointStart = (S32)g_waypointX.size();
             ExtractTrackWaypoints(ptrobj, baseX, baseZ);
             actor.WaypointCount = (S32)g_waypointX.size() - actor.WaypointStart;
-            DecodeLifeScript(ptrobj, actor.LifeScript);
+            // DecodeLifeScript overwrites actor.GenBody/GenAnim (already
+            // seeded above from the raw disk fields) only if it finds an
+            // unconditional BODY/ANIM line -- see its own comment for why
+            // the disk fields alone are frequently just a placeholder.
+            DecodeLifeScript(ptrobj, actor.LifeScript, &actor.GenBody, &actor.GenAnim);
             DecodeTrackScript(ptrobj, actor.TrackScript);
             actor.SceneIndex = scene;
             actor.ObjectSlot = n;
@@ -937,6 +981,7 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
             if (ptrobj->GenBody != e.GenBody) { ptrobj->GenBody = e.GenBody; InitBody(e.GenBody, (U8)slot); }
             if (ptrobj->GenAnim != e.GenAnim) { ptrobj->GenAnim = e.GenAnim; InitAnim(e.GenAnim, ANIM_REPEAT, (U8)slot); }
         }
+        if (e.HasFlags) ptrobj->Flags = e.Flags;
     }
 
     for (std::map<S32, PendingScriptEdit>::iterator sit = edits.ScriptEdits.begin(); sit != edits.ScriptEdits.end(); ++sit) {
@@ -984,6 +1029,7 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
         ptrobj->Armure = newActor.Armure;
         ptrobj->HitForce = newActor.HitForce;
         ptrobj->Move = newActor.Move;
+        ptrobj->Flags = newActor.Flags;
         if (ptrobj->PtrFile3D) StartInitObj((U8)slot); // still refuse to call in if even the fallback came back null
         ptrobj->PtrTrack = newActor.TrackBytes.empty() ? NULL : &newActor.TrackBytes[0];
         ptrobj->PtrLife = newActor.LifeBytes.empty() ? NULL : &newActor.LifeBytes[0];
@@ -1086,6 +1132,7 @@ int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int
     actor.Armure = newActor.Armure;
     actor.HitForce = newActor.HitForce;
     actor.Move = newActor.Move;
+    actor.Flags = newActor.Flags;
     actor.LifeScript = "END\n";
     actor.TrackScript = "END\n";
     actor.SceneIndex = sceneIndex;
@@ -1102,4 +1149,60 @@ int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int
 
     ReapplyIfCurrentlyLoaded(sceneIndex);
     return flatIndex;
+}
+
+// Full designer-authored T_OBJET.Flags word (COMMON.H) -- collision/physics/
+// visibility toggles like OBJ_FALLABLE (gravity) and CHECK_CODE_JEU (reacts
+// to water/lava/gas/electric/escalator bricks it stands on), not just the
+// handful of attributes RendererGetActorAttributes already covers. A
+// separate call rather than extending that one's signature, since this
+// project's other native APIs never break existing out-param lists.
+int RendererGetActorFlags(int index, unsigned int *flags)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    if (flags) *flags = g_actors[(size_t)index].Flags;
+    return 1;
+}
+
+int RendererSetActorFlags(int index, unsigned int flags)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    RendererActor &a = g_actors[(size_t)index];
+    if (a.ObjectSlot == 0) return 0; // hero excluded, see file header comment
+    a.Flags = flags;
+
+    PendingAttributeEdit &edit = g_pendingEdits[a.SceneIndex].AttributeEdits[a.ObjectSlot];
+    edit.HasFlags = true;
+    edit.Flags = flags;
+    g_pendingEdits[a.SceneIndex].Dirty = true;
+
+    ReapplyIfCurrentlyLoaded(a.SceneIndex);
+    return 1;
+}
+
+// Screen-space hit-testing helper: an actor's real rendered body size varies
+// hugely (a rat vs. a building-sized boss) and with camera distance, so a
+// fixed-size click target is either too small for big/close bodies or
+// needlessly huge for small/far ones. XMin/XMax/YMin/YMax/ZMin/ZMax
+// (T_OBJET, set by InitBody/InitBodyZV -- OBJECT.CPP) are the actor's own
+// local bounding box; the caller projects target position +/- these corners
+// through lba2_renderer_project_point() to get a real screen-space box.
+// Only available for an actor whose scene is the one *currently* loaded
+// into ListObjet (matching what's actually on screen right now) -- the
+// scan-time g_actors snapshot never runs InitBody, so bounds would be
+// meaningless zeros for anything else. Returns 0 (not 1) for a NO_BODY
+// actor (Body.Num < 0) or one whose scene isn't currently loaded, so
+// callers know to fall back to a fixed-size target instead of drawing a
+// degenerate zero-size hit box.
+int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    const RendererActor &a = g_actors[(size_t)index];
+    if (a.SceneIndex != NewCube || a.ObjectSlot < 1 || a.ObjectSlot >= NbObjets) return 0;
+    const T_OBJET &o = ListObjet[a.ObjectSlot];
+    if (o.Obj.Body.Num < 0) return 0;
+    if (xMin) *xMin = o.XMin; if (xMax) *xMax = o.XMax;
+    if (yMin) *yMin = o.YMin; if (yMax) *yMax = o.YMax;
+    if (zMin) *zMin = o.ZMin; if (zMax) *zMax = o.ZMax;
+    return 1;
 }
