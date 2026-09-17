@@ -152,8 +152,8 @@
                         <TextBox x:Name="ActorFacingBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,10"/>
                         <TextBlock Text="Life / Armor / Hit force / Move" Style="{StaticResource FieldLabel}"/>
                         <TextBox x:Name="ActorStatsBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,16"/>
-                        <TextBlock Text="SCRIPT (READ-ONLY)" Style="{StaticResource Eyebrow}" Margin="0,0,0,8"/>
-                        <TextBox x:Name="ActorScriptBox" IsReadOnly="True" Style="{StaticResource FieldBox}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap" AcceptsReturn="True" Height="320" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                        <TextBlock Text="SCRIPT" Style="{StaticResource Eyebrow}" Margin="0,0,0,8"/>
+                        <Button x:Name="OpenScriptEditorButton" Content="Open Script Editor" Click="OpenScriptEditor_Click" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
                         <Button Content="Close" Click="CloseActorInspector_Click" Style="{StaticResource QuietButton}" Margin="0,16,0,0" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </StackPanel>

@@ -403,8 +403,21 @@ public partial class MainWindow : Window
         ActorPositionBox.Text = $"{x}, {y}, {z}";
         ActorFacingBox.Text = $"beta={beta}  body={body}  anim={anim}";
         ActorStatsBox.Text = $"life={lifePoint}  armor={armor}  hit={hitForce}  move={move}";
-        ActorScriptBox.Text = library.GetActorScript(index);
         ActorInspectorPanel.Visibility = Visibility.Visible;
+
+        // Keep an already-open script window in sync with whichever actor is
+        // now selected, but don't pop it open on every click -- only the
+        // "Open Script Editor" button does that.
+        if (actorScriptWindow is { IsVisible: true }) actorScriptWindow.ShowActor(index);
+    }
+
+    private ActorScriptWindow? actorScriptWindow;
+
+    private void OpenScriptEditor_Click(object sender, RoutedEventArgs e)
+    {
+        if (selectedActorIndex is not int index) return;
+        actorScriptWindow ??= new ActorScriptWindow(nativeRenderer.RendererLibrary) { Owner = this };
+        actorScriptWindow.ShowActor(index);
     }
 
     private void CloseActorInspector_Click(object sender, RoutedEventArgs e)
