@@ -874,7 +874,9 @@ void AffichageTerrainZBuf(void) {
         ptrs++;
     }
 
-    DrawOneSea(Y_SEA);
+    extern U8 RendererDrawSea;
+    if (RendererDrawSea)
+        DrawOneSea(Y_SEA);
 
 #ifdef LBA_EDITOR
     if (FlagInfos & INFO_DECORS) {

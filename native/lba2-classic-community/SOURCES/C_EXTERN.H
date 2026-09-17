@@ -31,6 +31,7 @@ extern S32 RestartMusic;
 extern U8 FlagRain;
 extern U8 FlagDrawHorizon;
 extern U8 RendererDrawSky;
+extern U8 RendererDrawSea;
 extern U8 SavingEnable;
 extern U8 FlagPlayAcf;
 extern U8 RainEnable;

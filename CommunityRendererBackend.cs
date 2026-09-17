@@ -198,6 +198,13 @@ internal sealed class CommunityRendererBackend
                 directIsland = baseName;
             }
             RendererLibrary.SetDrawSky(false);
+            // See lba2_renderer_set_draw_sea's own comment: from this
+            // straight-down camera, DrawOneSea's flat sea plane can sort as
+            // nearer than elevated terrain it should sit behind, painting
+            // sea color over real ground -- the cause of tiles that looked
+            // "lost"/out of order once the crop-seam fix made misrendered
+            // tiles obvious instead of blending into the seam noise.
+            RendererLibrary.SetDrawSea(false);
 
             var masterWidth = cubeSpanX * TopDownTileSize;
             var masterHeight = cubeSpanY * TopDownTileSize;

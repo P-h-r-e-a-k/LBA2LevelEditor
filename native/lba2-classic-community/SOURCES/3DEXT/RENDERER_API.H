@@ -48,6 +48,14 @@ LBA2_RENDERER_API void lba2_renderer_set_camera(int alpha, int beta, int gamma, 
    instead, useful when a high overhead camera would otherwise have the sky
    filling most of the frame. Does not affect the full game. */
 LBA2_RENDERER_API void lba2_renderer_set_draw_sky(int enabled);
+/* Toggles DrawOneSea() (TERRAIN.CPP), the flat sea plane drawn across a
+   whole cube at a fixed world height. From a near-vertical (top-down)
+   camera the classic engine's depth math can sort this plane as nearer than
+   elevated terrain it should sit well behind, painting flat sea color over
+   real terrain -- off for the minimap's top-down snapshots, on (the
+   default) for the main 3D view's ordinary viewing angles which don't hit
+   this. Does not affect the full game. */
+LBA2_RENDERER_API void lba2_renderer_set_draw_sea(int enabled);
 /* Overrides the distance-fog start and far-clip distances (world units) used
    by the exterior renderer. LOADISLE.CPP's InitExternalView() sets these to
    values tuned for the original 320x200 game (StartZFog 12000, ClipZFar

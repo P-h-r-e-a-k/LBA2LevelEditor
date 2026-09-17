@@ -16,6 +16,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderFrameWideFn(int radiusCubes);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetCameraFn(int alpha, int beta, int gamma, int distance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSkyFn(int enabled);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSeaFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr FramebufferFn(out int width, out int height, out int pitch);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorCountFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFn(int index, out int x, out int y, out int z, out int waypointCount);
@@ -35,6 +36,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private RenderFrameWideFn? renderFrameWide;
     private SetCameraFn? setCamera;
     private SetDrawSkyFn? setDrawSky;
+    private SetDrawSeaFn? setDrawSea;
     private FramebufferFn? framebuffer;
     private GetActorCountFn? getActorCount;
     private GetActorFn? getActor;
@@ -55,6 +57,7 @@ internal sealed class RendererLibraryApi : IDisposable
         renderFrame = Get<RenderFrameFn>("lba2_renderer_render_frame"); setCamera = Get<SetCameraFn>("lba2_renderer_set_camera"); framebuffer = Get<FramebufferFn>("lba2_renderer_framebuffer");
         renderFrameWide = Get<RenderFrameWideFn>("lba2_renderer_render_frame_wide");
         setDrawSky = Get<SetDrawSkyFn>("lba2_renderer_set_draw_sky");
+        setDrawSea = Get<SetDrawSeaFn>("lba2_renderer_set_draw_sea");
         getActorCount = Get<GetActorCountFn>("lba2_renderer_get_actor_count");
         getActor = Get<GetActorFn>("lba2_renderer_get_actor");
         getActorWaypoint = Get<GetActorWaypointFn>("lba2_renderer_get_actor_waypoint");
@@ -83,6 +86,7 @@ internal sealed class RendererLibraryApi : IDisposable
     public int RenderFrameWide(int radiusCubes) => renderFrameWide?.Invoke(radiusCubes) ?? RenderFrame();
     public void SetCamera(int alpha, int beta, int gamma, int distance) => setCamera?.Invoke(alpha, beta, gamma, distance);
     public void SetDrawSky(bool enabled) => setDrawSky?.Invoke(enabled ? 1 : 0);
+    public void SetDrawSea(bool enabled) => setDrawSea?.Invoke(enabled ? 1 : 0);
     public IntPtr GetFramebuffer(out int width, out int height, out int pitch)
     {
         if (framebuffer is null) { width = height = pitch = 0; return IntPtr.Zero; }
@@ -130,7 +134,7 @@ internal sealed class RendererLibraryApi : IDisposable
         NativeLibrary.Free(handle);
         handle = IntPtr.Zero;
         version = null;
-        initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; renderFrameWide = null; setCamera = null; setDrawSky = null; framebuffer = null;
+        initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; renderFrameWide = null; setCamera = null; setDrawSky = null; setDrawSea = null; framebuffer = null;
         getActorCount = null; getActor = null; getActorWaypoint = null; getActorAttributes = null; getActorScript = null; projectPoint = null;
     }
 }

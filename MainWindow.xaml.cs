@@ -667,6 +667,12 @@ public partial class MainWindow : Window
         // reasserts the checkbox's actual state instead of trusting
         // whatever the native flag happened to be left at.
         library?.SetDrawSky(SkyCheckBox.IsChecked == true);
+        // Same reasoning as SetDrawSky just above: the minimap turns sea off
+        // for its own top-down snapshots and never turns it back on, since
+        // it has no reason to know the main view wants it -- reassert on
+        // every render so a minimap regeneration can't leave the main view's
+        // sea silently disabled.
+        library?.SetDrawSea(true);
         // Past a certain zoom-out level, a single cube's terrain visibly
         // runs out before the horizon does -- AffGrilleExtWide loads and
         // draws neighboring cubes into the same frame to cover that, at the

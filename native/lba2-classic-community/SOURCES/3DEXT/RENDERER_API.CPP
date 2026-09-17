@@ -31,6 +31,7 @@ extern int RendererBootAssets(void);
 // twice by two different paths.
 extern S32 Island;
 extern U8 RendererDrawSky;
+extern U8 RendererDrawSea;
 extern int RendererScanIslandActors(int islandIndex);
 extern int RendererGetActorCount(void);
 extern int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount);
@@ -354,6 +355,11 @@ void lba2_renderer_set_camera(int alpha, int beta, int gamma, int distance)
 void lba2_renderer_set_draw_sky(int enabled)
 {
     RendererDrawSky = enabled ? 1 : 0;
+}
+
+void lba2_renderer_set_draw_sea(int enabled)
+{
+    RendererDrawSea = enabled ? 1 : 0;
 }
 
 void lba2_renderer_set_view_distance(int startFog, int clipFar)

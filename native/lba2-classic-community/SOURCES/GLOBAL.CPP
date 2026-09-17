@@ -33,6 +33,17 @@ U8 FlagDrawHorizon = TRUE;
 // DrawSkySeaZBuf() in AffGrilleExt() (EXTFUNC.CPP) so a camera looking down
 // from high above an island isn't blocked by the sky/horizon layer.
 U8 RendererDrawSky = TRUE;
+// Same idea as RendererDrawSky, gating DrawOneSea() (TERRAIN.CPP) instead:
+// its sea quad spans a whole cube at a fixed world height and is positioned
+// via the same rotate/project pipeline as everything else, which the
+// classic engine's Z-buffer depth math was never built to sort correctly
+// against elevated terrain from a near-vertical (top-down) camera -- from
+// that angle the sea plane can come out *nearer* than higher ground it
+// should be sitting well behind, painting flat sea color over real terrain.
+// Off only for the minimap's top-down snapshots (RenderIslandTopDown);
+// the main 3D view's ordinary viewing angles don't have this problem, so it
+// stays on there.
+U8 RendererDrawSea = TRUE;
 U8 SavingEnable = TRUE;
 U8 FlagPlayAcf = FALSE;
 U8 RainEnable = FALSE;
