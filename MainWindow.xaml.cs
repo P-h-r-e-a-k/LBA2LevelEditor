@@ -53,7 +53,21 @@ public partial class MainWindow : Window
         if (Directory.Exists(gameRoot))
         {
             PopulateAssetLists();
-            LoadIsland(Path.Combine(gameRoot, activeFile));
+            // PopulateAssetLists() already selects activeFile in the list,
+            // which fires IslandList_SelectionChanged -> LoadIsland() -- if
+            // that succeeded (activeFile was actually in the list), calling
+            // LoadIsland() again here would load the same island a second
+            // time back to back. That redundant second load isn't just
+            // wasted work: its own RegenerateMinimap() call raced behind the
+            // first load's main-view render (once it turned into the very
+            // first wideRadius>=1 wide render of the session) and came back
+            // with land/sea tiles corrupted, then *won* over the first
+            // load's correct minimap via RegenerateMinimap's own
+            // stale-request check, since "more recent" isn't the same as
+            // "correct" here. Only fall back to an explicit call if the
+            // selection didn't already cover it (e.g. activeFile no longer
+            // exists in gameRoot).
+            if (IslandList.SelectedItem is null) LoadIsland(Path.Combine(gameRoot, activeFile));
         }
         else
         {
