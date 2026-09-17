@@ -365,6 +365,7 @@ void AffichageActorsZBuf(void) {
 
 extern int RendererLoadCubeScene(int cubeX, int cubeY);
 extern int RendererLoadNeighborCubeData(int cubeX, int cubeY);
+extern void DrawOneSea(S32 y);
 
 // Renders `radiusCubes` rings of neighboring cubes around the currently-
 // loaded one (CurrentCubeX/CurrentCubeY) into the same frame, instead of
@@ -424,6 +425,8 @@ void AffGrilleExtWide(int radiusCubes) {
             if (cx < 0 || cx > 15 || cy < 0 || cy > 15) continue;
 
             if (dx != 0 || dy != 0) {
+                S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
+                S32 localOffsetZ = centerWorldZ - cy * WIDE_WORLD_CUBE_SIZE;
                 // RendererLoadNeighborCubeData (not a raw LoadCube() call)
                 // re-applies the editor's widened fog/clip distance on top
                 // of this cube's own, much narrower, shipped defaults --
@@ -432,9 +435,19 @@ void AffGrilleExtWide(int radiusCubes) {
                 // viewing distance away, which is short enough that
                 // farther neighbors washed out to the fog color almost
                 // entirely.
-                if (!RendererLoadNeighborCubeData(cx, cy)) continue;
-                S32 localOffsetX = centerWorldX - cx * WIDE_WORLD_CUBE_SIZE;
-                S32 localOffsetZ = centerWorldZ - cy * WIDE_WORLD_CUBE_SIZE;
+                if (!RendererLoadNeighborCubeData(cx, cy)) {
+                    // No terrain data at all for this cube (open sea/void).
+                    // The engine's own convention for this -- see the
+                    // LBA_EDITOR-only phantom-cube preview code elsewhere in
+                    // this file, which does the same LoadCube-fails-so-draw-
+                    // sea-instead fallback -- is a flat sea plane, not
+                    // nothing; leaving this cube undrawn showed as a solid
+                    // black hole (ClsTerrainZBuf's clear color) in the
+                    // middle of an otherwise-normal wide view.
+                    SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
+                    if (RendererDrawSea) DrawOneSea(Y_SEA);
+                    continue;
+                }
                 SetFollowCamera(localOffsetX, centerWorldY, localOffsetZ, AlphaCam, BetaCam, GammaCam, VueDistance);
             }
 

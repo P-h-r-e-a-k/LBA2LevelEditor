@@ -198,18 +198,12 @@ internal sealed class CommunityRendererBackend
                 directIsland = baseName;
             }
             RendererLibrary.SetDrawSky(false);
-            // See lba2_renderer_set_draw_sea's own comment: from this
-            // straight-down camera, DrawOneSea's flat sea plane can sort as
-            // nearer than elevated terrain it should sit behind, painting
-            // sea color over real ground -- the cause of tiles that looked
-            // "lost"/out of order once the crop-seam fix made misrendered
-            // tiles obvious instead of blending into the seam noise.
-            RendererLibrary.SetDrawSea(false);
 
             var masterWidth = cubeSpanX * TopDownTileSize;
             var masterHeight = cubeSpanY * TopDownTileSize;
             var master = new byte[masterWidth * masterHeight];
-            var crop = new byte[TopDownCropSize * TopDownCropSize];
+            var cropLand = new byte[TopDownCropSize * TopDownCropSize];
+            var cropSea = new byte[TopDownCropSize * TopDownCropSize];
 
             foreach (var (cubeX, cubeY) in presentCubes)
             {
@@ -217,12 +211,41 @@ internal sealed class CommunityRendererBackend
                 var worldZ = cubeY * 32768 + 16384;
                 if (RendererLibrary.SetViewTarget(worldX, 3000, worldZ) == 0) continue;
                 RendererLibrary.SetCamera(TopDownAlpha, 0, 0, TopDownDistance);
+
+                // Rendered twice and merged rather than once with sea simply
+                // off: see lba2_renderer_set_draw_sea's own comment -- from
+                // this straight-down camera, DrawOneSea's flat sea plane can
+                // sort as nearer than elevated terrain it should sit behind,
+                // painting sea color over real ground (the cause of tiles
+                // that looked "lost"/out of order once the crop-seam fix
+                // made misrendered tiles obvious instead of blending into
+                // the seam noise). But a cube that's genuinely all/mostly
+                // sea has nothing else to draw once sea is off, so a single
+                // sea-off render turns *those* tiles into holes instead --
+                // an earlier fix that just turned sea off unconditionally
+                // traded one bug for the other. Taking the sea-off pixels
+                // wherever they drew anything, and falling back to the
+                // sea-on pixels only where sea-off left true background,
+                // gets correct land *and* correct open water.
+                RendererLibrary.SetDrawSea(false);
                 if (RendererLibrary.RenderFrame() == 0) continue;
                 var pointer = RendererLibrary.GetFramebuffer(out var fbWidth, out var fbHeight, out var pitch);
                 if (pointer == IntPtr.Zero || fbWidth < TopDownCropX0 + TopDownCropSize || fbHeight < TopDownCropY0 + TopDownCropSize) continue;
-
                 for (var row = 0; row < TopDownCropSize; row++)
-                    Marshal.Copy(pointer + (TopDownCropY0 + row) * pitch + TopDownCropX0, crop, row * TopDownCropSize, TopDownCropSize);
+                    Marshal.Copy(pointer + (TopDownCropY0 + row) * pitch + TopDownCropX0, cropLand, row * TopDownCropSize, TopDownCropSize);
+                // The screen-clear color (ClsTerrainZBuf's SetClearColor(FogCoul))
+                // is each island's own ambience fog index, not a fixed palette
+                // slot -- sampled fresh from a frame corner, safely outside the
+                // centered crop region, instead of hardcoding whatever index one
+                // island happened to use.
+                var backgroundIndex = Marshal.ReadByte(pointer);
+
+                RendererLibrary.SetDrawSea(true);
+                if (RendererLibrary.RenderFrame() == 0) continue;
+                pointer = RendererLibrary.GetFramebuffer(out fbWidth, out fbHeight, out pitch);
+                if (pointer == IntPtr.Zero || fbWidth < TopDownCropX0 + TopDownCropSize || fbHeight < TopDownCropY0 + TopDownCropSize) continue;
+                for (var row = 0; row < TopDownCropSize; row++)
+                    Marshal.Copy(pointer + (TopDownCropY0 + row) * pitch + TopDownCropX0, cropSea, row * TopDownCropSize, TopDownCropSize);
 
                 var tileOffsetX = (cubeX - minCubeX) * TopDownTileSize;
                 var tileOffsetY = (cubeY - minCubeY) * TopDownTileSize;
@@ -243,7 +266,11 @@ internal sealed class CommunityRendererBackend
                     var destRowStart = destRow * masterWidth + tileOffsetX;
                     var srcRowStart = srcRow * TopDownCropSize;
                     for (var tx = 0; tx < TopDownTileSize; tx++)
-                        master[destRowStart + tx] = crop[srcRowStart + tx * TopDownCropSize / TopDownTileSize];
+                    {
+                        var srcIndex = srcRowStart + tx * TopDownCropSize / TopDownTileSize;
+                        var land = cropLand[srcIndex];
+                        master[destRowStart + tx] = land != backgroundIndex ? land : cropSea[srcIndex];
+                    }
                 }
             }
 
