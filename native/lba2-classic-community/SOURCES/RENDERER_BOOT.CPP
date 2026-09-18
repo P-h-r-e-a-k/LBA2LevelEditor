@@ -57,6 +57,21 @@ int RendererBootAssets(void)
     HQR_ObjFix = HQR_Init_Ressource(hqrPath, ObjFixMem, ObjFixMem / 1000);
     if (!HQR_ObjFix) return 0;
 
+    // Needed for interior/indoor scenes (GRILLE.CPP's AffGrille draws the
+    // brick grid straight from BufferBrick, but INTEXT.CPP's own actor/UI
+    // sprite drawing -- AffGraph(0, x, y, HQR_Get(HQRPtrSprite, n)) and the
+    // scaled-raw-sprite path -- reads through these two caches, exactly like
+    // PERSO.CPP's own boot does for the full game. SpriteMem/SpriteRawMem
+    // are already sized by AdjustHQRMem() (lba2_renderer_initialize, before
+    // this function runs), the same as AnimMem/BodyMem/ObjFixMem above.
+    GetResPath(hqrPath, ADELINE_MAX_PATH, SPRITES_HQR_NAME);
+    HQRPtrSprite = HQR_Init_Ressource(hqrPath, SpriteMem, SpriteMem / 1000);
+    if (!HQRPtrSprite) return 0;
+
+    GetResPath(hqrPath, ADELINE_MAX_PATH, SPRIRAW_HQR_NAME);
+    HQRPtrSpriteRaw = HQR_Init_Ressource(hqrPath, SpriteRawMem, SpriteRawMem / 100);
+    if (!HQRPtrSpriteRaw) return 0;
+
     InitObjects(BufferAnim, SIZE_BUFFER_ANIM, GivePtrBody, GivePtrAnim);
 
     BufferTexture = (U8 *)LoadMalloc_HQR(path, RESS_TEXTURES);

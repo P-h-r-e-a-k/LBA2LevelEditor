@@ -987,6 +987,78 @@ int RendererLoadCubeScene(int cubeX, int cubeY)
     return ok ? 1 : 0;
 }
 
+// Loads and renders an LBA2 indoor/interior scene: a completely different
+// path from every RendererLoad*CubeScene above, which all assume an
+// exterior island's 3D terrain. Interior scenes are the older, LBA1-derived
+// isometric "brick grid" renderer (GRILLE.CPP's InitGrille/AffGrille) --
+// simple 2D sprite tiles composited with a fixed-angle camera, not 3D
+// geometry. Retail never mixes the two in one call path either: the game's
+// own ChangeCube() (OBJECT.CPP) picks between InitGrilleExt (exterior) and
+// InitGrille (interior) via a PtrInitGrille function pointer keyed off this
+// same CubeMode byte, which LoadScene() (DISKFUNC.CPP) reads straight off
+// the scene's own on-disk header -- exactly like every RendererLoad*
+// function above already relies on for other scene fields.
+//
+// Skips ChangeCube() entirely (same reason RendererLoadCubeData bypasses it
+// for exterior cubes: it also repositions the hero from gameplay state this
+// headless renderer never sets) and calls InitGrille(NewCube) directly --
+// NewCube is exactly what ChangeCube() itself passes PtrInitGrille, since
+// LoadScene() already sets NewCube = numscene before returning.
+extern S32 CubeMode;
+extern S32 NewCube;
+extern void InitGrille(U32 numcube);
+extern void Init3DView(void);
+extern void CameraCenter(S32 flagbeta);
+extern U8 NumObjFollow;
+
+// True only when numscene's own on-disk header says CUBE_INTERIEUR --
+// callers (the C# side) use this to decide which Load*/Render* pair to call
+// for a given scene before committing to either path. Loads the scene as a
+// side effect (same as every other RendererLoad* here), since the mode byte
+// can only be read by actually loading it.
+int RendererLoadInteriorScene(int numscene)
+{
+    if (numscene < 0) return 0;
+
+    S32 ok = LoadScene(numscene);
+    if (!ok) return 0;
+
+    if (CubeMode != CUBE_INTERIEUR) return 0; // caller should use an exterior Load* instead
+
+    StartInitAllObjs();
+
+    // Init3DView() (GAMEMENU.CPP) sets up the fixed isometric projection
+    // (SetIsoProjection/SetAngleCamera(0,0,0)) interior scenes always use --
+    // unlike the exterior view's free-orbiting camera, there is no rotation
+    // here, so this only ever needs setting once per scene load, not once
+    // per frame. NumObjFollow=0 (the hero's own object slot, per
+    // LoadScene()'s own "HERO_START" section -- ListObjet[0]) then
+    // CameraCenter(1) snaps the camera to the hero's containing brick
+    // (StartXCube/Y/Z), matching what the retail game does on every real
+    // cube entry (INTEXT.CPP).
+    Init3DView();
+    NumObjFollow = 0;
+    CameraCenter(1);
+
+    InitGrille((U32)NewCube);
+
+    return 1;
+}
+
+// Draws the currently-loaded interior scene's brick grid into the same Log
+// framebuffer lba2_renderer_framebuffer() already exposes for the exterior
+// path (AffGrille ultimately calls AffGraph(), the same primitive the
+// exterior path's own terrain/actor drawing uses). Cls() first: unlike a
+// full 3D exterior view (sky+terrain always covers every pixel), individual
+// bricks can leave gaps (see their own RLE transparent-run format), so a
+// stale previous frame would otherwise show through.
+int RendererRenderInteriorFrame(void)
+{
+    Cls();
+    AffGrille();
+    return 1;
+}
+
 int RendererGetActorCount()
 {
     return (int)g_actors.size();

@@ -149,6 +149,24 @@ LBA2_RENDERER_API int lba2_renderer_is_actor_placeholder(int index);
    this index was already removed. */
 LBA2_RENDERER_API int lba2_renderer_remove_actor(int index);
 
+/* LBA2 indoor/interior scenes use a completely different renderer from
+   every exterior island cube above: an older, LBA1-derived isometric
+   "brick grid" (flat sprite tiles, fixed camera angle) rather than 3D
+   terrain -- see lba2_renderer_load_interior_scene's own native
+   implementation (RendererLoadInteriorScene, RENDERER_ACTORS.CPP) for the
+   full explanation. Loads numscene and returns 1 only if its own on-disk
+   header says it's actually an interior scene (0 otherwise, including on a
+   genuine load failure) -- callers should fall back to
+   lba2_renderer_load_island/lba2_renderer_load_cube for an exterior scene
+   instead. Also sets up this scene's own fixed camera (no separate
+   lba2_renderer_set_camera call is needed or meaningful here). */
+LBA2_RENDERER_API int lba2_renderer_load_interior_scene(int numscene);
+
+/* Renders the scene lba2_renderer_load_interior_scene last loaded into the
+   same framebuffer lba2_renderer_framebuffer() already exposes for the
+   exterior path. Always returns 1. */
+LBA2_RENDERER_API int lba2_renderer_render_interior_frame(void);
+
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
    water-lava-reaction toggles) -- lba2_renderer_get_actor_attributes only
    covers the handful of scalar fields the original inspector panel showed.

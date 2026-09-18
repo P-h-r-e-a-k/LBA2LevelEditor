@@ -120,6 +120,38 @@ internal sealed class CommunityRendererBackend
         }
     }
 
+    // LBA2's indoor/interior scenes: a completely different, fixed-camera
+    // isometric renderer from every RenderIsland* call above -- see
+    // RendererLibraryApi.LoadInteriorScene's own doc comment. Shares
+    // directRenderLock/directSession with RenderIslandDirect (both drive the
+    // same single native renderer instance), but never touches directIsland:
+    // an interior scene isn't addressed by island name, and switching back
+    // to an exterior island afterwards still needs its own LoadIsland() call
+    // regardless of what directIsland was left at, so this deliberately
+    // leaves that field alone rather than invalidating or guessing at it.
+    public BitmapSource? RenderInteriorSceneDirect(int numscene, byte[] paletteBytes)
+    {
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
+        lock (directRenderLock)
+        {
+            if (!directSession)
+            {
+                if (!RendererLibrary.SetDataRoot(gameDirectory)) { directFailure = "set data root failed"; return null; }
+                if (!RendererLibrary.Initialize()) { directFailure = "native initialize failed"; return null; }
+                directSession = true;
+            }
+            if (!RendererLibrary.LoadInteriorScene(numscene)) { directFailure = $"load interior scene failed: {numscene}"; return null; }
+            if (!RendererLibrary.RenderInteriorFrame()) { directFailure = "native interior render returned failure"; return null; }
+            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
+            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }
+            var pixels = new byte[width * height];
+            for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            bitmap.Freeze();
+            return bitmap;
+        }
+    }
+
     // For the actor-attributes editor's rotating body preview. Shares
     // directRenderLock with RenderIslandDirect/RenderIslandTopDown above --
     // without it, a preview tick landing mid-frame of an in-flight main-view

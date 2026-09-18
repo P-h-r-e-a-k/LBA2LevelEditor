@@ -32,6 +32,13 @@ public partial class MainWindow : Window
     private Point lastMousePosition;
     private bool orbiting;
     private bool nativeViewActive;
+    // True while TerrainViewport is showing an interior/indoor scene
+    // (ShowInteriorScene) rather than an outdoor island -- a fixed-camera
+    // snapshot, not a live loop like nativeViewActive's. Guards
+    // RenderSoftwareTerrain (the one place every zoom/pan/resize handler's
+    // "not native" branch funnels through) so none of them silently paints
+    // over the interior view with a re-rendered outdoor fallback.
+    private bool interiorSceneActive;
     private CancellationTokenSource? nativeRenderCancellation;
     private readonly object nativeRenderGate = new();
     private bool nativeRenderInFlight;
@@ -50,7 +57,11 @@ public partial class MainWindow : Window
     // this scene's own data says it belongs to -- see ResolveSceneIsland's
     // own comment -- or null when that byte doesn't resolve to any known
     // island, shown under the synthetic OtherIslandLabel island instead.
-    private sealed record SceneEntry(string? IslandFile, FilterableComboBox.Option Option);
+    // IsInterior comes from the scene's own on-disk CubeMode byte (see its
+    // own comment in BuildSceneEntries) -- LBA2's indoor/building scenes use
+    // a completely different, fixed-camera isometric renderer from every
+    // outdoor island cube, wired up in ShowInteriorScene.
+    private sealed record SceneEntry(string? IslandFile, bool IsInterior, FilterableComboBox.Option Option);
     private List<SceneEntry> allSceneEntries = new();
     private const string OtherIslandLabel = "Other";
 
@@ -81,6 +92,15 @@ public partial class MainWindow : Window
             FileLabel.Text = $"●  {o.Display} / SCENE.HQR";
             DocumentTitle.Text = o.Display;
             DocumentSummary.Text = "Native SCENE.HQR record / object and zone data";
+            // o.Index is the numscene this option was built from (see
+            // BuildSceneEntries) -- only interior scenes actually change
+            // what's on screen here for now; picking an exterior scene still
+            // just updates the labels above, matching this combo's existing
+            // (pre-interior-support) behaviour rather than growing a second,
+            // unrelated "jump the outdoor camera to an arbitrary scene"
+            // feature nobody asked for yet.
+            var entry = allSceneEntries.FirstOrDefault(e => e.Option.Index == o.Index);
+            if (entry is { IsInterior: true }) ShowInteriorScene(o.Index);
         };
 
         if (Directory.Exists(gameRoot))
@@ -162,8 +182,9 @@ public partial class MainWindow : Window
             if (!archive.IsValid(hqrIndex)) continue;
             var numscene = hqrIndex - 1;
             var name = hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null;
+            var isInterior = IsInteriorScene(archive, hqrIndex);
             var option = new FilterableComboBox.Option(numscene, name is null ? $"{numscene}" : $"{numscene}: {name}");
-            entries.Add(new SceneEntry(ResolveSceneIsland(archive, hqrIndex), option));
+            entries.Add(new SceneEntry(ResolveSceneIsland(archive, hqrIndex), isInterior, option));
         }
         return entries;
     }
@@ -199,6 +220,21 @@ public partial class MainWindow : Window
         if (bytes.Length < 1) return null;
         var islandId = bytes[0];
         return islandId < IslandNameByRawSceneId.Length ? IslandNameByRawSceneId[islandId] : null;
+    }
+
+    // DISKFUNC.CPP's LoadScene() reads, in this exact order right off the
+    // scene record's own header: Island (byte 0, see ResolveSceneIsland),
+    // CurrentCubeX (1), CurrentCubeY (2), ShadowLevel (3), ModeLabyrinthe
+    // (4), CubeMode (5, 0=CUBE_INTERIEUR / 1=CUBE_EXTERIEUR). Reading it
+    // straight from the same raw bytes here (rather than adding a native
+    // API for one byte this editor already has in hand) is how the Scene
+    // dropdown decides whether picking a given scene should hand off to
+    // ShowInteriorScene's fixed-camera isometric renderer instead of the
+    // ordinary outdoor island view.
+    private static bool IsInteriorScene(HqrArchive archive, int hqrIndex)
+    {
+        var bytes = archive.Read(hqrIndex);
+        return bytes.Length > 5 && bytes[5] == 0;
     }
 
     // Narrows the Scene dropdown to only the scenes belonging to whichever
@@ -259,6 +295,7 @@ public partial class MainWindow : Window
 
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
+            interiorSceneActive = false;
             selectedActorIndex = null;
             ActorMarkerCanvas.Children.Clear();
             lastNativeActorScreens = null;
@@ -332,7 +369,7 @@ public partial class MainWindow : Window
 
     private void RenderSoftwareTerrain()
     {
-        if (nativeViewActive || currentIsland is null || TerrainViewport.ActualWidth < 1 || TerrainViewport.ActualHeight < 1) return;
+        if (nativeViewActive || interiorSceneActive || currentIsland is null || TerrainViewport.ActualWidth < 1 || TerrainViewport.ActualHeight < 1) return;
         try
         {
             TerrainViewport.Source = SoftwareTerrainRenderer.Render(currentIsland, (int)TerrainViewport.ActualWidth, (int)TerrainViewport.ActualHeight, cameraYaw, 38, cameraDistance, targetX, targetZ);
@@ -342,6 +379,39 @@ public partial class MainWindow : Window
         {
             TerrainViewport.Source = currentIsland.CreatePreview();
         }
+    }
+
+    // LBA2's indoor/building scenes: a completely different, fixed-camera
+    // isometric brick-grid renderer from every outdoor island view above --
+    // see CommunityRendererBackend.RenderInteriorSceneDirect's own comment.
+    // Reuses whichever island's own palette is already loaded (the exact
+    // per-scene palette an interior uses in retail depends on its own
+    // Island/CubeMode -- not modelled here yet) since it's already on hand
+    // and close enough to be readable; a scene that actually needs a
+    // different one will just look off-colour rather than fail to render.
+    private void ShowInteriorScene(int numscene)
+    {
+        if (!nativeRenderer.DirectRendererReady)
+        {
+            DocumentSummary.Text = "Interior scenes need the native renderer, which isn't available.";
+            return;
+        }
+
+        var bitmap = nativeRenderer.RenderInteriorSceneDirect(numscene, palette);
+        if (bitmap is null)
+        {
+            DocumentSummary.Text = "Couldn't render this interior scene.";
+            return;
+        }
+
+        nativeViewActive = false;
+        interiorSceneActive = true;
+        TerrainViewport.Source = bitmap;
+        selectedActorIndex = null;
+        ActorMarkerCanvas.Children.Clear();
+        lastNativeActorScreens = null;
+        lastNativeActorRoutes = null;
+        DocumentSummary.Text = $"Native interior scene {numscene} / fixed isometric view";
     }
 
     // Simple-marker actor overlay for the main 3D view: projects each actor's

@@ -29,6 +29,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int AddActorFn(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int IsActorPlaceholderFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RemoveActorFn(int index);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int LoadInteriorSceneFn(int numscene);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFrameFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
@@ -60,6 +62,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private AddActorFn? addActor;
     private IsActorPlaceholderFn? isActorPlaceholder;
     private RemoveActorFn? removeActor;
+    private LoadInteriorSceneFn? loadInteriorScene;
+    private RenderInteriorFrameFn? renderInteriorFrame;
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
     private GetActorBoundsFn? getActorBounds;
@@ -119,6 +123,8 @@ internal sealed class RendererLibraryApi : IDisposable
         addActor = Get<AddActorFn>("lba2_renderer_add_actor");
         isActorPlaceholder = Get<IsActorPlaceholderFn>("lba2_renderer_is_actor_placeholder");
         removeActor = Get<RemoveActorFn>("lba2_renderer_remove_actor");
+        loadInteriorScene = Get<LoadInteriorSceneFn>("lba2_renderer_load_interior_scene");
+        renderInteriorFrame = Get<RenderInteriorFrameFn>("lba2_renderer_render_interior_frame");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
         getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
@@ -253,6 +259,14 @@ internal sealed class RendererLibraryApi : IDisposable
     // attributes window opened for a freshly-added actor closes without an
     // Apply, so an actor a user backed out of doesn't linger in the world.
     public bool RemoveActor(int index) => removeActor?.Invoke(index) == 1;
+    // LBA2's older, LBA1-derived isometric interior renderer (flat sprite
+    // "brick" tiles, fixed camera) -- a completely different path from
+    // every exterior island/cube call above. Returns false if numscene's
+    // own on-disk header says it's actually an exterior scene, or on a
+    // genuine load failure; see lba2_renderer_load_interior_scene's own
+    // doc comment (RENDERER_API.H).
+    public bool LoadInteriorScene(int numscene) => loadInteriorScene?.Invoke(numscene) == 1;
+    public bool RenderInteriorFrame() => renderInteriorFrame?.Invoke() == 1;
     public bool GetActorFlags(int index, out uint flags)
     {
         if (getActorFlags is null) { flags = 0; return false; }

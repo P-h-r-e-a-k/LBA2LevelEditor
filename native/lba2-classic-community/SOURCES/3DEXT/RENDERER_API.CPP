@@ -43,6 +43,8 @@ extern int RendererSetActorPosition(int index, int worldX, int worldY, int world
 extern int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 extern int RendererIsActorPlaceholder(int index);
 extern int RendererRemoveActor(int index);
+extern int RendererLoadInteriorScene(int numscene);
+extern int RendererRenderInteriorFrame(void);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
 extern int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
@@ -460,6 +462,16 @@ int lba2_renderer_is_actor_placeholder(int index)
 int lba2_renderer_remove_actor(int index)
 {
     return RendererRemoveActor(index);
+}
+
+int lba2_renderer_load_interior_scene(int numscene)
+{
+    return RendererLoadInteriorScene(numscene);
+}
+
+int lba2_renderer_render_interior_frame(void)
+{
+    return RendererRenderInteriorFrame();
 }
 
 int lba2_renderer_get_actor_flags(int index, unsigned int *flags)
