@@ -737,6 +737,14 @@ static void ExtractTrackWaypoints(T_OBJET *ptrobj, S32 baseX, S32 baseZ)
     }
 }
 
+// FICHE.CPP -- resolves a per-actor generic body/anim number (numbody/
+// numanim) through numobj's own PtrFile3D fiche table into a raw BODY.HQR/
+// ANIM.HQR archive index, or -1 if that generic number isn't in the table.
+// See this function's own use below for why RendererScanIslandActors needs
+// it.
+extern S32 SearchBody(U8 numbody, S32 numobj);
+extern S32 SearchAnim(U16 numanim, S32 numobj);
+
 int RendererScanIslandActors(int islandIndex)
 {
     g_actors.clear();
@@ -799,7 +807,29 @@ int RendererScanIslandActors(int islandIndex)
             // seeded above from the raw disk fields) only if it finds an
             // unconditional BODY/ANIM line -- see its own comment for why
             // the disk fields alone are frequently just a placeholder.
-            DecodeLifeScript(ptrobj, actor.LifeScript, &actor.GenBody, &actor.GenAnim);
+            //
+            // What ends up in actor.GenBody/GenAnim here is still the
+            // *generic* per-actor number straight from disk (or the life
+            // script) -- small, per-object-fiche-table-relative values,
+            // e.g. "this actor's own 3rd body", not a BODY.HQR index --
+            // despite this struct field's own name suggesting otherwise
+            // (an assumption that holds for an actor *added* through this
+            // editor, which really does start out holding a raw index by
+            // construction, but not for one read from a real scene file).
+            // Resolving it to a real archive index needs this object's own
+            // PtrFile3D fiche table (SearchBody()/SearchAnim(), FICHE.CPP)
+            // -- which this scan can't safely reach: it runs under
+            // FlagLoadGame=TRUE (set just above, to skip LoadScene()'s own
+            // LoadFile3D() call, since this renderer-only build never
+            // populates LoadFile3D's target BufferFile3D), and DISKFUNC.CPP's
+            // own LoadScene() only ever assigns PtrFile3D "if (!FlagLoadGame)"
+            // -- confirmed the hard way, a first attempt at resolving right
+            // here crashed on startup dereferencing whatever PtrFile3D
+            // happened to hold (never actually assigned in this mode) for
+            // every single scanned object. See RendererGetActorAttributes
+            // instead, which resolves this lazily, only once this specific
+            // actor's own scene is genuinely live (PtrFile3D guaranteed
+            // real then) rather than during this position-only scan.
             DecodeTrackScript(ptrobj, actor.TrackScript);
             actor.SceneIndex = scene;
             actor.ObjectSlot = n;
@@ -909,13 +939,49 @@ int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, 
     return 1;
 }
 
+extern S32 NewCube;
+
+// a.GenBody/GenAnim, for an actor scanned straight off a real scene file
+// (as opposed to one added through this editor), are still the *generic*
+// per-actor numbers from disk -- see RendererScanIslandActors's own
+// comment for the full writeup of why, and why that scan itself can't
+// safely resolve them (no valid PtrFile3D to resolve *through* at that
+// point). By the time this is actually called, though, the object may
+// well be live: if this exact actor's own scene is the one currently
+// loaded into ListObjet (NewCube == a.SceneIndex) -- which happens simply
+// by the camera having panned across its cube, entirely independent of
+// this dialog -- LoadScene() has, for that real load, genuinely assigned
+// ListObjet[a.ObjectSlot].PtrFile3D (DISKFUNC.CPP only skips that "if
+// (!FlagLoadGame)", and the camera's own cube loading always runs with
+// FlagLoadGame=FALSE -- see RendererLoadCubeScene). Resolving lazily here,
+// through that now-valid live fiche table, is what makes this match what
+// the island view already renders instead of misreading the raw generic
+// number as if it were already a BODY.HQR/ANIM.HQR index (confirmed by a
+// report of exactly that split: a MOSQUIBE.ILE dragon with a correct body
+// in the island view and a different, wrong one in its own attributes
+// dialog). Falls back to the stored (possibly still-generic) value
+// whenever this scene isn't the live one or resolution fails -- still no
+// worse than what this returned before.
+extern void NativeDebugLog(const char *fmt, ...);
+
 int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move)
 {
     if (index < 0 || index >= (int)g_actors.size()) return 0;
     const RendererActor &a = g_actors[(size_t)index];
+    S32 resolvedBody = a.GenBody;
+    S32 resolvedAnim = a.GenAnim;
+    if (NewCube == a.SceneIndex && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
+        S32 b = SearchBody((U8)a.GenBody, a.ObjectSlot);
+        if (b >= 0) resolvedBody = b;
+        S32 an = SearchAnim(a.GenAnim, a.ObjectSlot);
+        if (an >= 0) resolvedAnim = an;
+        if (resolvedBody != a.GenBody || resolvedAnim != a.GenAnim)
+            NativeDebugLog("RendererGetActorAttributes: index=%d slot=%d resolved generic body=%d anim=%d -> raw body=%d anim=%d",
+                index, (int)a.ObjectSlot, (int)a.GenBody, (int)a.GenAnim, (int)resolvedBody, (int)resolvedAnim);
+    }
     if (beta) *beta = a.Beta;
-    if (body) *body = a.GenBody;
-    if (anim) *anim = a.GenAnim;
+    if (body) *body = resolvedBody;
+    if (anim) *anim = resolvedAnim;
     if (lifePoint) *lifePoint = a.LifePoint;
     if (armor) *armor = a.Armure;
     if (hitForce) *hitForce = a.HitForce;

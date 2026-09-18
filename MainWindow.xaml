@@ -89,9 +89,9 @@
                     <TextBlock x:Name="DocumentSummary" Text="Native ILE / 16 x 16 cubes" Foreground="#89958B" FontSize="12"/>
                     <Separator Margin="0,28,0,22"/>
                     <TextBlock Text="ISLAND" Style="{StaticResource Eyebrow}"/>
-                    <ComboBox x:Name="IslandCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" Margin="0,10,0,18"/>
+                    <ComboBox x:Name="IslandCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False" Margin="0,10,0,18"/>
                     <TextBlock Text="SCENE" Style="{StaticResource Eyebrow}"/>
-                    <ComboBox x:Name="SceneCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" Margin="0,10,0,0"/>
+                    <ComboBox x:Name="SceneCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False" Margin="0,10,0,0"/>
                     <TextBlock Text="▦   Source folder linked&#x0a;      E:\GOG Games\...\Levels" FontFamily="Consolas" FontSize="10" Foreground="#849087" Margin="0,44,0,0"/>
                 </StackPanel>
             </Border>

@@ -488,7 +488,6 @@ public partial class MainWindow : Window
             var screenY = sy * scaleY;
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
 
-            var selected = selectedActorIndex == index;
             // Sized to the actor's own real body bounds (projected alongside
             // its position in the same locked render pass -- see where
             // lastNativeActorScreens gets built) instead of a fixed 24x24,
@@ -502,8 +501,6 @@ public partial class MainWindow : Window
                 Width = hitWidth,
                 Height = hitHeight,
                 Fill = Brushes.Transparent,
-                Stroke = selected ? Brushes.Yellow : null,
-                StrokeThickness = 2,
                 Cursor = Cursors.Hand,
                 Tag = index,
             };

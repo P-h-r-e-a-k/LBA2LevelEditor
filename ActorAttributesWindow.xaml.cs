@@ -417,8 +417,30 @@ public partial class ActorAttributesWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
             ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged)));
     }
-    private void BodyCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
-    private void AnimCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
+    // If focus leaves the box without landing on a real, resolvable entry
+    // (typed text that doesn't match any known index, or was left mid-
+    // filter), put back whatever was last actually committed rather than
+    // leaving unresolvable text sitting there -- CommitPreviewChange itself
+    // only ever silently no-ops on unparseable text, it never reverts it.
+    private static void RevertIfUnresolved(ComboBox combo, int committedValue, IReadOnlyList<NamedOption> allOptions, ref bool suppress)
+    {
+        if (int.TryParse(ParseLeadingIndex(combo.Text), out var value) && allOptions.Any(o => o.Index == value)) return;
+        var match = allOptions.FirstOrDefault(o => o.Index == committedValue);
+        suppress = true;
+        combo.ItemsSource = allOptions;
+        combo.Text = match?.Display ?? committedValue.ToString();
+        suppress = false;
+    }
+    private void BodyCombo_LostFocus(object sender, RoutedEventArgs e)
+    {
+        RevertIfUnresolved(BodyCombo, previewBody, cachedBodyOptions!, ref suppressBodyTextChanged);
+        CommitPreviewChange();
+    }
+    private void AnimCombo_LostFocus(object sender, RoutedEventArgs e)
+    {
+        RevertIfUnresolved(AnimCombo, previewAnim, animOptionsForActor, ref suppressAnimTextChanged);
+        CommitPreviewChange();
+    }
 
     // Runs whenever the body/animation selection is actually committed
     // (picked from the dropdown, or the box loses focus after typing) --

@@ -73,35 +73,49 @@
                 </Grid>
 
                 <TextBlock Text="Body" Style="{StaticResource FieldLabel}"/>
-                <ComboBox x:Name="BodyCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True"
+                <ComboBox x:Name="BodyCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
                           SelectionChanged="BodyCombo_SelectionChanged"
                           LostFocus="BodyCombo_LostFocus" GotFocus="BodyCombo_GotFocus"/>
 
                 <TextBlock Text="Animation" Style="{StaticResource FieldLabel}"/>
-                <ComboBox x:Name="AnimCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True"
+                <ComboBox x:Name="AnimCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
                           SelectionChanged="AnimCombo_SelectionChanged"
                           LostFocus="AnimCombo_LostFocus" GotFocus="AnimCombo_GotFocus"/>
 
+                <!-- Same 7-column split as the Position/Facing row above (three
+                     equal fields plus 6px gaps) so the left box here lines up
+                     exactly under fields 1-2 and the right box under fields
+                     3-4, rather than an independent even 50/50 split. -->
                 <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Life points" Style="{StaticResource FieldLabel}"/>
-                    <TextBlock Grid.Column="2" Text="Armour" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Grid.Row="1" Grid.Column="0" x:Name="LifePointBox" Style="{StaticResource FieldBox}"/>
-                    <TextBox Grid.Row="1" Grid.Column="2" x:Name="ArmourBox" Style="{StaticResource FieldBox}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Hit force" Style="{StaticResource FieldLabel}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Move type" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Grid.Row="3" Grid.Column="0" x:Name="HitForceBox" Style="{StaticResource FieldBox}"/>
-                    <TextBox Grid.Row="3" Grid.Column="2" x:Name="MoveBox" Style="{StaticResource FieldBox}"/>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
+                    <TextBlock Grid.Column="0" Grid.ColumnSpan="3" Text="Life points" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="4" Grid.ColumnSpan="3" Text="Armour" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" x:Name="LifePointBox" Style="{StaticResource FieldBox}"/>
+                    <TextBox Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="3" x:Name="ArmourBox" Style="{StaticResource FieldBox}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Text="Hit force" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="4" Grid.ColumnSpan="3" Text="Move type" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" x:Name="HitForceBox" Style="{StaticResource FieldBox}"/>
+                    <TextBox Grid.Row="3" Grid.Column="4" Grid.ColumnSpan="3" x:Name="MoveBox" Style="{StaticResource FieldBox}"/>
                 </Grid>
 
                 <TextBlock Text="Flags" Style="{StaticResource FieldLabel}"/>
                 <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <ItemsControl Grid.Column="0" x:Name="FlagsListLeft">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <ItemsControl Grid.Column="0" Grid.ColumnSpan="3" x:Name="FlagsListLeft">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
@@ -109,7 +123,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <ItemsControl Grid.Column="2" x:Name="FlagsListRight">
+                    <ItemsControl Grid.Column="4" Grid.ColumnSpan="3" x:Name="FlagsListRight">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
