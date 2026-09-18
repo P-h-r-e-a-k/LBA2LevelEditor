@@ -14,7 +14,7 @@ public sealed class MainForm : Form
     readonly ComboBox target=Combo("Both","LBA1","LBA2"),layout=Combo("Front + back","Single front"),mask=Combo("Dark subject","Light subject","Transparent background","Background colour");
     readonly ComboBox method=Combo("New humanoid","Fit template");
     readonly NumericUpDown body1=Number(0,10000,0),body2=Number(0,10000,0),threshold=Number(1,254,45),fit=Number(0,100,80),height=Number(25,300,100),width=Number(25,300,100),depth=Number(25,300,100),head=Number(25,150,70),budget=Number(0,540,460);
-    readonly CheckBox autoCrop=new(){Text="Auto crop subject",Checked=true,AutoSize=true},flip=new(){Text="Mirror image projection",AutoSize=true},negative=new(){Text="Front faces negative Z",Checked=true,AutoSize=true},archive=new(){Text="Include a separate BODY.HQR copy",Checked=true,AutoSize=true};
+    readonly CheckBox autoCrop=new(){Text="Auto crop subject",Checked=true,AutoSize=true},flip=new(){Text="Mirror image projection",AutoSize=true},negative=new(){Text="Front faces negative Z",AutoSize=true} /* actual default comes from Settings.NegativeZFront via Apply() below */,archive=new(){Text="Include a separate BODY.HQR copy",Checked=true,AutoSize=true};
     readonly ModelView preview=new(){Dock=DockStyle.Fill};
     readonly PictureBox reference=new(){Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Color.FromArgb(25,30,39)};
     readonly Label status=new(){Dock=DockStyle.Bottom,Height=52,Padding=new Padding(16,8,16,8),Text="Choose an image, generate, then inspect the preview before exporting."};

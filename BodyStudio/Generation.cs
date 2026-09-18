@@ -27,7 +27,23 @@ public sealed class Settings
     public int Threshold { get; set; } = 45;
     public bool AutoCrop { get; set; } = true;
     public bool FlipFront { get; set; }
-    public bool NegativeZFront { get; set; } = true;
+    // The native engine's own local +Z is a character's forward-facing/
+    // walking direction (derived from IMATSTDF.CPP/LROT3DF.CPP's Beta
+    // rotation matrix, INTERDEP.CPP's root-motion translation, and
+    // CAMERA.CPP's documented "BetaCam = 2048 - heroBeta" behind-the-hero
+    // chase-camera rule, which only resolves to a camera looking along the
+    // character's own +Z -- i.e. viewing their back -- if +Z is the
+    // direction they walk/face). A character's face therefore sits at
+    // positive local Z, not negative -- this default was originally true
+    // (front at negative Z), which is backwards relative to the real
+    // engine: confirmed by a user-supplied front/back reference pair
+    // (bandana text + grin on the front, tied bow on the back) generating
+    // with the two swapped. Every place that reads this setting (Sample's
+    // isFront, the Front/Back preview buttons, HeadDecoration's own
+    // Point() mirroring, and head-front.png/head-back.png's export yaw) is
+    // already driven consistently off this one flag, so correcting the
+    // default here is the complete fix.
+    public bool NegativeZFront { get; set; } = false;
     public float Fit { get; set; } = 0.8f;
     public float Height { get; set; } = 1f;
     public float Width { get; set; } = 1f;
