@@ -182,6 +182,14 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_native_anims(int index, int *outAn
    fallback message rather than a stale/blank frame on 0. */
 LBA2_RENDERER_API int lba2_renderer_render_body_preview(int body, int anim, int cameraBeta, int cameraDistance);
 
+/* Freezes (nonzero) or resumes (0) the body preview's own animation
+   playback -- the turntable rotation (cameraBeta, entirely the caller's own
+   doing) keeps working independently either way, so callers can inspect a
+   specific animation frame from any angle without it changing under them.
+   Affects every subsequent lba2_renderer_render_body_preview() call until
+   toggled back; has no effect on real actors/lba2_renderer_render_frame*(). */
+LBA2_RENDERER_API void lba2_renderer_set_body_preview_animation_paused(int paused);
+
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which
    engine functions this reuses). Returns 0 if the point is beyond the far

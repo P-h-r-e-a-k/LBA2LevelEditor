@@ -32,6 +32,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorNativeAnimsFn(int index, [Out] int[]? outAnims, int maxCount);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderBodyPreviewFn(int genBody, int genAnim, int cameraBeta, int cameraDistance);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetBodyPreviewAnimationPausedFn(int paused);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
     private IntPtr handle;
     private VersionFn? version;
@@ -60,6 +61,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetActorBoundsFn? getActorBounds;
     private GetActorNativeAnimsFn? getActorNativeAnims;
     private RenderBodyPreviewFn? renderBodyPreview;
+    private SetBodyPreviewAnimationPausedFn? setBodyPreviewAnimationPaused;
     private ProjectPointFn? projectPoint;
 
     // devTreeFallbackPath is an absolute path into the native dev build
@@ -116,6 +118,7 @@ internal sealed class RendererLibraryApi : IDisposable
         getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
         getActorNativeAnims = Get<GetActorNativeAnimsFn>("lba2_renderer_get_actor_native_anims");
         renderBodyPreview = Get<RenderBodyPreviewFn>("lba2_renderer_render_body_preview");
+        setBodyPreviewAnimationPaused = Get<SetBodyPreviewAnimationPausedFn>("lba2_renderer_set_body_preview_animation_paused");
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
 
@@ -268,6 +271,10 @@ internal sealed class RendererLibraryApi : IDisposable
     // is unaffected by anything except its own next render. See
     // lba2_renderer_render_body_preview's own doc comment.
     public bool RenderBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance) => renderBodyPreview?.Invoke(genBody, genAnim, cameraBeta, cameraDistance) == 1;
+    // Freezes/resumes the body preview's own animation playback -- the
+    // turntable's own rotation angle is entirely client-side (see
+    // ActorAttributesWindow's previewAngle) and keeps advancing regardless.
+    public void SetBodyPreviewAnimationPaused(bool paused) => setBodyPreviewAnimationPaused?.Invoke(paused ? 1 : 0);
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 

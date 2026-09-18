@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
@@ -81,6 +82,27 @@ public partial class ActorAttributesWindow : Window
     // 3-digit index, each a valid-but-throwaway intermediate value.
     private DispatcherTimer? textCommitTimer;
     private DispatcherTimer? resizeTimer;
+
+    // previewAngle still advances by this many of the engine's 4096-per-turn
+    // units each 60ms tick -- 0 stops the turntable dead (matching the
+    // slider's own "0 is stopped" label) without needing a separate pause
+    // flag for rotation specifically. Click-and-drag (below) always
+    // overrides this while the mouse button is held, regardless of its
+    // value, then rotation resumes at this rate on release.
+    private int rotationSpeed = 24;
+    private bool isDraggingPreview;
+    private double dragLastX;
+
+    // Mirrors PauseAnimationCheck -- re-sent to the native side on every
+    // single render (RenderPreviewFrame), not just when the checkbox
+    // changes: lba2_renderer_set_body_preview_animation_paused's own flag is
+    // a single global in the native library, shared by every open Attributes
+    // window's preview (there's only one scratch preview object -- see
+    // AffichageBodyPreview's own comment). Re-asserting this window's own
+    // preference immediately before each of its own renders means whichever
+    // window rendered most recently always gets its own pause state applied
+    // correctly, rather than one window's checkbox leaking into another's.
+    private bool pauseAnimation;
 
     internal ActorAttributesWindow(CommunityRendererBackend nativeRenderer, byte[] palette, int actorIndex)
     {
@@ -395,7 +417,11 @@ public partial class ActorAttributesWindow : Window
 
     private void TickPreview()
     {
-        previewAngle = (previewAngle + 24) % 4096; // engine's angle unit is 4096 per full turn (COMMON.H's MAX_ANGLE)
+        // A manual drag (below) owns previewAngle exclusively while active --
+        // the auto-rotation resumes, at whatever rotationSpeed currently is,
+        // the instant the mouse button is released.
+        if (!isDraggingPreview)
+            previewAngle = (previewAngle + rotationSpeed) % 4096; // engine's angle unit is 4096 per full turn (COMMON.H's MAX_ANGLE)
         RenderPreviewFrame();
     }
 
@@ -406,6 +432,7 @@ public partial class ActorAttributesWindow : Window
             ShowPreviewFallback("enter a body index to preview");
             return;
         }
+        nativeRenderer.RendererLibrary?.SetBodyPreviewAnimationPaused(pauseAnimation);
         var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, calibration.Distance, palette);
         if (bitmap is null)
         {
@@ -482,4 +509,42 @@ public partial class ActorAttributesWindow : Window
     private void EditScript_Click(object sender, RoutedEventArgs e) => OpenScriptRequested?.Invoke(actorIndex);
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void PauseAnimationCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        pauseAnimation = PauseAnimationCheck.IsChecked == true;
+        RenderPreviewFrame(); // instant feedback rather than waiting for the next 60ms tick
+    }
+
+    private void RotationSpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        => rotationSpeed = (int)RotationSpeedSlider.Value;
+
+    // Degrees-per-pixel-of-drag, in the engine's 4096-per-turn angle unit --
+    // chosen as a fixed screen-space rate (not proportional to the preview's
+    // own pixel width) so dragging feels the same regardless of how the
+    // panel happens to be sized. ~512px of drag makes a full turn.
+    private const int DragUnitsPerPixel = 8;
+
+    private void BodyPreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        isDraggingPreview = true;
+        dragLastX = e.GetPosition(BodyPreviewImage).X;
+        BodyPreviewImage.CaptureMouse();
+    }
+
+    private void BodyPreviewImage_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!isDraggingPreview) return;
+        var x = e.GetPosition(BodyPreviewImage).X;
+        var deltaX = x - dragLastX;
+        dragLastX = x;
+        previewAngle = ((previewAngle + (int)(deltaX * DragUnitsPerPixel)) % 4096 + 4096) % 4096;
+        RenderPreviewFrame();
+    }
+
+    private void BodyPreviewImage_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        isDraggingPreview = false;
+        BodyPreviewImage.ReleaseMouseCapture();
+    }
 }

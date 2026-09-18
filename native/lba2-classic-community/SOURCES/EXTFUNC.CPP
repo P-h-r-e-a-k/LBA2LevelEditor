@@ -372,6 +372,7 @@ extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
 extern void *GivePtrBody(S32 index);
 extern void *GivePtrAnim(S32 index);
 extern bool g_disableBackfaceCulling;
+extern volatile S32 TimerLock; // TIMERWIN.CPP -- see AffichageBodyPreview's own comment on why this gets force-cleared there
 
 // Renders one body, alone against a cleared background, for the actor-
 // attributes editor's preview panel -- reuses AffichageActorsZBuf's own
@@ -461,6 +462,14 @@ static bool g_previewInitialized = false;
 // still independently needed for genuine backface visibility).
 static S32 g_previewBodyRadius = 0;
 
+// Set via lba2_renderer_set_body_preview_animation_paused (RENDERER_API.CPP)
+// for the actor-attributes editor's own "pause animation" toggle -- lets the
+// turntable keep rotating (cameraBeta is entirely the C# caller's own doing,
+// untouched by this) while holding the animated pose still, e.g. to inspect
+// a specific frame from a chosen angle. See its own use below for how
+// skipping just the ObjectSetInterDep call (and nothing else) achieves that.
+static bool g_previewAnimationPaused = false;
+
 static S32 ComputeBodyBoundingRadius(const void *bodyPtr)
 {
     const T_BODY_HEADER *header = (const T_BODY_HEADER *)bodyPtr;
@@ -469,6 +478,11 @@ static S32 ComputeBodyBoundingRadius(const void *bodyPtr)
     S32 rz = std::max(std::abs(header->ZMin), std::abs(header->ZMax));
     double radius = std::sqrt((double)rx * rx + (double)ry * ry + (double)rz * rz);
     return (S32)radius;
+}
+
+void SetBodyPreviewAnimationPaused(int paused)
+{
+    g_previewAnimationPaused = paused != 0;
 }
 
 int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
@@ -494,6 +508,14 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         g_previewInitBody = body;
         g_previewInitAnim = anim;
         g_previewInitialized = true;
+        // See ObjectSetInterDep's own call site below for what this forces
+        // and why it must NOT also be set on every later call: it's read
+        // once by ObjectSetInterDep (INTERDEP.CPP) then folded back into a
+        // freshly-computed Status, never re-armed by that function itself,
+        // so setting it here (right after a real body/anim change, when
+        // TimerRefHR happens to still equal the object's freshly-reset Time)
+        // forces exactly the one call that needs forcing.
+        ptrobj->Obj.Status |= FLAG_BODY;
     }
     if (ptrobj->Obj.Body.Num < 0) return 0;
 
@@ -524,6 +546,25 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
     SetLightVector(600, -600, 0);
     SetFollowCamera(0, 0, 0, 200, cameraBeta, 0, camDistance);
+
+    // TimerLock (TIMERWIN.CPP) is a counting lock -- ManageTime() only
+    // advances the shared TimerRefHR clock while it's exactly zero.
+    // Confirmed by logging (TimerLock=1, TimerSystemHR genuinely advancing,
+    // TimerRefHR/obj->Time frozen solid) that something on the editor's own
+    // island/actor-scan path (RendererScanIslandActors's repeated LoadScene()
+    // calls, most likely -- see its own FlagLoadGame comment) calls
+    // LockTimer() without a balancing UnlockTimer() reachable from a
+    // position/track-only scan, leaving this elevated for the rest of the
+    // session -- with no real gameplay/cinematic loop ever running in this
+    // headless renderer to unlock it the way the original game would. Once
+    // stuck, the preview's own animation froze permanently after its first
+    // frame regardless of the FLAG_BODY fix above, since ObjectSetInterDep's
+    // whole state machine is driven by TimerRefHR actually moving. Since
+    // this editor has no legitimate use for that lock (no cinematics, no
+    // real pause menu), forcing it clear right before the one call that
+    // needs the clock to move is the narrowest fix that doesn't touch
+    // whatever originally set it for the main view's own purposes.
+    TimerLock = 0;
     ManageSystem();
 
     // ObjectSetInterDep() (INTERDEP.CPP) is what actually advances the
@@ -538,20 +579,43 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     // never did anything beyond ObjectInitAnim's own one-time frame-0 copy,
     // and only whichever body groups that copy happened to leave sensibly
     // posed rendered -- the rest (missing torso/arms in testing) stayed at
-    // effectively garbage transforms. FLAG_BODY forces it to run even on
-    // the very first call, when TimerRefHR still exactly equals obj->Time
-    // (ObjectSetInterDep's own "nothing changed" fast path otherwise skips
-    // it, matching the FLAG_BODY set immediately before this same call at
-    // OBJECT.CPP's own call site). Saving/restoring X/Y/Z matches that same
-    // call site: ObjectSetInterDep applies the animation's own root motion
-    // to the object's position, which would otherwise walk our preview
-    // object away from the world origin the camera is centred on.
-    S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
-    ptrobj->Obj.Status |= FLAG_BODY;
-    ObjectSetInterDep(&ptrobj->Obj);
-    ptrobj->Obj.X = savedX;
-    ptrobj->Obj.Y = savedY;
-    ptrobj->Obj.Z = savedZ;
+    // effectively garbage transforms.
+    //
+    // FLAG_BODY (see the init block above) forces this to run on the very
+    // first call after a body/anim change, when TimerRefHR still exactly
+    // equals obj->Time -- ObjectSetInterDep's own "nothing changed" fast
+    // path (TimerRefHR == obj->Time, INTERDEP.CPP) otherwise skips it
+    // entirely. Setting that flag *here instead*, unconditionally on every
+    // call, was the bug behind animation playback freezing after the first
+    // frame: CalibrateBodyPreviewDistance (C#) fires nine of these calls
+    // back to back with no real time between them for every single body/
+    // anim commit (a probe render plus eight angle samples) and again on
+    // every window resize, and forcing this fast path open on every one of
+    // those zero-elapsed-time calls made ObjectSetInterDep re-process the
+    // *same* instant repeatedly instead of correctly no-op'ing -- confirmed
+    // by testing: switching animations still showed the new anim's first
+    // frame (that path runs once, correctly), but it then never advanced
+    // again on later real per-tick calls, because the forced zero-delta
+    // reprocessing during calibration corrupted LastTimer/NextTimer against
+    // a TimerRefHR value that had no relation to when real time would next
+    // catch up to it. Saving/restoring X/Y/Z matches OBJECT.CPP's own call
+    // site: ObjectSetInterDep applies the animation's own root motion to the
+    // object's position, which would otherwise walk our preview object away
+    // from the world origin the camera is centred on.
+    // When paused, Status/CurrentFrame are simply left exactly as the last
+    // real (non-paused) call computed them -- ObjectSetInterFrame below
+    // still runs and converges to a fully-idempotent no-op within at most
+    // one more call (INTFRAME.CPP clears Status to 0 the first time through
+    // after the freeze, then bails immediately on FLAG_CHANGE being clear
+    // every time after that), so the pose simply stops changing rather than
+    // needing any special-cased "frozen" rendering path of its own.
+    if (!g_previewAnimationPaused) {
+        S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
+        ObjectSetInterDep(&ptrobj->Obj);
+        ptrobj->Obj.X = savedX;
+        ptrobj->Obj.Y = savedY;
+        ptrobj->Obj.Z = savedZ;
+    }
 
     LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
     if (LongProjectPoint(X0, Y0, Z0)) {
