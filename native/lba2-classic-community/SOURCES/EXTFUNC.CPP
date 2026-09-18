@@ -480,6 +480,12 @@ static U32 g_previewLastTimerRefHR = 0;
 static U32 g_previewFreezeSinceSystemHR = 0;
 static bool g_previewFreezeArmed = false;
 
+// Set when a call's own ObjectSetInterDep() just wrapped past an
+// animation's last frame (FLAG_LAST_FRAME) -- see its own use below for
+// why the actual restart is deferred to the *next* call's very start
+// instead of happening immediately, right where it's noticed.
+static bool g_previewNeedsAnimRestart = false;
+
 static S32 ComputeBodyBoundingRadius(const void *bodyPtr)
 {
     const T_BODY_HEADER *header = (const T_BODY_HEADER *)bodyPtr;
@@ -526,6 +532,30 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // TimerRefHR happens to still equal the object's freshly-reset Time)
         // forces exactly the one call that needs forcing.
         ptrobj->Obj.Status |= FLAG_BODY;
+        g_previewNeedsAnimRestart = false; // a real body/anim change already starts fresh at frame 0
+    } else if (g_previewNeedsAnimRestart) {
+        // Deferred from the *previous* call's own ObjectSetInterDep hitting
+        // FLAG_LAST_FRAME (see that call site's own comment for why a
+        // non-looping animation needs restarting at all) -- doing the
+        // actual ObjectInitAnim() reinit here, at this same top-of-function
+        // spot the real body/anim-change path above already uses safely,
+        // rather than immediately in the middle of the call that noticed
+        // it, crashed the app (confirmed by testing: an access violation
+        // inside coreclr.dll, reproducible via nothing more than opening
+        // the Body/Animation dropdown shortly after, which happens to be
+        // exactly when ObjectDisplay next processes whatever partially-
+        // reinitialized state that mid-stream call left behind). This path
+        // runs at the very start of a call, before anything else has
+        // touched the object this call, identical in shape to the
+        // body/anim-change branch above -- the one call shape already
+        // proven safe by every other test this session.
+        void *animPtr = GivePtrAnim(anim);
+        if (animPtr) {
+            ptrobj->Obj.Anim.Num = -1; // force re-init -- see ObjectInitAnim's own Anim.Ptr==anim check
+            ObjectInitAnim(&ptrobj->Obj, animPtr);
+            ptrobj->Obj.Status |= FLAG_BODY; // matches the real-change branch: force ObjectSetInterDep to run even though TimerRefHR still equals the freshly-reset Time
+        }
+        g_previewNeedsAnimRestart = false;
     }
     if (ptrobj->Obj.Body.Num < 0) return 0;
 
@@ -655,17 +685,14 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // restart point. Our preview has no such script and just keeps
         // playing the one selected animation indefinitely, so a one-shot
         // anim would otherwise sit wherever LoopFrame landed it looking
-        // frozen. Forcing an explicit restart from frame 0 (the same
-        // ObjectInitAnim() the initial body/anim change uses, so it's the
-        // exact same "definitely frame 0" state, not a guess) whenever the
-        // last frame is reached makes every animation loop continuously,
-        // which is what a preview -- unlike real gameplay -- actually wants.
+        // frozen. Restarting from frame 0 whenever the last frame is
+        // reached makes every animation loop continuously, which is what a
+        // preview -- unlike real gameplay -- actually wants. Only *noticed*
+        // here, though -- see g_previewNeedsAnimRestart's own comment at
+        // the top of this function for why the actual reinit happens on
+        // the next call instead of immediately, right where it's detected.
         if (ptrobj->Obj.Status & FLAG_LAST_FRAME) {
-            void *animPtr = GivePtrAnim(anim);
-            if (animPtr) {
-                ptrobj->Obj.Anim.Num = -1; // force re-init -- see ObjectInitAnim's own Anim.Ptr==anim check
-                ObjectInitAnim(&ptrobj->Obj, animPtr);
-            }
+            g_previewNeedsAnimRestart = true;
         }
     }
 

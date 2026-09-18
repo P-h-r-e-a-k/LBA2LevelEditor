@@ -256,14 +256,29 @@ internal sealed class RendererLibraryApi : IDisposable
     // to showing the full, unordered animation list in that case. See
     // lba2_renderer_get_actor_native_anims's own doc comment for what this
     // list actually means (the character's real moveset, not a guess).
+    // Uses a fixed pre-allocated buffer, never a null-then-resize two-call
+    // round trip -- passing null for the sizing call was a genuine
+    // departure from GetActorScript's own established [Out] byte[]
+    // pattern above (which always passes a real, pre-sized buffer), and
+    // was suspected for a time during a hard-to-pin-down access-violation
+    // crash (coreclr.dll, confirmed via Windows Event Log) reachable by
+    // opening the Body/Animation dropdown -- but that crash turned out to
+    // trace to EXTFUNC.CPP's own animation-restart logic instead (see its
+    // own comment), reproducing identically with this code bypassed
+    // entirely. Kept anyway on its own merits: it's the same proven-safe
+    // shape as every other [Out] array call in this file, and a
+    // character's own fiche realistically never lists anywhere near 128
+    // animations regardless.
     public IReadOnlyList<int> GetActorNativeAnims(int index)
     {
         if (getActorNativeAnims is null) return Array.Empty<int>();
-        var needed = getActorNativeAnims(index, null, 0);
-        if (needed <= 0) return Array.Empty<int>();
-        var buffer = new int[needed];
-        getActorNativeAnims(index, buffer, buffer.Length);
-        return buffer;
+        var buffer = new int[128];
+        var count = getActorNativeAnims(index, buffer, buffer.Length);
+        if (count <= 0) return Array.Empty<int>();
+        if (count > buffer.Length) count = buffer.Length;
+        var result = new int[count];
+        Array.Copy(buffer, result, count);
+        return result;
     }
     // Renders into the same shared framebuffer GetFramebuffer() reads --
     // safe to call between ordinary main-view renders, but the caller must
