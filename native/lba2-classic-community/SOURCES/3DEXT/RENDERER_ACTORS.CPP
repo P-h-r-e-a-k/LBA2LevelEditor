@@ -1252,3 +1252,54 @@ int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax
     if (zMin) *zMin = o.ZMin; if (zMax) *zMax = o.ZMax;
     return 1;
 }
+
+// Walks ListObjet[slot].PtrFile3D exactly the way FICHE.CPP's own
+// SearchAnim()/SearchBody() do -- same command byte, same length-prefixed
+// skip arithmetic for every command type -- except instead of stopping at
+// the first F_ANIM matching one requested generic id, it records every
+// F_ANIM entry's hqranim value and keeps walking to the end (the 255
+// sentinel). The length-prefixed skip (a size byte immediately following
+// each entry's own generic-id field, counted from that size byte's own
+// position to the next command) is what makes this safe to walk generically
+// without understanding each command's variable-length action-data payload:
+// it's the exact same arithmetic SearchAnim's own "next anim"/SearchBody's
+// own "next anim" mismatch branches already use in shipped, working code.
+static int WalkFile3DNativeAnims(const U8 *ptrc, int *outAnims, int maxCount)
+{
+    int count = 0;
+    U8 command;
+    while ((command = *ptrc++) != 255) {
+        if (command == F_ANIM) {
+            ptrc += 2; // 16-bit generic anim id -- not needed here
+            U8 size = *ptrc;
+            S16 hqranim = *(const S16 *)(ptrc + 1);
+            if (hqranim >= 0) {
+                if (count < maxCount) outAnims[count] = hqranim;
+                count++;
+            }
+            ptrc += size;
+        } else if (command == F_BODY) {
+            ptrc++; // 8-bit generic body id
+            ptrc += *ptrc;
+        } else {
+            ptrc++; // FICHE.CPP's own default case: every other command type
+            ptrc += *ptrc; // also uses an 8-bit generic id + length-prefixed skip
+        }
+    }
+    return count;
+}
+
+int RendererGetActorNativeAnims(int index, int *outAnims, int maxCount)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return -1;
+    const RendererActor &a = g_actors[(size_t)index];
+    // Same "is this actor's scene actually the one live in ListObjet right
+    // now" guard as RendererGetActorBounds -- PtrFile3D is only populated by
+    // LoadScene() for the currently-loaded scene (see RendererLoadCubeActors's
+    // own comment on FlagLoadGame); the scan-time g_actors snapshot never
+    // runs that load, so anything else has no valid table to walk.
+    if (a.SceneIndex != NewCube || a.ObjectSlot < 1 || a.ObjectSlot >= NbObjets) return -1;
+    const U8 *ptrFile3D = ListObjet[a.ObjectSlot].PtrFile3D;
+    if (!ptrFile3D) return -1;
+    return WalkFile3DNativeAnims(ptrFile3D, outAnims, maxCount);
+}

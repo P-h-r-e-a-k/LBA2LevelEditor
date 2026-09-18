@@ -66,6 +66,22 @@ public partial class ActorAttributesWindow : Window
     private bool suppressBodyTextChanged;
     private bool suppressAnimTextChanged;
 
+    // Per-window (not shared/cached like cachedAnimOptions): this actor's
+    // own animation list with its native moveset -- see
+    // BuildAnimOptionsForActor -- sorted to the top, ahead of a separator,
+    // ahead of everything else. Falls back to cachedAnimOptions unchanged
+    // (no separator) when the native lookup finds nothing, e.g. this
+    // actor's scene isn't the one currently loaded.
+    private IReadOnlyList<NamedOption> animOptionsForActor = Array.Empty<NamedOption>();
+
+    // Debounces CommitPreviewChange() while typing a numeric index directly
+    // (rather than picking from the dropdown, which commits instantly via
+    // SelectionChanged below) -- committing on every keystroke would
+    // recalibrate against "1", then "12", then "123" as the user types a
+    // 3-digit index, each a valid-but-throwaway intermediate value.
+    private DispatcherTimer? textCommitTimer;
+    private DispatcherTimer? resizeTimer;
+
     internal ActorAttributesWindow(CommunityRendererBackend nativeRenderer, byte[] palette, int actorIndex)
     {
         InitializeComponent();
@@ -89,10 +105,23 @@ public partial class ActorAttributesWindow : Window
         // animation-data archive directly -- passing no HQR file here means
         // LoadOptions sizes the list from ANIM2.HQD's own line count alone
         // (~87 entries) instead of inflating it to ANIM.HQR's 2000+.
-        AnimCombo.ItemsSource = cachedAnimOptions ??= LoadOptions("ANIM2.HQD", null);
+        cachedAnimOptions ??= LoadOptions("ANIM2.HQD", null);
+        animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions);
+        AnimCombo.ItemsSource = animOptionsForActor;
+
+        textCommitTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        textCommitTimer.Tick += (_, _) => { textCommitTimer!.Stop(); CommitPreviewChange(); };
+        resizeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        resizeTimer.Tick += (_, _) => { resizeTimer!.Stop(); RecalibratePreview(); };
 
         LoadCurrentValues();
         if (cachedBodyWarning is not null) StatusLabel.Text = cachedBodyWarning;
+
+        // Forces a layout pass before the window is even shown, so
+        // PreviewBorder.ActualWidth/ActualHeight (read by CommitPreviewChange
+        // via GetPreviewAspect) reflect the real panel size for the very
+        // first render instead of the pre-layout default of 0.
+        UpdateLayout();
 
         // Commits the just-loaded body/anim and calibrates+renders once,
         // synchronously, before the window is even shown -- previously the
@@ -101,6 +130,13 @@ public partial class ActorAttributesWindow : Window
         // parseable at that moment), which is what "doesn't display when
         // initially loaded" was.
         CommitPreviewChange();
+
+        // The panel's aspect ratio only really changes on a window resize
+        // (the Grid column/row split is otherwise fixed) -- re-running the
+        // full 8-angle calibration on every SizeChanged during an active
+        // drag would be wasteful, so this debounces to once the user
+        // settles, same pattern as textCommitTimer.
+        PreviewBorder.SizeChanged += (_, _) => { resizeTimer!.Stop(); resizeTimer.Start(); };
 
         Closed += (_, _) => previewTimer?.Stop();
         previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
@@ -151,6 +187,52 @@ public partial class ActorAttributesWindow : Window
         for (var i = 0; i < result.Names.Count; i++)
             options.Add(new NamedOption(i, result.Names[i] is { } name ? $"{i}: {name}" : $"{i}"));
         return options;
+    }
+
+    // Surfaces this actor's own real moveset (lba2_renderer_get_actor_native_
+    // anims -- raw ANIM.HQR indices straight from its own PtrFile3D
+    // character-fiche table, the same one SearchAnim() resolves scripted
+    // GetAnim() calls through) at the top of the dropdown, ahead of a
+    // separator, ahead of every other archive animation -- rather than
+    // making the user hunt through ~90 alphabetically-unrelated entries for
+    // the handful this character can actually play. Falls back to the
+    // unmodified full list (no separator) when the native lookup finds
+    // nothing, e.g. this actor's scene isn't the one currently loaded (see
+    // that API's own doc comment) -- the dropdown still works, just
+    // unsorted, rather than showing an empty or broken list.
+    private IReadOnlyList<NamedOption> BuildAnimOptionsForActor(IReadOnlyList<NamedOption> all)
+    {
+        var native = nativeRenderer.RendererLibrary?.GetActorNativeAnims(actorIndex) ?? Array.Empty<int>();
+        if (native.Count == 0) return all;
+
+        // native holds raw ANIM.HQR indices across the archive's full ~2000+
+        // range; all only has entries for ANIM2.HQD's own much smaller
+        // named range (deliberately -- see LoadOptions's own comment on why
+        // it doesn't inflate to the full archive). A character's real
+        // moveset routinely references anims outside that named range (most
+        // non-Twinsen characters' own animations live well past index ~90),
+        // so a native entry with no matching named option still needs its
+        // own bare-number entry here -- matching the "$" no-name fallback
+        // LoadOptions itself already uses -- rather than being silently
+        // dropped, which is what made this look like it was doing nothing
+        // for every actor except when its moveset happened to overlap
+        // Twinsen's own low-index range.
+        var byIndex = all.ToDictionary(o => o.Index);
+        var seen = new HashSet<int>();
+        var natural = new List<NamedOption>(native.Count);
+        foreach (var index in native)
+        {
+            if (!seen.Add(index)) continue; // a fiche can list the same generic anim more than once
+            natural.Add(byIndex.TryGetValue(index, out var named) ? named : new NamedOption(index, index.ToString()));
+        }
+        if (natural.Count == 0) return all;
+        var other = all.Where(o => !seen.Contains(o.Index)).ToList();
+
+        var merged = new List<NamedOption>(natural.Count + other.Count + 1);
+        merged.AddRange(natural);
+        merged.Add(new NamedOption(-1, "--- Other compatible animations ---"));
+        merged.AddRange(other);
+        return merged;
     }
 
     private static string ParseLeadingIndex(string text)
@@ -247,10 +329,21 @@ public partial class ActorAttributesWindow : Window
         GetEditableTextBox(combo)?.SelectAll();
     }
 
-    private void BodyCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(AnimCombo, cachedAnimOptions!, ref suppressAnimTextChanged);
+    // Real user typing (not one of FilterCombo/ResetComboFilter's own
+    // suppressed Text assignments) also schedules a debounced commit -- see
+    // textCommitTimer's own comment for why debounced rather than instant.
+    private void BodyCombo_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        FilterCombo(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
+        if (!suppressBodyTextChanged) { textCommitTimer!.Stop(); textCommitTimer.Start(); }
+    }
+    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        FilterCombo(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
+        if (!suppressAnimTextChanged) { textCommitTimer!.Stop(); textCommitTimer.Start(); }
+    }
     private void BodyCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, cachedAnimOptions!, ref suppressAnimTextChanged);
+    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
     private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
     private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
     private void BodyCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
@@ -271,10 +364,34 @@ public partial class ActorAttributesWindow : Window
 
         previewBody = body;
         previewAnim = anim;
-        previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette)
+        Recalibrate();
+    }
+
+    // The preview panel's own width/height ratio, so CalibrateBodyPreviewDistance
+    // can crop to match it instead of forcing a square that then letterboxes
+    // inside a panel noticeably taller than it is wide (Stretch="Uniform"
+    // fits to whichever dimension the crop's own aspect ratio binds first).
+    // 1.0 (square) before the window's first layout pass has run -- see the
+    // constructor's own UpdateLayout() call, which makes that the rare case
+    // rather than the first frame's own case.
+    private double GetPreviewAspect()
+        => PreviewBorder.ActualWidth > 0 && PreviewBorder.ActualHeight > 0
+            ? PreviewBorder.ActualWidth / PreviewBorder.ActualHeight
+            : 1.0;
+
+    private void Recalibrate()
+    {
+        previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette, targetAspect: GetPreviewAspect())
             ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
         RenderPreviewFrame();
     }
+
+    // Re-fits the crop to the panel's current aspect ratio without treating
+    // it as a body/anim change (unlike CommitPreviewChange, which no-ops
+    // when body/anim haven't changed) -- called (debounced) from a window
+    // resize, since the panel's own proportions are the only thing that
+    // makes GetPreviewAspect() return something different.
+    private void RecalibratePreview() => Recalibrate();
 
     private void TickPreview()
     {

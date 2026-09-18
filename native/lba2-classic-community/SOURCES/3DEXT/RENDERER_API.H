@@ -145,6 +145,18 @@ LBA2_RENDERER_API int lba2_renderer_set_actor_flags(int index, unsigned int flag
    should fall back to a fixed-size hit target when this returns 0. */
 LBA2_RENDERER_API int lba2_renderer_get_actor_bounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
 
+/* Raw ANIM.HQR archive indices this actor's own character-type table (its
+   PtrFile3D "fiche", FICHE.CPP -- the same table SearchAnim() walks to
+   resolve a script's GetAnim() call) actually lists, i.e. the real moveset
+   this specific character is designed to use -- not a guess from body/anim
+   group counts (an earlier, disproven approach; see EXTFUNC.CPP's
+   AnimFitsBody comment). Writes up to maxCount entries into outAnims and
+   returns the total found (which may exceed maxCount -- call once with
+   maxCount 0 to size, as usual), or -1 if this actor's scene isn't the one
+   currently loaded/rendered (the scan-time actor list never runs the load
+   that populates PtrFile3D) or it has none. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_native_anims(int index, int *outAnims, int maxCount);
+
 /* Renders one body model, alone against a cleared background, into the same
    shared framebuffer lba2_renderer_framebuffer() reads -- for the actor-
    attributes editor's rotating preview. Call with a slowly increasing

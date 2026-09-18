@@ -30,6 +30,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorNativeAnimsFn(int index, [Out] int[]? outAnims, int maxCount);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderBodyPreviewFn(int genBody, int genAnim, int cameraBeta, int cameraDistance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
     private IntPtr handle;
@@ -57,6 +58,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
     private GetActorBoundsFn? getActorBounds;
+    private GetActorNativeAnimsFn? getActorNativeAnims;
     private RenderBodyPreviewFn? renderBodyPreview;
     private ProjectPointFn? projectPoint;
 
@@ -112,6 +114,7 @@ internal sealed class RendererLibraryApi : IDisposable
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
         getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
+        getActorNativeAnims = Get<GetActorNativeAnimsFn>("lba2_renderer_get_actor_native_anims");
         renderBodyPreview = Get<RenderBodyPreviewFn>("lba2_renderer_render_body_preview");
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
@@ -243,6 +246,21 @@ internal sealed class RendererLibraryApi : IDisposable
     {
         if (getActorBounds is null) { xMin = xMax = yMin = yMax = zMin = zMax = 0; return false; }
         return getActorBounds(index, out xMin, out xMax, out yMin, out yMax, out zMin, out zMax) == 1;
+    }
+    // Empty (not null-vs-empty distinguished) whenever this actor's scene
+    // isn't the one currently loaded/rendered, or it genuinely has no F_ANIM
+    // entries in its own character-fiche table -- callers should fall back
+    // to showing the full, unordered animation list in that case. See
+    // lba2_renderer_get_actor_native_anims's own doc comment for what this
+    // list actually means (the character's real moveset, not a guess).
+    public IReadOnlyList<int> GetActorNativeAnims(int index)
+    {
+        if (getActorNativeAnims is null) return Array.Empty<int>();
+        var needed = getActorNativeAnims(index, null, 0);
+        if (needed <= 0) return Array.Empty<int>();
+        var buffer = new int[needed];
+        getActorNativeAnims(index, buffer, buffer.Length);
+        return buffer;
     }
     // Renders into the same shared framebuffer GetFramebuffer() reads --
     // safe to call between ordinary main-view renders, but the caller must

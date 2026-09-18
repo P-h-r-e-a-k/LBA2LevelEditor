@@ -109,7 +109,7 @@
             </StackPanel>
         </ScrollViewer>
 
-        <Border Grid.Row="1" Grid.Column="2" Background="#0D1210" BorderBrush="#3A4740" BorderThickness="1">
+        <Border x:Name="PreviewBorder" Grid.Row="1" Grid.Column="2" Background="#0D1210" BorderBrush="#3A4740" BorderThickness="1">
             <Grid>
                 <Image x:Name="BodyPreviewImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
                 <TextBlock x:Name="BodyPreviewFallbackLabel" Text="preview unavailable" Foreground="#5C6B60" FontFamily="Consolas" FontSize="10"

@@ -178,7 +178,13 @@ internal sealed class CommunityRendererBackend
     // Returns null if nothing drew (e.g. NO_BODY) or the renderer isn't
     // ready; callers should fall back to a fixed distance and an
     // uncropped/full-frame rectangle.
-    public BodyPreviewCalibration? CalibrateBodyPreviewDistance(int genBody, int genAnim, byte[] paletteBytes, double targetFraction = 0.8)
+    // targetAspect is the display panel's own width/height ratio (e.g. 0.55
+    // for a panel noticeably taller than it is wide) -- the crop rectangle
+    // below is grown, never shrunk, to match it, so Stretch="Uniform" fills
+    // the whole panel instead of letterboxing top-and-bottom against a
+    // squarer crop. 1.0 (square) if the caller doesn't know its own layout
+    // yet.
+    public BodyPreviewCalibration? CalibrateBodyPreviewDistance(int genBody, int genAnim, byte[] paletteBytes, double targetFraction = 0.8, double targetAspect = 1.0)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
         const int probeDistance = 5000;
@@ -221,11 +227,21 @@ internal sealed class CommunityRendererBackend
 
             var centerX = (minX + maxX) / 2;
             var centerY = (minY + maxY) / 2;
-            var half = (int)(Math.Max(maxX - minX, maxY - minY) / 2.0 * 1.3) + 4;
-            var left = Math.Clamp(centerX - half, 0, width - 1);
-            var top = Math.Clamp(centerY - half, 0, height - 1);
-            var right = Math.Clamp(centerX + half, left + 1, width);
-            var bottom = Math.Clamp(centerY + half, top + 1, height);
+            var paddedWidth = (maxX - minX) * 1.3 + 8;
+            var paddedHeight = (maxY - minY) * 1.3 + 8;
+            // Grow (never shrink) whichever axis is proportionally short of
+            // targetAspect, so the body's own measured footprint is always
+            // still fully contained -- e.g. a humanoid's natural silhouette
+            // (narrow, tall) is already narrower than a ~0.55 panel aspect,
+            // so this adds side padding rather than cropping any tighter.
+            if (paddedWidth / paddedHeight < targetAspect) paddedWidth = paddedHeight * targetAspect;
+            else paddedHeight = paddedWidth / targetAspect;
+            var halfW = (int)(paddedWidth / 2.0);
+            var halfH = (int)(paddedHeight / 2.0);
+            var left = Math.Clamp(centerX - halfW, 0, width - 1);
+            var top = Math.Clamp(centerY - halfH, 0, height - 1);
+            var right = Math.Clamp(centerX + halfW, left + 1, width);
+            var bottom = Math.Clamp(centerY + halfH, top + 1, height);
             return new BodyPreviewCalibration(distance, new Int32Rect(left, top, right - left, bottom - top));
         }
     }
