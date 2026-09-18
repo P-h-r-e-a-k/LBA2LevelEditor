@@ -975,7 +975,21 @@ public partial class MainWindow : Window
             // same radius so it shows exactly the actors sitting on terrain
             // this frame actually drew, whichever cube each one happens to
             // be in.
-            var wideRadius = nativeDistance < 20000 ? 0 : nativeDistance < 35000 ? 1 : 2;
+            //
+            // Never 0: the plain single-cube render path (radius 0, calling
+            // the native RenderFrame()/AffGrilleExt() instead of
+            // RenderFrameWide()/AffGrilleExtWide()) is a confirmed-broken
+            // choice at close zoom, not just a cheaper one -- reported as a
+            // visibly washed-out/hazy render exactly at this threshold, with
+            // the actor on screen there disappearing entirely. See
+            // lba2_renderer_render_frame's own comment (RENDERER_API.CPP)
+            // for what was actually tried to fix that render path itself
+            // (a same-cube reload before drawing, mirroring what the wide
+            // path already does every frame) and confirmed, live, not to be
+            // enough -- radius 1 is the smallest value proven correct at
+            // every distance, so nativeDistance now only ever chooses
+            // between that and radius 2.
+            var wideRadius = nativeDistance < 35000 ? 1 : 2;
             var currentCubeX = (int)Math.Floor(targetX / 32768.0);
             var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
             List<(int, double, double, double, double)>? projected = null;

@@ -332,6 +332,25 @@ int lba2_renderer_project_point(int worldX, int worldY, int worldZ, int *screenX
     return visible;
 }
 
+// AffGrilleExt() (the original retail function -- EXTFUNC.CPP) never
+// reloads its own cube's data itself; it's designed to run inside a real
+// game loop that already handles cube loading elsewhere, and just trusts
+// whatever's already sitting in ListObjet/the terrain grid. RenderIslandTopDown
+// (CommunityRendererBackend.cs) -- the only remaining caller of this,
+// straight-down minimap snapshots -- calls lba2_renderer_set_view_target for
+// a genuinely different cube before every one of its own calls here, which
+// keeps that path correct (a real cube *change* is what actually refreshes
+// fog/Z-buffer scale -- see lba2_renderer_set_view_distance's own comment).
+//
+// The interactive 3D view's own zoom-controlled choice between this and
+// lba2_renderer_render_frame_wide() used to drop to this plain path at
+// close zoom with the camera's cube unchanged, which -- confirmed live --
+// rendered visibly washed-out/hazy exactly where lba2_renderer_render_frame_wide(),
+// at the identical camera distance, rendered correctly; MainWindow.xaml.cs's
+// own wideRadius selection no longer ever picks this path for that reason
+// (see its own comment for what was tried to fix this function itself
+// instead -- a same-cube reload before AffGrilleExt(), confirmed live not
+// to be enough -- before settling on routing around it).
 int lba2_renderer_render_frame(void)
 {
     AffGrilleExt();

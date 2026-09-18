@@ -322,6 +322,7 @@ static const char *LmName(U8 op)
     case LM_ADD_FUEL: return "ADD_FUEL";
     case LM_SUB_FUEL: return "SUB_FUEL";
     case LM_BETA: return "BETA";
+    case LM_INIT_BUGGY: return "INIT_BUGGY";
     default: return "?";
     }
 }
@@ -405,13 +406,18 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialB
             break;
 
         // One-byte operand (usually an object number or a small constant).
+        // LM_INIT_BUGGY (GERELIFE.CPP: "num = *PtrPrg++; InitBuggy(numobj,
+        // num);") fits this same one-byte shape -- added after a report of
+        // an actual vehicle actor's script decode stopping dead exactly at
+        // this opcode ("[opcode 70 not decoded -- stopping]"), truncating
+        // everything after it in the Script tab.
         case LM_FALLABLE: case LM_SET_DIR: case LM_CAM_FOLLOW:
         case LM_COMPORTEMENT_HERO: case LM_COMPORTEMENT: case LM_KILL_OBJ:
         case LM_FOUND_OBJECT: case LM_GIVE_BONUS: case LM_CHANGE_CUBE:
         case LM_OBJ_COL: case LM_BRICK_COL: case LM_INVISIBLE: case LM_POS_POINT:
         case LM_SET_MAGIC_LEVEL: case LM_SUB_MAGIC_POINT: case LM_INC_CLOVER_BOX:
         case LM_SET_USED_INVENTORY: case LM_SET_HOLO_POS: case LM_CLR_HOLO_POS:
-        case LM_ADD_FUEL: case LM_SUB_FUEL:
+        case LM_ADD_FUEL: case LM_SUB_FUEL: case LM_INIT_BUGGY:
             if (offset >= maxBytes) { ok = false; break; }
             {
                 U8 a = base[offset]; offset++;
@@ -615,6 +621,17 @@ static void DecodeTrackScript(T_OBJET *ptrobj, std::string &out)
             out += line;
             break;
         }
+        // No operand bytes (see ExtractTrackWaypoints' own comment on these
+        // same two opcodes) -- added after a report of an actual vehicle
+        // actor's track script stopping decode dead exactly at TM_WAIT_ANIM,
+        // which uncovered TM_STOP right behind it the moment that first gap
+        // was fixed.
+        case TM_WAIT_ANIM:
+            out += "WAIT_ANIM\n";
+            break;
+        case TM_STOP:
+            out += "STOP\n";
+            break;
         case TM_END:
             out += "END\n";
             return;
@@ -742,6 +759,19 @@ static void ExtractTrackWaypoints(T_OBJET *ptrobj, S32 baseX, S32 baseZ)
             do { c = *ptr++; offset++; } while (c != 0 && offset < maxBytes);
             break;
         }
+        // No operand bytes at all (GERETRAK.CPP's own TM_WAIT_ANIM/TM_STOP
+        // cases only ever manipulate ptrobj->OffsetTrack itself, never read
+        // past the opcode byte the loop above already consumed) -- added
+        // after a report of an actual vehicle actor's track script stopping
+        // decode dead exactly at TM_WAIT_ANIM, which uncovered TM_STOP
+        // right behind it the moment that first gap was fixed. Continuing
+        // past TM_STOP rather than treating it like TM_END's own hard stop:
+        // it means "nothing more to do at runtime from here", not "nothing
+        // more exists in the byte stream" -- a labeled jump target reachable
+        // via GOTO could still legitimately follow it.
+        case TM_WAIT_ANIM:
+        case TM_STOP:
+            break;
         case TM_END:
             return;
         default:
@@ -977,6 +1007,8 @@ int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, 
 }
 
 extern S32 NewCube;
+extern S32 CurrentCubeX, CurrentCubeY;
+extern int RendererLoadNeighborCubeData(int x, int y);
 
 // a.GenBody/GenAnim, for an actor scanned straight off a real scene file
 // (as opposed to one added through this editor), are still the *generic*
@@ -996,9 +1028,20 @@ extern S32 NewCube;
 // number as if it were already a BODY.HQR/ANIM.HQR index (confirmed by a
 // report of exactly that split: a MOSQUIBE.ILE dragon with a correct body
 // in the island view and a different, wrong one in its own attributes
-// dialog). Falls back to the stored (possibly still-generic) value
-// whenever this scene isn't the live one or resolution fails -- still no
-// worse than what this returned before.
+// dialog).
+//
+// If this actor's scene *isn't* the live one -- the common case for
+// anything the camera hasn't happened to pan across yet, confirmed by a
+// second report for an actor whose location the camera had never visited
+// at all -- temporarily loads it via RendererLoadNeighborCubeData, the
+// exact same "load a cube's data without touching CurrentCubeX/Y" call
+// AffGrilleExtWide's own neighbor-cube loop (EXTFUNC.CPP) already uses
+// every single frame at wide zoom levels, proven safe there. Restoring
+// the camera's own actual cube (CurrentCubeX/Y) immediately after mirrors
+// that same loop's own end-of-frame restore, so nothing about the live
+// view changes -- this all happens between frames, invisibly, from the
+// caller's perspective. Falls back to the stored (possibly still-generic)
+// value if even that fails (e.g. the actor's own scene no longer exists).
 extern void NativeDebugLog(const char *fmt, ...);
 
 int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move)
@@ -1007,15 +1050,23 @@ int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *
     const RendererActor &a = g_actors[(size_t)index];
     S32 resolvedBody = a.GenBody;
     S32 resolvedAnim = a.GenAnim;
-    if (NewCube == a.SceneIndex && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
+
+    bool loadedTemporarily = false;
+    if (NewCube != a.SceneIndex && a.CubeX >= 0 && a.CubeY >= 0)
+        loadedTemporarily = RendererLoadNeighborCubeData(a.CubeX, a.CubeY) != 0;
+
+    if ((NewCube == a.SceneIndex || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
         S32 b = SearchBody((U8)a.GenBody, a.ObjectSlot);
         if (b >= 0) resolvedBody = b;
         S32 an = SearchAnim(a.GenAnim, a.ObjectSlot);
         if (an >= 0) resolvedAnim = an;
         if (resolvedBody != a.GenBody || resolvedAnim != a.GenAnim)
-            NativeDebugLog("RendererGetActorAttributes: index=%d slot=%d resolved generic body=%d anim=%d -> raw body=%d anim=%d",
-                index, (int)a.ObjectSlot, (int)a.GenBody, (int)a.GenAnim, (int)resolvedBody, (int)resolvedAnim);
+            NativeDebugLog("RendererGetActorAttributes: index=%d slot=%d resolved generic body=%d anim=%d -> raw body=%d anim=%d%s",
+                index, (int)a.ObjectSlot, (int)a.GenBody, (int)a.GenAnim, (int)resolvedBody, (int)resolvedAnim,
+                loadedTemporarily ? " (via temporary cube load)" : "");
     }
+
+    if (loadedTemporarily) RendererLoadNeighborCubeData(CurrentCubeX, CurrentCubeY);
     if (beta) *beta = a.Beta;
     if (body) *body = resolvedBody;
     if (anim) *anim = resolvedAnim;
@@ -1439,19 +1490,27 @@ int RendererGetActorNativeAnims(int index, int *outAnims, int maxCount)
     // now" guard as RendererGetActorBounds -- PtrFile3D is only populated by
     // LoadScene() for the currently-loaded scene (see RendererLoadCubeActors's
     // own comment on FlagLoadGame); the scan-time g_actors snapshot never
-    // runs that load, so anything else has no valid table to walk. Falls
-    // back to CachedNativeAnims (see its own comment) when this scene isn't
-    // the live one, rather than reporting "nothing" and leaving the C# side
-    // to silently show the same generic full-archive list for every actor
-    // whose cube isn't the *one* currently loaded.
-    if (a.SceneIndex == NewCube && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
+    // runs that load, so anything else has no valid table to walk. If it
+    // isn't live yet, temporarily loads it (same RendererLoadNeighborCubeData
+    // trick as RendererGetActorAttributes, see its own comment for the full
+    // reasoning) rather than only relying on CachedNativeAnims -- which
+    // still exists as a last-resort fallback below for the rare case that
+    // temporary load itself fails.
+    bool loadedTemporarily = false;
+    if (a.SceneIndex != NewCube && a.CubeX >= 0 && a.CubeY >= 0)
+        loadedTemporarily = RendererLoadNeighborCubeData(a.CubeX, a.CubeY) != 0;
+
+    if ((a.SceneIndex == NewCube || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
         int count = WalkFile3DNativeAnims(ListObjet[a.ObjectSlot].PtrFile3D, outAnims, maxCount);
         if (count > 0) {
             int cacheCount = count > 128 ? 128 : count;
             a.CachedNativeAnims.assign(outAnims, outAnims + cacheCount);
         }
+        if (loadedTemporarily) RendererLoadNeighborCubeData(CurrentCubeX, CurrentCubeY);
         return count;
     }
+    if (loadedTemporarily) RendererLoadNeighborCubeData(CurrentCubeX, CurrentCubeY);
+
     if (!a.CachedNativeAnims.empty()) {
         int count = (int)a.CachedNativeAnims.size();
         int copyCount = count < maxCount ? count : maxCount;
