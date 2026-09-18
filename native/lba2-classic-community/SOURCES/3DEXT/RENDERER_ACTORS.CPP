@@ -55,6 +55,19 @@ struct RendererActor {
     S32 ObjectSlot = -1;
     S32 CubeX = -1;
     S32 CubeY = -1;
+    // Snapshot of this actor's own real moveset (RendererGetActorNativeAnims'
+    // own live walk of PtrFile3D), refreshed opportunistically whenever this
+    // actor's scene is genuinely live (see CacheNativeAnimsForScene) --
+    // that's the only time PtrFile3D is actually populated (DISKFUNC.CPP's
+    // LoadScene() only assigns it "if (!FlagLoadGame)", which real cube
+    // loading always is but nothing else here ever is). Sticks around once
+    // populated so the editor's Animation picker still shows this actor's
+    // real natural moveset after the camera has since moved off its cube,
+    // rather than silently falling back to the same generic full-archive
+    // list for every actor whose cube isn't the *one* currently loaded --
+    // confirmed by report as the reason that list looked suspiciously
+    // identical across different actors.
+    std::vector<S32> CachedNativeAnims;
     // True only for an actor created by RendererAddActor() that hasn't had
     // its attributes explicitly applied since (RendererSetActorAttributes
     // clears it) -- never true for anything read from a real scene file.
@@ -882,6 +895,29 @@ extern void StartInitAllObjs(void);
 // wrong place, so the caller must not skip this and must treat a false
 // return as "no actors for this cube" by clearing NbObjets itself.
 static void ReapplyPendingEditsToListObjet(S32 sceneIndex);
+static int WalkFile3DNativeAnims(const U8 *ptrc, int *outAnims, int maxCount);
+
+// Snapshots every known actor's real moveset for sceneIndex into its own
+// CachedNativeAnims, while PtrFile3D is actually valid for it (right after
+// a real LoadScene() -- see CachedNativeAnims' own comment for why that's
+// the only time). A fixed 128-entry stack buffer matches the cap the C#
+// side already applies to this same walk (RendererLibraryApi.cs's
+// GetActorNativeAnims); no real character fiche table gets remotely close
+// to that many F_ANIM entries.
+static void CacheNativeAnimsForScene(S32 sceneIndex)
+{
+    for (size_t gi = 0; gi < g_actors.size(); gi++) {
+        RendererActor &ga = g_actors[gi];
+        if (ga.SceneIndex != sceneIndex || ga.ObjectSlot < 1 || ga.ObjectSlot >= NbObjets) continue;
+        const U8 *ptrFile3D = ListObjet[ga.ObjectSlot].PtrFile3D;
+        if (!ptrFile3D) continue;
+        S32 buffer[128];
+        int count = WalkFile3DNativeAnims(ptrFile3D, buffer, 128);
+        if (count <= 0) continue;
+        if (count > 128) count = 128;
+        ga.CachedNativeAnims.assign(buffer, buffer + count);
+    }
+}
 
 int RendererLoadCubeScene(int cubeX, int cubeY)
 {
@@ -904,6 +940,7 @@ int RendererLoadCubeScene(int cubeX, int cubeY)
         // rendering; see AffGrilleExtWide's own comment on how often cubes
         // reload).
         ReapplyPendingEditsToListObjet(scene);
+        CacheNativeAnimsForScene(scene);
     }
 
     FlagLoadGame = savedFlagLoadGame;
@@ -1397,14 +1434,29 @@ static int WalkFile3DNativeAnims(const U8 *ptrc, int *outAnims, int maxCount)
 int RendererGetActorNativeAnims(int index, int *outAnims, int maxCount)
 {
     if (index < 0 || index >= (int)g_actors.size()) return -1;
-    const RendererActor &a = g_actors[(size_t)index];
+    RendererActor &a = g_actors[(size_t)index];
     // Same "is this actor's scene actually the one live in ListObjet right
     // now" guard as RendererGetActorBounds -- PtrFile3D is only populated by
     // LoadScene() for the currently-loaded scene (see RendererLoadCubeActors's
     // own comment on FlagLoadGame); the scan-time g_actors snapshot never
-    // runs that load, so anything else has no valid table to walk.
-    if (a.SceneIndex != NewCube || a.ObjectSlot < 1 || a.ObjectSlot >= NbObjets) return -1;
-    const U8 *ptrFile3D = ListObjet[a.ObjectSlot].PtrFile3D;
-    if (!ptrFile3D) return -1;
-    return WalkFile3DNativeAnims(ptrFile3D, outAnims, maxCount);
+    // runs that load, so anything else has no valid table to walk. Falls
+    // back to CachedNativeAnims (see its own comment) when this scene isn't
+    // the live one, rather than reporting "nothing" and leaving the C# side
+    // to silently show the same generic full-archive list for every actor
+    // whose cube isn't the *one* currently loaded.
+    if (a.SceneIndex == NewCube && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
+        int count = WalkFile3DNativeAnims(ListObjet[a.ObjectSlot].PtrFile3D, outAnims, maxCount);
+        if (count > 0) {
+            int cacheCount = count > 128 ? 128 : count;
+            a.CachedNativeAnims.assign(outAnims, outAnims + cacheCount);
+        }
+        return count;
+    }
+    if (!a.CachedNativeAnims.empty()) {
+        int count = (int)a.CachedNativeAnims.size();
+        int copyCount = count < maxCount ? count : maxCount;
+        for (int i = 0; i < copyCount; i++) outAnims[i] = a.CachedNativeAnims[(size_t)i];
+        return count;
+    }
+    return -1;
 }

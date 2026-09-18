@@ -356,7 +356,24 @@ public partial class ActorAttributesWindow : Window
         if (!suppressAnimTextChanged) { textCommitTimer!.Stop(); textCommitTimer.Start(); }
     }
     private void BodyCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
+    // Re-fetches this actor's own native moveset every time the dropdown is
+    // actually opened, rather than only once when the window was
+    // constructed -- the native side's own lookup only succeeds while this
+    // actor's scene happens to be the one currently loaded (see
+    // RendererGetActorNativeAnims's own comment), which frequently isn't
+    // true yet at window-open time but may become true by the time the user
+    // actually opens this dropdown (e.g. after panning the main view, or
+    // after the native side's own opportunistic per-scene-load cache -- see
+    // CachedNativeAnims -- has since been populated). Confirmed by report
+    // that without this, the "natural moveset" section looked suspiciously
+    // identical across different actors: most were silently falling back to
+    // the one-time, scene-not-loaded-yet full-archive list from
+    // construction and never getting another chance to correct itself.
+    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e)
+    {
+        animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions!);
+        ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
+    }
 
     // Picking an item from the dropdown updates the ComboBox's own Text to
     // match it, which fires the *same* TextChangedEvent typing does (see

@@ -296,11 +296,23 @@ internal static class Lba2ScriptOpcodes
         (152,"NEW_SAMPLE"),(153,"POS_OBJ_AROUND"),(154,"PCX_MESS_OBJ"),
     };
 
-    // The full TM_* id/name table (COMMON.H lines ~1041-1093).
+    // The full TM_* id/name table (COMMON.H lines ~1041-1093). Cross-checked
+    // directly against that header (not against example scripts -- opcodes
+    // are a closed set the engine defines, so no amount of script-scanning
+    // could add or confirm one that isn't already in this enum) after a
+    // report that the "compatible animations" list looked suspiciously
+    // uniform across actors; that turned out to be a different bug (see
+    // ActorAttributesWindow's own BuildAnimOptionsForActor/
+    // RendererGetActorNativeAnims), but the same worry -- "is this table
+    // actually complete?" -- was worth checking properly here too, and
+    // wasn't: ids 5, 46, and 47 were missing entirely, none of the three
+    // decoded by name in DecodeTrackScript's own TmName() either (only
+    // WAIT_FRAME_3DS, id 48, is), so they're added here name-only to match
+    // this file's own convention for other not-yet-decoded opcodes.
     private static IEnumerable<(int Id, string Name)> RemainingTrackActionNames() => new (int, string)[]
     {
-        (1,"NOP"),(9,"LABEL"),(11,"STOP"),(17,"BACKGROUND"),(19,"NO_BODY"),(21,"OPEN_LEFT"),(22,"OPEN_RIGHT"),
+        (1,"NOP"),(5,"WAIT_ANIM"),(9,"LABEL"),(11,"STOP"),(17,"BACKGROUND"),(19,"NO_BODY"),(21,"OPEN_LEFT"),(22,"OPEN_RIGHT"),
         (23,"OPEN_UP"),(24,"OPEN_DOWN"),(25,"CLOSE"),(26,"WAIT_DOOR"),(35,"REM"),(37,"DO"),(38,"SPRITE"),
-        (40,"AFF_TIMER"),
+        (40,"AFF_TIMER"),(46,"STOP_ANIM_3DS"),(47,"WAIT_ANIM_3DS"),
     };
 }

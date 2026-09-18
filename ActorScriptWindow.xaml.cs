@@ -16,16 +16,47 @@ public partial class ActorScriptWindow : Window
 {
     private sealed record SuggestionItem(string Signature, string Description, string InsertText);
 
+    // Row shape for the right-side reference list -- Kind is a plain string
+    // rather than the raw OpcodeKind enum so the DataTemplate can bind it
+    // directly without a converter.
+    private sealed record KeywordItem(string Name, string Kind, string Description, string InsertText);
+
     private readonly RendererLibraryApi? library;
     private List<SuggestionItem> suggestionPool = new();
     private int currentWordStart;
     private bool suppressTextChanged;
     private int actorIndex;
 
+    // Every valid script keyword this editor knows about (life actions,
+    // life conditions, comparisons, track actions) -- built once, not per
+    // actor shown, since it's sourced from the engine's own fixed LM_*/LF_*/
+    // LT_*/TM_* opcode tables (Lba2ScriptOpcodes' own header comment has the
+    // COMMON.H line references), not from scanning any particular actor's
+    // script. Deduplicated by name: a handful of names (BODY, ANIM, BETA,
+    // PLAY_ACF...) are reused across life actions, life conditions, and
+    // track actions with different meanings in each, and this reference
+    // list is a name lookup, not a per-context disambiguator -- the
+    // in-editor autocomplete popup (SuggestionList, keyed off actual typing
+    // position) already handles that distinction where it matters.
+    private static readonly IReadOnlyList<KeywordItem> allKeywords = Lba2ScriptOpcodes.All
+        .GroupBy(o => o.Name, StringComparer.Ordinal)
+        .Select(g => g.First())
+        .Select(o => new KeywordItem(o.Name, o.Kind switch
+        {
+            Lba2ScriptOpcodes.OpcodeKind.LifeAction => "life action",
+            Lba2ScriptOpcodes.OpcodeKind.LifeCondition => "life condition",
+            Lba2ScriptOpcodes.OpcodeKind.Comparison => "comparison",
+            Lba2ScriptOpcodes.OpcodeKind.TrackAction => "track action",
+            _ => "",
+        }, o.Description, o.InsertText))
+        .OrderBy(k => k.Name, StringComparer.Ordinal)
+        .ToList();
+
     internal ActorScriptWindow(RendererLibraryApi? library)
     {
         InitializeComponent();
         this.library = library;
+        KeywordList.ItemsSource = allKeywords;
     }
 
     // Called both to first open the window for an actor and to re-point an
@@ -174,4 +205,51 @@ public partial class ActorScriptWindow : Window
         ScriptTextBox.Focus();
     }
 
+    private void KeywordFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var text = KeywordFilterBox.Text;
+        KeywordFilterPlaceholder.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        KeywordList.ItemsSource = text.Length == 0
+            ? allKeywords
+            : allKeywords.Where(k => k.Name.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    // Enter from the filter box jumps straight to inserting the top (first
+    // alphabetically, or first remaining after filtering) match, so a user
+    // who knows roughly what they want doesn't have to leave the keyboard
+    // to click into the list.
+    private void KeywordFilterBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (KeywordList.Items.Count == 0) return;
+        InsertKeyword((KeywordItem)KeywordList.Items[0]!);
+        e.Handled = true;
+    }
+
+    private void KeywordList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (KeywordList.SelectedItem is KeywordItem item) InsertKeyword(item);
+    }
+
+    private void KeywordList_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (KeywordList.SelectedItem is KeywordItem item) InsertKeyword(item);
+        e.Handled = true;
+    }
+
+    // Inserts at the caret's current position in ScriptTextBox (not
+    // replacing a selection or requiring the editor to already have focus),
+    // matching AcceptSelection's own insert behaviour, then hands focus back
+    // to the editor so typing continues right where the keyword landed.
+    private void InsertKeyword(KeywordItem item)
+    {
+        var caret = ScriptTextBox.CaretIndex;
+        var text = ScriptTextBox.Text;
+        suppressTextChanged = true;
+        ScriptTextBox.Text = text[..caret] + item.InsertText + text[caret..];
+        ScriptTextBox.CaretIndex = caret + item.InsertText.Length;
+        suppressTextChanged = false;
+        ScriptTextBox.Focus();
+    }
 }
