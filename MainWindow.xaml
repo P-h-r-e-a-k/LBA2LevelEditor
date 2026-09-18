@@ -51,6 +51,14 @@
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Padding" Value="8,12"/>
         </Style>
+        <Style TargetType="Menu">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#C5C6B9"/>
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#C5C6B9"/>
+            <Setter Property="Padding" Value="10,8"/>
+        </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions><RowDefinition Height="64"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -60,23 +68,20 @@
                     <TextBlock Text="✦" Foreground="#D6C86A" FontSize="18" Margin="0,0,10,0"/>
                     <TextBlock Text="LBA2 / LEVEL WORKSHOP" FontFamily="Consolas" FontSize="11" Foreground="#D6C86A" VerticalAlignment="Center"/>
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="FileMenuButton" Content="File ▾" Click="FileMenuButton_Click" Style="{StaticResource QuietButton}">
-                        <Button.ContextMenu>
-                            <ContextMenu x:Name="FileMenu" Placement="Bottom">
-                                <MenuItem Header="Settings…" Click="Settings_Click"/>
-                                <MenuItem Header="Open…" Click="Open_Click"/>
-                                <MenuItem Header="Save" Click="Save_Click"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
-                    <Button Content="Export" Click="Export_Click" Style="{StaticResource PrimaryButton}"/>
-                </StackPanel>
+                <Menu DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <MenuItem Header="File">
+                        <MenuItem Header="Settings…" Click="Settings_Click"/>
+                        <MenuItem Header="Open…" Click="Open_Click"/>
+                        <MenuItem Header="Save" Click="Save_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Export…" Click="Export_Click"/>
+                    </MenuItem>
+                </Menu>
                 <TextBlock x:Name="FileLabel" Text="●  DESERT.ILE" FontFamily="Consolas" FontSize="13" Foreground="#C5C6B9" VerticalAlignment="Center" Margin="34,0,0,0"/>
             </DockPanel>
         </Border>
         <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="238"/><ColumnDefinition Width="*"/><ColumnDefinition Width="246"/></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="238"/><ColumnDefinition Width="*"/><ColumnDefinition Width="268"/></Grid.ColumnDefinitions>
             <Border Grid.Column="0" BorderBrush="#344039" BorderThickness="0,0,1,0" Background="#141B19" Padding="20,30">
                 <StackPanel>
                     <TextBlock Text="PROJECT BROWSER" Style="{StaticResource Eyebrow}"/>
@@ -97,6 +102,7 @@
                         <Button Content="▦" Click="Reset_Click" ToolTip="Reset view" Style="{StaticResource IconButton}"/>
                         <TextBlock Text="PAINT TERRAIN" FontFamily="Consolas" FontSize="10" Foreground="#AEB7AB" VerticalAlignment="Center" Margin="8,0,0,0"/>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <CheckBox x:Name="RotateViewCheckBox" Content="Rotate/tilt with mouse" IsChecked="True" Foreground="#AEB7AB" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0"/>
                             <CheckBox x:Name="SkyCheckBox" Content="Sky" IsChecked="True" Foreground="#AEB7AB" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0" Checked="SkyCheckBox_Changed" Unchecked="SkyCheckBox_Changed"/>
                             <Button Content="−" Click="ZoomOut_Click" Style="{StaticResource IconButton}"/>
                             <TextBox x:Name="ZoomLabel" Text="100%" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="8,0" Width="40" TextAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#AEB7AB" KeyDown="ZoomLabel_KeyDown" LostFocus="ZoomLabel_LostFocus" GotFocus="ZoomLabel_GotFocus"/>
@@ -128,21 +134,8 @@
             <Border Grid.Column="2" BorderBrush="#344039" BorderThickness="1,0,0,0" Background="#141B19" Padding="20,30">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <StackPanel x:Name="MinimapPanel">
-                        <TextBlock Text="MINIMAP" Style="{StaticResource Eyebrow}"/>
-                        <Border Margin="0,14,0,22" Background="#0D1210" BorderBrush="#3A4740" BorderThickness="1" Padding="4">
-                            <ScrollViewer x:Name="MinimapScrollViewer" Width="206" Height="206" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
-                                    <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
-                                    <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
-                                </Grid>
-                            </ScrollViewer>
-                        </Border>
-                        <Separator/>
-                    </StackPanel>
                     <StackPanel x:Name="TerrainPalettePanel">
-                        <TextBlock Text="TERRAIN PALETTE" Style="{StaticResource Eyebrow}" Margin="0,22,0,0"/>
+                        <TextBlock Text="TERRAIN PALETTE" Style="{StaticResource Eyebrow}"/>
                         <ItemsControl x:Name="Palette" Margin="0,14,0,22"/>
                         <Separator/>
                         <TextBlock Text="SELECTION" Style="{StaticResource Eyebrow}" Margin="0,22,0,0"/>
@@ -152,6 +145,19 @@
                         <TextBlock Text="Walkable" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
                         <ComboBox SelectedIndex="0" Style="{StaticResource FieldBox}"><ComboBoxItem>Yes</ComboBoxItem><ComboBoxItem>No</ComboBoxItem></ComboBox>
                         <TextBlock Text="Native .ILE import and binary writing will plug into this panel." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#78847B" Margin="0,28,0,0"/>
+                    </StackPanel>
+                    <StackPanel x:Name="MinimapPanel">
+                        <Separator Margin="0,22,0,0"/>
+                        <TextBlock Text="MINIMAP" Style="{StaticResource Eyebrow}" Margin="0,22,0,14"/>
+                        <Border Margin="0,0,0,22" Background="#0D1210" BorderBrush="#3A4740" BorderThickness="1" Padding="4">
+                            <ScrollViewer x:Name="MinimapScrollViewer" Width="222" Height="222" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
+                                    <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
+                                    <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                                </Grid>
+                            </ScrollViewer>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
                 </ScrollViewer>

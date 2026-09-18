@@ -1,7 +1,7 @@
 <Window x:Class="LBA2LevelEditor.ActorAttributesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Actor Attributes" Height="620" Width="720" MinHeight="480" MinWidth="600"
+        Title="Actor Attributes" Height="620" Width="780" MinHeight="480" MinWidth="660"
         Background="#101418" Foreground="#E8E6DA" FontFamily="Segoe UI"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
@@ -56,22 +56,21 @@
             <TextBlock x:Name="StatusLabel" Text="" Foreground="#D6C86A" FontSize="11" Margin="0,0,0,4"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="1" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
             <StackPanel>
-                <TextBlock Text="Position (X, Y, Z)" Style="{StaticResource FieldLabel}"/>
+                <TextBlock Text="Position (X, Y, Z) / Facing" Style="{StaticResource FieldLabel}"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
+                        <ColumnDefinition Width="*"/><ColumnDefinition Width="6"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="PositionXBox" Grid.Column="0" Style="{StaticResource FieldBox}"/>
                     <TextBox x:Name="PositionYBox" Grid.Column="2" Style="{StaticResource FieldBox}"/>
                     <TextBox x:Name="PositionZBox" Grid.Column="4" Style="{StaticResource FieldBox}"/>
+                    <TextBox x:Name="BetaBox" Grid.Column="6" Style="{StaticResource FieldBox}"/>
                 </Grid>
-
-                <TextBlock Text="Facing (beta)" Style="{StaticResource FieldLabel}"/>
-                <TextBox x:Name="BetaBox" Style="{StaticResource FieldBox}"/>
 
                 <TextBlock Text="Body" Style="{StaticResource FieldLabel}"/>
                 <ComboBox x:Name="BodyCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True"
@@ -83,27 +82,42 @@
                           SelectionChanged="AnimCombo_SelectionChanged"
                           LostFocus="AnimCombo_LostFocus" GotFocus="AnimCombo_GotFocus"/>
 
-                <TextBlock Text="Life points" Style="{StaticResource FieldLabel}"/>
-                <TextBox x:Name="LifePointBox" Style="{StaticResource FieldBox}"/>
-
-                <TextBlock Text="Armor" Style="{StaticResource FieldLabel}"/>
-                <TextBox x:Name="ArmorBox" Style="{StaticResource FieldBox}"/>
-
-                <TextBlock Text="Hit force" Style="{StaticResource FieldLabel}"/>
-                <TextBox x:Name="HitForceBox" Style="{StaticResource FieldBox}"/>
-
-                <TextBlock Text="Move type" Style="{StaticResource FieldLabel}"/>
-                <TextBox x:Name="MoveBox" Style="{StaticResource FieldBox}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Life points" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Column="2" Text="Armour" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Grid.Row="1" Grid.Column="0" x:Name="LifePointBox" Style="{StaticResource FieldBox}"/>
+                    <TextBox Grid.Row="1" Grid.Column="2" x:Name="ArmourBox" Style="{StaticResource FieldBox}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Hit force" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Move type" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Grid.Row="3" Grid.Column="0" x:Name="HitForceBox" Style="{StaticResource FieldBox}"/>
+                    <TextBox Grid.Row="3" Grid.Column="2" x:Name="MoveBox" Style="{StaticResource FieldBox}"/>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                </Grid>
 
                 <TextBlock Text="Flags" Style="{StaticResource FieldLabel}"/>
-                <ItemsControl x:Name="FlagsList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                                      ToolTip="{Binding Description}" Foreground="#DCE0C8" Margin="0,3,0,3"/>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <ItemsControl Grid.Column="0" x:Name="FlagsListLeft">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          ToolTip="{Binding Description}" Foreground="#DCE0C8" Margin="0,3,0,3"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl Grid.Column="2" x:Name="FlagsListRight">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          ToolTip="{Binding Description}" Foreground="#DCE0C8" Margin="0,3,0,3"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
 
                 <TextBlock x:Name="WaypointsLabel" Text="" Foreground="#78847B" FontFamily="Consolas" FontSize="10" Margin="0,16,0,0"/>
             </StackPanel>

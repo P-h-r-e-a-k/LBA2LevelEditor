@@ -46,6 +46,14 @@ public partial class MainWindow : Window
     private FilterableComboBox? islandFilter;
     private FilterableComboBox? sceneFilter;
 
+    // IslandFile is the base .ILE filename (no extension, e.g. "DESERT")
+    // this scene's own data says it belongs to -- see ResolveSceneIsland's
+    // own comment -- or null when that byte doesn't resolve to any known
+    // island, shown under the synthetic OtherIslandLabel island instead.
+    private sealed record SceneEntry(string? IslandFile, FilterableComboBox.Option Option);
+    private List<SceneEntry> allSceneEntries = new();
+    private const string OtherIslandLabel = "Other";
+
     public MainWindow()
     {
         nativeRenderer = new CommunityRendererBackend(gameRoot);
@@ -56,7 +64,16 @@ public partial class MainWindow : Window
         BuildPalette();
 
         islandFilter = new FilterableComboBox(IslandCombo, () => islandOptions);
-        islandFilter.Committed += () => { if (IslandCombo.SelectedItem is FilterableComboBox.Option o) LoadIsland(Path.Combine(gameRoot, o.Display)); };
+        islandFilter.Committed += () =>
+        {
+            if (IslandCombo.SelectedItem is not FilterableComboBox.Option o) return;
+            // "Other" is a synthetic entry for scenes whose own data doesn't
+            // resolve to any real island (see ResolveSceneIsland) -- there's
+            // no actual .ILE file to load for it, just a different filter
+            // over the same Scene dropdown.
+            if (o.Display != OtherIslandLabel) LoadIsland(Path.Combine(gameRoot, o.Display));
+            RefreshSceneOptionsForSelectedIsland();
+        };
         sceneFilter = new FilterableComboBox(SceneCombo, () => sceneOptions);
         sceneFilter.Committed += () =>
         {
@@ -101,14 +118,20 @@ public partial class MainWindow : Window
             foreach (var path in Directory.EnumerateFiles(gameRoot, "*.ILE").Where(path => !Path.GetFileName(path).StartsWith("_", StringComparison.OrdinalIgnoreCase)))
                 islands.Add(new FilterableComboBox.Option(i++, Path.GetFileName(path)));
         }
+
+        allSceneEntries = BuildSceneEntries();
+        // Only add the synthetic "Other" island if there's actually at
+        // least one scene that needs it -- no point offering an island
+        // that would always show an empty Scene list.
+        if (allSceneEntries.Any(e => e.IslandFile is null))
+            islands.Add(new FilterableComboBox.Option(islands.Count, OtherIslandLabel));
+
         islandOptions = islands;
         islandFilter?.Refresh();
         var activeOption = islands.FirstOrDefault(o => o.Display == activeFile);
         if (activeOption is not null) IslandCombo.SelectedItem = activeOption; else IslandCombo.Text = "";
 
-        sceneOptions = BuildSceneOptions();
-        sceneFilter?.Refresh();
-        SceneCombo.Text = "";
+        RefreshSceneOptionsForSelectedIsland();
     }
 
     // SCENE.HQR's own entry 0 isn't a scene at all -- DISKFUNC.CPP's
@@ -124,24 +147,82 @@ public partial class MainWindow : Window
     // `numscene = hqrIndex - 1` here (rather than the raw HQR index) means
     // this list already uses the same numbering LoadScene(numscene) expects,
     // ready for whenever scene selection is wired to actually load one.
-    private IReadOnlyList<FilterableComboBox.Option> BuildSceneOptions()
+    private List<SceneEntry> BuildSceneEntries()
     {
         var scenePath = Path.Combine(gameRoot, "SCENE.HQR");
-        if (!File.Exists(scenePath)) return Array.Empty<FilterableComboBox.Option>();
+        if (!File.Exists(scenePath)) return new List<SceneEntry>();
 
         var hqrCount = HqrArchive.CountEntries(scenePath);
         var descriptions = HqdDescriptions.Load("SCENE2.HQD", hqrCount);
         var archive = HqrArchive.Open(scenePath);
 
-        var options = new List<FilterableComboBox.Option>();
+        var entries = new List<SceneEntry>();
         for (var hqrIndex = 1; hqrIndex < hqrCount; hqrIndex++)
         {
             if (!archive.IsValid(hqrIndex)) continue;
             var numscene = hqrIndex - 1;
             var name = hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null;
-            options.Add(new FilterableComboBox.Option(numscene, name is null ? $"{numscene}" : $"{numscene}: {name}"));
+            var option = new FilterableComboBox.Option(numscene, name is null ? $"{numscene}" : $"{numscene}: {name}");
+            entries.Add(new SceneEntry(ResolveSceneIsland(archive, hqrIndex), option));
         }
-        return options;
+        return entries;
+    }
+
+    // Every scene record's own first byte is its Island ID (DISKFUNC.CPP's
+    // LoadScene: "Island = GET_S8;", read right after the HQR record loads)
+    // -- the exact same field RENDERER_ACTORS.CPP's PeekSceneCube already
+    // reads (as p[0]) to match a scene against a target island index when
+    // scanning cubes. RENDERER_API.CPP's own kIslandNames[] gives the order
+    // that ID indexes into (0=citadel, 1=sendell [MOON.ILE's internal/lore
+    // name], 2=desert, 3=emeraude, 4=otringal, 5=celebrat, 6=platform,
+    // 7=mosquibe, 8=knartas, 9=ilotcx, 10=ascence, 11=souscelb) -- mirrored
+    // here rather than exported from native, since it's plain static data
+    // and every byte needed to compute it (SCENE.HQR itself) is already
+    // read from C# via HqrArchive. Two of that table's own real-world
+    // limitations carry over as-is rather than being papered over: CITABAU
+    // has no ordinary index at all in the native table (interior-only), so
+    // its scenes always fall under the synthetic "Other" island; and
+    // CELEBRA2 is aliased to the same index 5 as CELEBRAT there, so a scene
+    // with Island==5 is genuinely ambiguous between the two files and is
+    // just attributed to CELEBRAT -- CELEBRA2's own scene list will read
+    // empty rather than guess.
+    private static readonly string[] IslandNameByRawSceneId =
+    {
+        "CITADEL", "MOON", "DESERT", "EMERAUDE", "OTRINGAL",
+        "CELEBRAT", "PLATFORM", "MOSQUIBE", "KNARTAS", "ILOTCX",
+        "ASCENCE", "SOUSCELB",
+    };
+
+    private static string? ResolveSceneIsland(HqrArchive archive, int hqrIndex)
+    {
+        var bytes = archive.Read(hqrIndex);
+        if (bytes.Length < 1) return null;
+        var islandId = bytes[0];
+        return islandId < IslandNameByRawSceneId.Length ? IslandNameByRawSceneId[islandId] : null;
+    }
+
+    // Narrows the Scene dropdown to only the scenes belonging to whichever
+    // island is currently selected (matched by base filename, e.g.
+    // "DESERT" for DESERT.ILE) -- or, for the synthetic OtherIslandLabel
+    // entry, the scenes whose own data didn't resolve to any known island
+    // at all. No island selected (or an island with no resolvable scenes,
+    // e.g. CELEBRA2 -- see ResolveSceneIsland's own comment) simply shows
+    // an empty Scene list rather than falling back to showing everything.
+    private void RefreshSceneOptionsForSelectedIsland()
+    {
+        var selected = IslandCombo.SelectedItem as FilterableComboBox.Option;
+        IEnumerable<SceneEntry> matching;
+        if (selected is null) matching = Enumerable.Empty<SceneEntry>();
+        else if (selected.Display == OtherIslandLabel) matching = allSceneEntries.Where(e => e.IslandFile is null);
+        else
+        {
+            var islandName = Path.GetFileNameWithoutExtension(selected.Display);
+            matching = allSceneEntries.Where(e => e.IslandFile is not null && string.Equals(e.IslandFile, islandName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        sceneOptions = matching.Select(e => e.Option).ToList();
+        sceneFilter?.Refresh();
+        SceneCombo.Text = "";
     }
 
     private void LoadIsland(string path)
@@ -810,7 +891,16 @@ public partial class MainWindow : Window
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
     private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
-    private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e) { orbiting = e.ChangedButton == MouseButton.Left; lastMousePosition = e.GetPosition(TerrainViewport); TerrainViewport.CaptureMouse(); }
+    // Gated on RotateViewCheckBox so the left mouse button can be freed up
+    // for other uses (actor placement/selection, etc.) without it always
+    // spinning the camera underneath whatever else is being clicked.
+    private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        orbiting = e.ChangedButton == MouseButton.Left && RotateViewCheckBox.IsChecked == true;
+        if (!orbiting) return;
+        lastMousePosition = e.GetPosition(TerrainViewport);
+        TerrainViewport.CaptureMouse();
+    }
     private void TerrainViewport_MouseMove(object sender, MouseEventArgs e)
     {
         if (!orbiting) return;
@@ -1099,11 +1189,6 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
     private void Palette_Click(object sender, RoutedEventArgs e) { selectedTerrain = (TerrainType)((Button)sender).Tag; SelectedLabel.Text = $"{selectedTerrain} / selected brush"; }
-    private void FileMenuButton_Click(object sender, RoutedEventArgs e)
-    {
-        FileMenu.PlacementTarget = FileMenuButton;
-        FileMenu.IsOpen = true;
-    }
     private void Open_Click(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
 
     private void Settings_Click(object sender, RoutedEventArgs e)

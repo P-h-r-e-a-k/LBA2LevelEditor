@@ -275,7 +275,7 @@ public partial class ActorAttributesWindow : Window
         AnimCombo.Text = anim.ToString();
         suppressAnimTextChanged = false;
         LifePointBox.Text = lifePoint.ToString();
-        ArmorBox.Text = armor.ToString();
+        ArmourBox.Text = armor.ToString();
         HitForceBox.Text = hitForce.ToString();
         MoveBox.Text = move.ToString();
         WaypointsLabel.Text = $"{waypointCount} waypoint{(waypointCount == 1 ? "" : "s")} on this actor's track script";
@@ -287,7 +287,12 @@ public partial class ActorAttributesWindow : Window
             Bit = f.Bit,
             IsChecked = (flags & f.Bit) != 0,
         }).ToList();
-        FlagsList.ItemsSource = flagItems;
+        // Split into two side-by-side lists rather than one long column --
+        // right half first item starts at the halfway point, left gets the
+        // extra one when the count is odd.
+        var half = (flagItems.Count + 1) / 2;
+        FlagsListLeft.ItemsSource = flagItems.Take(half).ToList();
+        FlagsListRight.ItemsSource = flagItems.Skip(half).ToList();
     }
 
     // CaretIndex/SelectAll live on the ComboBox's internal editable TextBox
@@ -523,7 +528,7 @@ public partial class ActorAttributesWindow : Window
 
         if (!TryParseAll(PositionXBox.Text, PositionYBox.Text, PositionZBox.Text, BetaBox.Text,
                 ParseLeadingIndex(BodyCombo.Text), ParseLeadingIndex(AnimCombo.Text),
-                LifePointBox.Text, ArmorBox.Text, HitForceBox.Text, MoveBox.Text,
+                LifePointBox.Text, ArmourBox.Text, HitForceBox.Text, MoveBox.Text,
                 out var x, out var y, out var z, out var beta, out var body, out var anim,
                 out var lifePoint, out var armor, out var hitForce, out var move))
         {
