@@ -30,6 +30,19 @@ internal sealed class CommunityRendererBackend
         var repoRoot = File.Exists(vendoredLibrary) ? vendoredRoot : File.Exists(siblingLibrary) ? siblingRoot : vendoredRoot;
         enginePath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "lba2cc.exe");
         referenceDirectory = Path.Combine(repoRoot, "out", "named-probes");
+
+        // This dev-tree path is only a fallback: RendererLibraryApi tries
+        // loading "liblba2_renderer.dll" by its bare name first, which finds
+        // a co-located copy next to the exe (bin/Debug, a folder publish) via
+        // the OS's normal search order, and -- for a single-file publish
+        // with native-library self-extraction -- the copy .NET's own
+        // single-file host extracts to its private cache directory (which is
+        // *not* AppContext.BaseDirectory; that still points at the original
+        // exe's own folder for a single-file app, confirmed by a co-located
+        // liblba2_renderer.dll simply not being there at runtime). This
+        // absolute path only matters when neither of those exists, e.g.
+        // running straight from source before the static DLL has been built
+        // at all -- it points at the dynamically-linked dev build instead.
         rendererLibraryPath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "3DEXT", "liblba2_renderer.dll");
         this.gameDirectory = gameDirectory;
         saveDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Twinsen", "LBA2", "save");

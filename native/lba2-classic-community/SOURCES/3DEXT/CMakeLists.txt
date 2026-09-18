@@ -16,6 +16,16 @@ set_target_properties(lba2_renderer PROPERTIES OUTPUT_NAME "lba2_renderer")
 target_link_libraries(lba2_renderer PUBLIC lba2_renderer_engine)
 target_include_directories(lba2_renderer PUBLIC ../../LIB386/H ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/SOURCES)
 target_compile_definitions(lba2_renderer PUBLIC ONE_GAME_DIRECTORY LBA_GAME CDROM)
+if(WIN32 AND LBA2_LINK_STATIC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Same rationale as SOURCES/CMakeLists.txt's identical block for
+    # ${LBA2_EXECUTABLE_NAME}: fold the GCC C++ runtime into the DLL so
+    # editor hosts (the C# level editor) don't need MSYS2/MinGW on PATH.
+    # svg (linked in transitively via lba2_renderer_engine) already picks
+    # up SDL3::SDL3-static instead of the shared import lib once
+    # LBA2_LINK_STATIC=ON is set at the top-level configure -- this only
+    # needs to add the GCC runtime flags that target is missing.
+    target_link_options(lba2_renderer PRIVATE -static-libstdc++ -static-libgcc -static)
+endif()
 
 
 # Configure all ASM files to be recognized as such (workaround for bug where .ASM uppercase extension is not recognized)

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace LBA2LevelEditor;
@@ -59,11 +60,39 @@ internal sealed class RendererLibraryApi : IDisposable
     private RenderBodyPreviewFn? renderBodyPreview;
     private ProjectPointFn? projectPoint;
 
-    public RendererLibraryApi(string path)
+    // devTreeFallbackPath is an absolute path into the native dev build
+    // tree (dynamically linked against MSYS2's GCC runtime/SDL3 -- fine
+    // locally, since msys64 is on a dev machine), used only when neither of
+    // the two distributable options below is present: running straight
+    // from source before the statically-linked DLL has ever been built.
+    //
+    // The two distributable options, tried first:
+    //  1. A copy of the DLL next to the exe (LBA2LevelEditor.csproj copies
+    //     it there via CopyToOutputDirectory) -- covers bin/Debug and a
+    //     plain folder-based dotnet publish.
+    //  2. Failing that, an embedded copy (LBA2LevelEditor.csproj also
+    //     embeds it as a resource) extracted to a stable cache directory --
+    //     covers a single-file publish. dotnet publish's own
+    //     IncludeNativeLibrariesForSelfExtract looked like the built-in
+    //     answer for this, but it isn't: it does extract the DLL at
+    //     runtime, just into its own private %TEMP%\.net\<app>\<hash>\
+    //     cache directory rather than next to the exe (AppContext.
+    //     BaseDirectory stays the exe's own folder for a single-file app),
+    //     and NativeLibrary.Load resolving a bare "liblba2_renderer.dll"
+    //     does not search that directory either -- confirmed empirically by
+    //     a DllNotFoundException there. Embedding it ourselves and
+    //     extracting it to a location we choose sidesteps the single-file
+    //     host's own native-library resolver entirely instead of fighting it.
+    public RendererLibraryApi(string devTreeFallbackPath)
     {
-        if (!File.Exists(path)) return;
+        var path = ResolveLibraryPath(devTreeFallbackPath);
+        if (path is null) return;
+        // Only the dev-tree DLL is dynamically linked; both distributable
+        // paths are statically linked and have no non-system dependencies,
+        // but pointing this at a real MSYS2 install is harmless either way.
         SetDllDirectory("C:\\msys64\\ucrt64\\bin");
-        handle = NativeLibrary.Load(path);
+        try { handle = NativeLibrary.Load(path); } catch { handle = IntPtr.Zero; }
+        if (handle == IntPtr.Zero) return;
         version = Marshal.GetDelegateForFunctionPointer<VersionFn>(NativeLibrary.GetExport(handle, "lba2_renderer_version"));
         initialize = Get<InitializeFn>("lba2_renderer_initialize"); setDataRoot = Get<SetDataRootFn>("lba2_renderer_set_data_root"); shutdown = Get<ShutdownFn>("lba2_renderer_shutdown");
         loadIsland = Get<LoadIslandFn>("lba2_renderer_load_island"); loadCube = Get<LoadCubeFn>("lba2_renderer_load_cube");
@@ -88,6 +117,52 @@ internal sealed class RendererLibraryApi : IDisposable
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool SetDllDirectory(string path);
+
+    // See the constructor's own comment for why there are three candidates
+    // and why the embedded-resource one exists at all.
+    private static string? ResolveLibraryPath(string devTreeFallbackPath)
+    {
+        var coLocated = Path.Combine(AppContext.BaseDirectory, "liblba2_renderer.dll");
+        if (File.Exists(coLocated)) return coLocated;
+
+        var assembly = Assembly.GetExecutingAssembly();
+        using (var resource = assembly.GetManifestResourceStream("liblba2_renderer.dll"))
+        {
+            if (resource is not null)
+            {
+                // A per-version cache directory (not just a fixed name)
+                // means a later app update with a changed DLL extracts
+                // fresh instead of reusing a stale one left by a previous
+                // install -- keyed on the running exe's own file size/write
+                // time, which changes whenever the embedded resource does,
+                // without needing to compute or store an explicit
+                // version/hash anywhere. Environment.ProcessPath rather than
+                // Assembly.Location: the latter always returns "" for an
+                // assembly embedded in a single-file app.
+                var assemblyInfo = new FileInfo(Environment.ProcessPath ?? "");
+                var cacheKey = assemblyInfo.Exists
+                    ? $"{assemblyInfo.Length}-{assemblyInfo.LastWriteTimeUtc.Ticks}"
+                    : resource.Length.ToString();
+                var cacheDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "LBA2LevelEditor", "native", cacheKey);
+                var extractedPath = Path.Combine(cacheDir, "liblba2_renderer.dll");
+                if (!File.Exists(extractedPath))
+                {
+                    Directory.CreateDirectory(cacheDir);
+                    var tempPath = extractedPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    using (var file = File.Create(tempPath)) resource.CopyTo(file);
+                    // Atomic-ish: a crash/concurrent launch mid-extract never
+                    // leaves a half-written file at the path other launches
+                    // check for.
+                    File.Move(tempPath, extractedPath, overwrite: true);
+                }
+                return extractedPath;
+            }
+        }
+
+        return File.Exists(devTreeFallbackPath) ? devTreeFallbackPath : null;
+    }
 
     public bool IsLoaded => handle != IntPtr.Zero && version is not null;
     public int Version => version?.Invoke() ?? 0;

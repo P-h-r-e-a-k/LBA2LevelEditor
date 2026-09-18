@@ -8,4 +8,39 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <!--
+    liblba2_renderer.dll (built from native/lba2-classic-community with the
+    LBA2_LINK_STATIC CMake option ON, in the separate
+    out/build/windows_ucrt64_static tree kept apart from the fast
+    iterating out/build/windows_ucrt64 dev build) is made available to the
+    app two ways:
+
+    - Copied next to the exe on every build (None+CopyToOutputDirectory),
+      for a normal dotnet build/run or a folder based dotnet publish.
+      RendererLibraryApi checks there first since it's the cheapest case
+      with no extraction needed.
+
+    - Embedded as a resource, for a single file publish
+      (PublishSingleFile=true). dotnet publish's IncludeNativeLibrariesFor
+      SelfExtract option looked like the built in answer for this, but it
+      turned out not to be: it does extract the DLL correctly at runtime,
+      just into its own private per app, per hash cache directory under
+      the temp folder rather than next to the exe, since AppContext.
+      BaseDirectory stays the exe's own folder for a single file app, and
+      NativeLibrary.Load resolving a bare "liblba2_renderer.dll" does not
+      search that directory either, confirmed by a DllNotFoundException
+      there. Embedding it ourselves and extracting it to a location we
+      choose (RendererLibraryApi does this, under the local application
+      data folder) sidesteps that entirely instead of fighting the single
+      file host's own resolver.
+  -->
+  <ItemGroup>
+    <None Include="native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll"
+          Condition="Exists('native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll')"
+          Link="liblba2_renderer.dll" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll"
+          Condition="Exists('native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll')"
+          LogicalName="liblba2_renderer.dll" />
+  </ItemGroup>
+
 </Project>
