@@ -412,8 +412,10 @@ public partial class MainWindow : Window
         var addHere = new MenuItem { Header = "Add Actor Here" };
         addHere.Click += (_, _) =>
         {
+            DebugLog.Log($"MainWindow: Add Actor Here clicked at world=({targetX},{targetY},{targetZ})");
             var index = library.AddActor((int)targetX, (int)targetY, (int)targetZ, 0, 0, 0, 255, 0, 0, 0);
-            if (index < 0) { MessageBox.Show(this, "Couldn't add an actor here -- this cube may already be at its 100-actor limit.", "Add Actor", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (index < 0) { DebugLog.Log("MainWindow: AddActor rejected (cube at actor limit)"); MessageBox.Show(this, "Couldn't add an actor here -- this cube may already be at its 100-actor limit.", "Add Actor", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            DebugLog.Log($"MainWindow: AddActor returned index={index}");
             selectedActorIndex = index;
             RenderNativeCamera();
             OpenActorAttributesWindow(index);
@@ -489,6 +491,7 @@ public partial class MainWindow : Window
             existing.Activate();
             return;
         }
+        DebugLog.Log($"MainWindow: opening ActorAttributesWindow for index={index}");
         var window = new ActorAttributesWindow(nativeRenderer, palette, index) { Owner = this };
         window.OpenScriptRequested += OpenActorScriptWindow;
         window.Closed += (_, _) => openAttributesWindows.Remove(index);

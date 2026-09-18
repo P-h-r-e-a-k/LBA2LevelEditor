@@ -107,6 +107,7 @@ public partial class ActorAttributesWindow : Window
     internal ActorAttributesWindow(CommunityRendererBackend nativeRenderer, byte[] palette, int actorIndex)
     {
         InitializeComponent();
+        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: constructing");
         this.nativeRenderer = nativeRenderer;
         this.palette = palette;
         this.actorIndex = actorIndex;
@@ -376,17 +377,41 @@ public partial class ActorAttributesWindow : Window
     // full list right after (suppressed, so it doesn't re-fire filtering)
     // undoes that narrowing regardless of whether it happened, since a
     // selection is never itself a filter request -- only typing is.
+    // Re-running ResetComboFilter a second time, deferred to Background
+    // priority, is what actually fixes the dropdown-sticks-to-one-entry
+    // regression: an editable ComboBox syncs its own Text to match the
+    // newly-picked item as part of the very same selection operation, which
+    // fires the *same* TextChanged event typing does (see FilterCombo's own
+    // comment) -- but WPF doesn't guarantee that sync happens before this
+    // SelectionChanged handler runs. When it lands after (which real mouse
+    // clicks on a dropdown popup item appear to do, unlike keyboard Down+
+    // Enter selection -- the two weren't actually equivalent, despite
+    // looking that way when this was first "fixed" and verified only via
+    // keyboard selection), the immediate ResetComboFilter below runs too
+    // early: it restores the full list, then the late TextChanged fires and
+    // FilterCombo narrows it right back down to just the picked entry,
+    // which is exactly the regression reported. Re-running ResetComboFilter
+    // once more after every dispatcher-queued work from this same selection
+    // (including that late TextChanged) has already run undoes that,
+    // regardless of which order this particular selection happened to use --
+    // it's a no-op when the immediate call above already had the last word.
     private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (suppressBodyTextChanged) return;
+        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: BodyCombo selection changed, text='{BodyCombo.Text}'");
         CommitPreviewChange();
         ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged)));
     }
     private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (suppressAnimTextChanged) return;
+        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: AnimCombo selection changed, text='{AnimCombo.Text}'");
         CommitPreviewChange();
         ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged)));
     }
     private void BodyCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
     private void AnimCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
@@ -423,6 +448,7 @@ public partial class ActorAttributesWindow : Window
 
     private void Recalibrate()
     {
+        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: recalibrating preview body={previewBody} anim={previewAnim}");
         previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette, targetAspect: GetPreviewAspect())
             ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
         RenderPreviewFrame();
@@ -492,6 +518,7 @@ public partial class ActorAttributesWindow : Window
 
     private void Apply_Click(object sender, RoutedEventArgs e)
     {
+        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: Apply clicked");
         var library = nativeRenderer.RendererLibrary;
         if (library is null) { StatusLabel.Text = "Renderer unavailable."; return; }
 

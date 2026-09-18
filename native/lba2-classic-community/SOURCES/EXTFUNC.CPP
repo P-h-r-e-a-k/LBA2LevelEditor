@@ -12,8 +12,43 @@
 #include "INPUT.H"
 
 #include <stdio.h>
+#include <stdarg.h>
+#include <time.h>
 #include <algorithm>
 #include <cmath>
+
+// Always-on, best-effort debug trail for tracing intermittent crashes --
+// the ones that only show up occasionally (confirmed: the very first
+// couple of times an actor was added and its Body/Animation dropdown
+// clicked, never once reproduced after) are exactly the kind a debugger
+// attached after the fact can't catch, so this exists to have already
+// written down what was happening right before one happens. Opens,
+// writes one line, and closes the file on every single call rather than
+// keeping a handle open -- a native crash (an access violation, not a
+// catchable C++ exception) never gets a chance to flush a buffered
+// write, so leaving anything buffered risks losing exactly the last
+// lines that would matter most. In the project folder rather than a
+// per-user AppData path so it's easy to find without hunting for it.
+// Logs to the SAME file the C# side's own DebugLog writes to
+// (E:\dump\LBA2LevelEditor\debug.log, RendererLibraryApi.cs/App.xaml.cs),
+// interleaved by wall-clock time, so a crash's last few lines show both
+// what the UI was doing and what the native engine was doing at once.
+void NativeDebugLog(const char *fmt, ...)
+{
+    FILE *f = fopen("E:\\dump\\LBA2LevelEditor\\debug.log", "a");
+    if (!f) return;
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    char stamp[16];
+    strftime(stamp, sizeof(stamp), "%H:%M:%S", lt);
+    fprintf(f, "[%s] [native] ", stamp);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(f, fmt, args);
+    va_end(args);
+    fprintf(f, "\n");
+    fclose(f);
+}
 
 #include <SVGA/SCREEN.H>
 #include <SYSTEM/KEYBOARD_KEYS.H>
@@ -571,7 +606,14 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // valid but mismatched anim/body pair (see its own comment).
         void *bodyPtr = GivePtrBody(body);
         void *animPtr = GivePtrAnim(anim);
-        if (!bodyPtr || !animPtr || !AnimFitsBody(bodyPtr, animPtr)) { g_previewInitialized = false; return 0; }
+        bool fits = bodyPtr && animPtr && AnimFitsBody(bodyPtr, animPtr);
+        if (!bodyPtr || !animPtr || !fits) {
+            NativeDebugLog("AffichageBodyPreview: rejecting body=%d anim=%d (bodyPtr=%p animPtr=%p fits=%d)",
+                body, anim, bodyPtr, animPtr, (int)fits);
+            g_previewInitialized = false; return 0;
+        }
+        NativeDebugLog("AffichageBodyPreview: init body=%d anim=%d (was body=%d anim=%d initialized=%d)",
+            body, anim, g_previewInitBody, g_previewInitAnim, g_previewInitialized);
         InitObject(BODY_PREVIEW_OBJ);
         ptrobj->Obj.Body.Num = -1; // see ObjectInitBody's own Body.Num==-1 check
         ObjectInitBody(&ptrobj->Obj, (void *)(uintptr_t)(U32)body);
@@ -607,9 +649,53 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // body/anim-change branch above -- the one call shape already
         // proven safe by every other test this session.
         void *animPtr = GivePtrAnim(anim);
+        NativeDebugLog("AffichageBodyPreview: deferred anim restart body=%d anim=%d (animPtr=%p)", body, anim, animPtr);
         if (animPtr) {
             ptrobj->Obj.Anim.Num = -1; // force re-init -- see ObjectInitAnim's own Anim.Ptr==anim check
+            // Root cause of the "opening the Body/Animation dropdown shortly
+            // after a loop restart sometimes crashes" bug (confirmed by
+            // bisecting via NativeDebugLog checkpoints: the crash was inside
+            // ObjectInitAnim itself, never reaching the log line right after
+            // it -- LIB386/ANIM/ANIM.CPP's own ObjectInitAnim takes a
+            // completely different branch depending on whether obj-
+            // >LastOfsFrame is already 0 (the cheap "just landed on frame 0"
+            // path, lines ~48-78) or not (the "cross-fade from wherever the
+            // object currently is" path, lines ~80-141) -- and for an object
+            // that's been animating for a while, as ours always has been by
+            // the time a loop restart is even possible, LastOfsFrame is
+            // essentially never 0, so every single deferred restart took the
+            // second path. That path writes into a shared global scratch
+            // ring buffer (PtrLib3DBufferAnim) sized for one real frame's
+            // worth of the *retail game's* actual cross-fade workload, and
+            // only checks for overflowing past EndLib3DBufferAnim *after*
+            // already writing into it -- a latent bug real gameplay is
+            // apparently never unlucky enough to hit, but our preview is:
+            // restarting a loop calls this every single time any preview
+            // animation reaches its last frame, for as long as the window
+            // stays open, walking that same buffer forward indefinitely
+            // (nothing in this whole flow ever resets it) until some call's
+            // write finally lands past the buffer's own allocation and
+            // corrupts whatever heap memory happens to sit right after it --
+            // exactly the kind of corruption that only crashes *later*, at a
+            // seemingly-unrelated coreclr.dll offset, and only on some runs
+            // depending on where that walk happens to land relative to
+            // nearby heap allocations, matching both this bug's own history
+            // (this exact spot was already implicated once before, when
+            // calling ObjectInitAnim mid-pipeline instead of deferred also
+            // crashed) and the user's own report of it crashing only the
+            // first couple of times, never reliably afterward.
+            //
+            // Our restart never wants that cross-fade in the first place --
+            // a loop restarting is a hard cut back to frame 0, not a blend
+            // from wherever it just was -- so there's nothing to lose by
+            // forcing the exact same cheap, safe path the real body/anim-
+            // change branch above already takes (that branch always starts
+            // from a fresh InitObject(), which leaves LastOfsFrame at 0):
+            // zeroing it here first, right before the same ObjectInitAnim
+            // call, makes this branch behave identically.
+            ptrobj->Obj.LastOfsFrame = 0;
             ObjectInitAnim(&ptrobj->Obj, animPtr);
+            NativeDebugLog("AffichageBodyPreview: deferred restart -- ObjectInitAnim returned");
             ptrobj->Obj.Status |= FLAG_BODY; // matches the real-change branch: force ObjectSetInterDep to run even though TimerRefHR still equals the freshly-reset Time
         }
         g_previewNeedsAnimRestart = false;
@@ -676,6 +762,8 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         g_previewFreezeArmed = true;
         g_previewFreezeSinceSystemHR = TimerSystemHR;
     } else if (TimerSystemHR - g_previewFreezeSinceSystemHR > 500) {
+        NativeDebugLog("AffichageBodyPreview: force-clearing stuck TimerLock (was %ld, frozen for %ldms)",
+            (long)TimerLock, (long)(TimerSystemHR - g_previewFreezeSinceSystemHR));
         TimerLock = 0;
         ManageSystem(); // let TimerRefHR actually move this same call, not just from the next one
         g_previewLastTimerRefHR = TimerRefHR;
@@ -726,7 +814,9 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     // needing any special-cased "frozen" rendering path of its own.
     if (!g_previewAnimationPaused) {
         S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
+        NativeDebugLog("AffichageBodyPreview: calling ObjectSetInterDep");
         ObjectSetInterDep(&ptrobj->Obj);
+        NativeDebugLog("AffichageBodyPreview: ObjectSetInterDep returned, Status=0x%x", (unsigned)ptrobj->Obj.Status);
         ptrobj->Obj.X = savedX;
         ptrobj->Obj.Y = savedY;
         ptrobj->Obj.Z = savedZ;
@@ -758,14 +848,20 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         S32 zr = CameraZr - Z0;
         if (zr <= ClipZFar) {
             SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
-            if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) ObjectSetInterFrame(&ptrobj->Obj);
+            if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
+                NativeDebugLog("AffichageBodyPreview: calling ObjectSetInterFrame");
+                ObjectSetInterFrame(&ptrobj->Obj);
+                NativeDebugLog("AffichageBodyPreview: ObjectSetInterFrame returned");
+            }
             UnsetClip();
             // See TestVisible's own comment (AFF_OBJ.CPP): a full rotation
             // crosses viewing angles a real camera never does, where a
             // body modeled single-sided for its habitual viewing side
             // would otherwise render with entire groups missing.
             g_disableBackfaceCulling = true;
+            NativeDebugLog("AffichageBodyPreview: calling ObjectDisplay");
             ObjectDisplay(&ptrobj->Obj);
+            NativeDebugLog("AffichageBodyPreview: ObjectDisplay returned");
             g_disableBackfaceCulling = false;
         }
     }

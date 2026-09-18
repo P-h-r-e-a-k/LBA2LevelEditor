@@ -1010,6 +1010,7 @@ static void ApplyRawBodyAnim(T_OBJET *ptrobj, S32 rawBody, S32 rawAnim)
 // (editor-only, 3DEXT) layer to ask.
 extern void SetPlaceholderBodySlot(S32 slot, int isPlaceholder);
 extern void ClearAllPlaceholderBodySlots(void);
+extern void NativeDebugLog(const char *fmt, ...);
 
 static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
 {
@@ -1111,8 +1112,10 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
     ClearAllPlaceholderBodySlots();
     for (size_t gi = 0; gi < g_actors.size(); gi++) {
         const RendererActor &ga = g_actors[gi];
-        if (ga.SceneIndex == sceneIndex && ga.ObjectSlot >= 1 && ga.ObjectSlot < NbObjets && ga.IsPlaceholderBody)
+        if (ga.SceneIndex == sceneIndex && ga.ObjectSlot >= 1 && ga.ObjectSlot < NbObjets && ga.IsPlaceholderBody) {
             SetPlaceholderBodySlot(ga.ObjectSlot, 1);
+            NativeDebugLog("ReapplyPendingEditsToListObjet: scene=%d slot=%d flagged placeholder-black", sceneIndex, (int)ga.ObjectSlot);
+        }
     }
 }
 
@@ -1130,6 +1133,7 @@ int RendererSetActorAttributes(int index, int beta, int body, int anim, int life
     if (index < 0 || index >= (int)g_actors.size()) return 0;
     RendererActor &a = g_actors[(size_t)index];
     if (a.ObjectSlot == 0) return 0; // hero excluded, see file header comment
+    NativeDebugLog("RendererSetActorAttributes: index=%d slot=%d body=%d anim=%d beta=%d", index, (int)a.ObjectSlot, body, anim, beta);
     a.Beta = (S16)beta;
     a.GenBody = (U8)body;
     a.GenAnim = (U16)anim;
@@ -1227,6 +1231,7 @@ int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int
     edits.NewActors.push_back(newActor);
     edits.Dirty = true;
 
+    NativeDebugLog("RendererAddActor: scene=%d flatIndex=%d world=(%d,%d,%d) body=%d anim=%d", sceneIndex, flatIndex, worldX, worldY, worldZ, body, anim);
     ReapplyIfCurrentlyLoaded(sceneIndex);
     return flatIndex;
 }
