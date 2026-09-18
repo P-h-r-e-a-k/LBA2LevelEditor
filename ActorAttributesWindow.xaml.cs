@@ -366,8 +366,28 @@ public partial class ActorAttributesWindow : Window
     }
     private void BodyCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
     private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
-    private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
-    private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
+
+    // Picking an item from the dropdown updates the ComboBox's own Text to
+    // match it, which fires the *same* TextChangedEvent typing does (see
+    // that handler's own comment on why it's wired this way) -- so without
+    // this, FilterCombo immediately narrowed ItemsSource down to just the
+    // one just-picked entry, leaving every subsequent dropdown open showing
+    // only that one item until the text was cleared by hand. Restoring the
+    // full list right after (suppressed, so it doesn't re-fire filtering)
+    // undoes that narrowing regardless of whether it happened, since a
+    // selection is never itself a filter request -- only typing is.
+    private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (suppressBodyTextChanged) return;
+        CommitPreviewChange();
+        ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
+    }
+    private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (suppressAnimTextChanged) return;
+        CommitPreviewChange();
+        ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
+    }
     private void BodyCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
     private void AnimCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
 

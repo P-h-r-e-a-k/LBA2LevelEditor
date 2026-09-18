@@ -470,6 +470,16 @@ static S32 g_previewBodyRadius = 0;
 // skipping just the ObjectSetInterDep call (and nothing else) achieves that.
 static bool g_previewAnimationPaused = false;
 
+// Tracks how long TimerRefHR has sat completely still despite real
+// wall-clock time genuinely advancing, to distinguish a truly stuck
+// TimerLock (TIMERWIN.CPP) from a brief, legitimate one -- see this trio's
+// own use below for the full story. g_previewFreezeArmed is false whenever
+// TimerRefHR last moved on its own, so a fresh freeze always gets the
+// full grace window again rather than inheriting an old one.
+static U32 g_previewLastTimerRefHR = 0;
+static U32 g_previewFreezeSinceSystemHR = 0;
+static bool g_previewFreezeArmed = false;
+
 static S32 ComputeBodyBoundingRadius(const void *bodyPtr)
 {
     const T_BODY_HEADER *header = (const T_BODY_HEADER *)bodyPtr;
@@ -547,25 +557,43 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     SetLightVector(600, -600, 0);
     SetFollowCamera(0, 0, 0, 200, cameraBeta, 0, camDistance);
 
-    // TimerLock (TIMERWIN.CPP) is a counting lock -- ManageTime() only
-    // advances the shared TimerRefHR clock while it's exactly zero.
-    // Confirmed by logging (TimerLock=1, TimerSystemHR genuinely advancing,
-    // TimerRefHR/obj->Time frozen solid) that something on the editor's own
-    // island/actor-scan path (RendererScanIslandActors's repeated LoadScene()
-    // calls, most likely -- see its own FlagLoadGame comment) calls
-    // LockTimer() without a balancing UnlockTimer() reachable from a
-    // position/track-only scan, leaving this elevated for the rest of the
-    // session -- with no real gameplay/cinematic loop ever running in this
-    // headless renderer to unlock it the way the original game would. Once
-    // stuck, the preview's own animation froze permanently after its first
-    // frame regardless of the FLAG_BODY fix above, since ObjectSetInterDep's
-    // whole state machine is driven by TimerRefHR actually moving. Since
-    // this editor has no legitimate use for that lock (no cinematics, no
-    // real pause menu), forcing it clear right before the one call that
-    // needs the clock to move is the narrowest fix that doesn't touch
-    // whatever originally set it for the main view's own purposes.
-    TimerLock = 0;
     ManageSystem();
+
+    // TimerLock (TIMERWIN.CPP) is a counting lock -- ManageTime() (just
+    // called above) only advances the shared TimerRefHR clock while it's
+    // exactly zero, though it always updates TimerSystemHR (real wall-clock
+    // time) regardless. Confirmed by logging (TimerLock=1, TimerSystemHR
+    // genuinely advancing, TimerRefHR/obj->Time frozen solid) that something
+    // on the editor's own island/actor-scan path (RendererScanIslandActors's
+    // repeated LoadScene() calls, most likely -- see its own FlagLoadGame
+    // comment) sometimes leaves this elevated well past whatever briefly
+    // needed it, permanently freezing the preview's animation (ObjectSetInterDep's
+    // whole state machine is driven by TimerRefHR actually moving).
+    //
+    // Force-clearing it the *instant* a freeze was seen was tried first and
+    // crashed the app -- but only when triggered within about a second of a
+    // fresh launch, confirmed by repeated testing (crashed twice fresh,
+    // survived every time once delayed or once the same fix was disabled
+    // entirely): something in the app's own startup sequence legitimately
+    // holds this lock briefly, and clearing it out from under that
+    // in-progress lock corrupted whatever it assumed about time standing
+    // still meanwhile. Waiting for a genuinely *sustained* freeze instead
+    // (TimerRefHR unchanged while TimerSystemHR has still moved by more
+    // than half a second) distinguishes the two: any legitimate short-lived
+    // lock has long since released by then, so only a truly stuck one ever
+    // gets force-cleared, and startup's own brief hold is never touched.
+    if (TimerRefHR != g_previewLastTimerRefHR) {
+        g_previewLastTimerRefHR = TimerRefHR;
+        g_previewFreezeArmed = false;
+    } else if (!g_previewFreezeArmed) {
+        g_previewFreezeArmed = true;
+        g_previewFreezeSinceSystemHR = TimerSystemHR;
+    } else if (TimerSystemHR - g_previewFreezeSinceSystemHR > 500) {
+        TimerLock = 0;
+        ManageSystem(); // let TimerRefHR actually move this same call, not just from the next one
+        g_previewLastTimerRefHR = TimerRefHR;
+        g_previewFreezeArmed = false;
+    }
 
     // ObjectSetInterDep() (INTERDEP.CPP) is what actually advances the
     // animation timer state machine and sets Status to FLAG_CHANGE (and,
@@ -615,6 +643,30 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         ptrobj->Obj.X = savedX;
         ptrobj->Obj.Y = savedY;
         ptrobj->Obj.Z = savedZ;
+
+        // INTERDEP.CPP's own end-of-animation branch (nextFrame >=
+        // NbFrames) already wraps to LoopFrame/LoopOfsFrame and sets
+        // FLAG_LAST_FRAME -- but LoopFrame is just whatever the anim's own
+        // data says, and for something authored as a one-shot (a death,
+        // a pickup gesture, an attack swing) that's never meant to repeat
+        // in real gameplay (a script swaps to a different animation once
+        // it finishes, rather than ever letting it loop), so nothing about
+        // that value was ever exercised or necessarily sensible as a
+        // restart point. Our preview has no such script and just keeps
+        // playing the one selected animation indefinitely, so a one-shot
+        // anim would otherwise sit wherever LoopFrame landed it looking
+        // frozen. Forcing an explicit restart from frame 0 (the same
+        // ObjectInitAnim() the initial body/anim change uses, so it's the
+        // exact same "definitely frame 0" state, not a guess) whenever the
+        // last frame is reached makes every animation loop continuously,
+        // which is what a preview -- unlike real gameplay -- actually wants.
+        if (ptrobj->Obj.Status & FLAG_LAST_FRAME) {
+            void *animPtr = GivePtrAnim(anim);
+            if (animPtr) {
+                ptrobj->Obj.Anim.Num = -1; // force re-init -- see ObjectInitAnim's own Anim.Ptr==anim check
+                ObjectInitAnim(&ptrobj->Obj, animPtr);
+            }
+        }
     }
 
     LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
