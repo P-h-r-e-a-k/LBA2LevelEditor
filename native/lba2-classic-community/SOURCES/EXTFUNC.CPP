@@ -648,53 +648,44 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // touched the object this call, identical in shape to the
         // body/anim-change branch above -- the one call shape already
         // proven safe by every other test this session.
-        void *animPtr = GivePtrAnim(anim);
+        void *animPtr = GivePtrAnim(anim); // resolved only to null-check below; NOT what gets passed to ObjectInitAnim -- see its own comment just below
         NativeDebugLog("AffichageBodyPreview: deferred anim restart body=%d anim=%d (animPtr=%p)", body, anim, animPtr);
         if (animPtr) {
             ptrobj->Obj.Anim.Num = -1; // force re-init -- see ObjectInitAnim's own Anim.Ptr==anim check
-            // Root cause of the "opening the Body/Animation dropdown shortly
-            // after a loop restart sometimes crashes" bug (confirmed by
-            // bisecting via NativeDebugLog checkpoints: the crash was inside
-            // ObjectInitAnim itself, never reaching the log line right after
-            // it -- LIB386/ANIM/ANIM.CPP's own ObjectInitAnim takes a
-            // completely different branch depending on whether obj-
-            // >LastOfsFrame is already 0 (the cheap "just landed on frame 0"
-            // path, lines ~48-78) or not (the "cross-fade from wherever the
-            // object currently is" path, lines ~80-141) -- and for an object
-            // that's been animating for a while, as ours always has been by
-            // the time a loop restart is even possible, LastOfsFrame is
-            // essentially never 0, so every single deferred restart took the
-            // second path. That path writes into a shared global scratch
-            // ring buffer (PtrLib3DBufferAnim) sized for one real frame's
-            // worth of the *retail game's* actual cross-fade workload, and
-            // only checks for overflowing past EndLib3DBufferAnim *after*
-            // already writing into it -- a latent bug real gameplay is
-            // apparently never unlucky enough to hit, but our preview is:
-            // restarting a loop calls this every single time any preview
-            // animation reaches its last frame, for as long as the window
-            // stays open, walking that same buffer forward indefinitely
-            // (nothing in this whole flow ever resets it) until some call's
-            // write finally lands past the buffer's own allocation and
-            // corrupts whatever heap memory happens to sit right after it --
-            // exactly the kind of corruption that only crashes *later*, at a
-            // seemingly-unrelated coreclr.dll offset, and only on some runs
-            // depending on where that walk happens to land relative to
-            // nearby heap allocations, matching both this bug's own history
-            // (this exact spot was already implicated once before, when
-            // calling ObjectInitAnim mid-pipeline instead of deferred also
-            // crashed) and the user's own report of it crashing only the
-            // first couple of times, never reliably afterward.
-            //
-            // Our restart never wants that cross-fade in the first place --
-            // a loop restarting is a hard cut back to frame 0, not a blend
-            // from wherever it just was -- so there's nothing to lose by
-            // forcing the exact same cheap, safe path the real body/anim-
-            // change branch above already takes (that branch always starts
-            // from a fresh InitObject(), which leaves LastOfsFrame at 0):
-            // zeroing it here first, right before the same ObjectInitAnim
-            // call, makes this branch behave identically.
-            ptrobj->Obj.LastOfsFrame = 0;
-            ObjectInitAnim(&ptrobj->Obj, animPtr);
+            // The actual crash (confirmed by bisecting via NativeDebugLog
+            // checkpoints across two different reproductions: the process
+            // died inside ObjectInitAnim itself, never reaching the log line
+            // right after it, both before and after an earlier attempted fix
+            // here that addressed a real-but-secondary issue without ever
+            // being the operative cause): this call was passing `animPtr`,
+            // the already-resolved real pointer GivePtrAnim(anim) returned
+            // above -- but that's not what ObjectInitAnim (LIB386/ANIM/
+            // ANIM.CPP) actually wants. Every other caller in this codebase,
+            // including the real body/anim-change branch just above this one
+            // (which passes `(void *)(uintptr_t)(U32)anim`), hands it the
+            // raw small integer archive index disguised as a pointer, zero-
+            // extended so reading it back low-32-bits-only recovers the
+            // original index exactly. ObjectInitAnim stores whatever it's
+            // given verbatim into obj->Anim.Ptr (a union with obj->Anim.Num,
+            // AFF_OBJ.H's own T_PTR_NUM), then -- because RENDERER_BOOT.CPP
+            // wires TransFctAnim to GivePtrAnim itself -- immediately calls
+            // TransFctAnim(obj->Anim.Num) to resolve that stored index into
+            // the real pointer it actually uses for the rest of the
+            // function. Handing it an already-resolved real pointer instead
+            // of the small-int form meant obj->Anim.Num (the SAME union
+            // storage as Ptr) read back as the low 32 bits of a real 64-bit
+            // heap address on this next call -- a huge garbage "archive
+            // index" -- so GivePtrAnim(garbage) returned NULL or a wild
+            // pointer, crashing the moment ObjectInitAnim dereferenced it.
+            // That garbage index is whatever GivePtrAnim(anim) happens to
+            // resolve to for THIS process's own heap layout, which ASLR
+            // changes on every relaunch -- some runs it happened to decode
+            // to something that didn't crash immediately, others (like this
+            // one, and the very first reports of this bug) it didn't. Fixed
+            // by passing the exact same small-int-as-pointer form the real-
+            // change branch above already uses correctly.
+            ptrobj->Obj.LastOfsFrame = 0; // loop restart wants a hard cut to frame 0, not ObjectInitAnim's cross-fade-from-current-pose path -- see LastOfsFrame's own note in ANIM.CPP if this ever needs revisiting
+            ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)anim);
             NativeDebugLog("AffichageBodyPreview: deferred restart -- ObjectInitAnim returned");
             ptrobj->Obj.Status |= FLAG_BODY; // matches the real-change branch: force ObjectSetInterDep to run even though TimerRefHR still equals the freshly-reset Time
         }
