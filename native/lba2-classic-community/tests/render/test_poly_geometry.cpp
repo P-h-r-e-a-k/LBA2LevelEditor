@@ -46,21 +46,37 @@ int main() {
     set_proj(0, 0, 0);
     set_proj(1, 0, 10);
     set_proj(2, 10, 0);
-    check("front-facing visible", (S32)TestVisible(&tri), 1);
+    check("front-facing visible", (S32)TestVisible(&tri, false), 1);
     check("  matches ref cross product", (S32)ref_visible(0, 0, 0, 10, 10, 0), 1);
 
     // Back-facing: reversed winding, cross product < 0.
     set_proj(0, 0, 0);
     set_proj(1, 10, 0);
     set_proj(2, 0, 10);
-    check("back-facing culled", (S32)TestVisible(&tri), 0);
+    check("back-facing culled", (S32)TestVisible(&tri, false), 0);
     check("  matches ref cross product", (S32)ref_visible(0, 0, 10, 0, 0, 10), 0);
 
     // Any clipped vertex culls, regardless of winding.
     set_proj(0, 0, 0);
     set_proj(1, 0, 10);
     set_proj(2, (S16)-0x8000, (S16)-0x8000);
-    check("clipped vertex culled", (S32)TestVisible(&tri), 0);
+    check("clipped vertex culled", (S32)TestVisible(&tri, false), 0);
+
+    // ignoreWinding=true (the body-preview turntable's culling bypass) shows a
+    // backface poly that would otherwise be culled by winding alone...
+    set_proj(0, 0, 0);
+    set_proj(1, 10, 0);
+    set_proj(2, 0, 10);
+    check("back-facing shown when ignoreWinding", (S32)TestVisible(&tri, true), 1);
+
+    // ...but still culls a clipped/off-frustum vertex -- only the winding
+    // test is skipped, not the sentinel guard. See TestVisible's own comment:
+    // skipping this guard too was what produced the giant diagonal
+    // streak-to-a-corner bug.
+    set_proj(0, 0, 0);
+    set_proj(1, 0, 10);
+    set_proj(2, (S16)-0x8000, (S16)-0x8000);
+    check("clipped vertex still culled when ignoreWinding", (S32)TestVisible(&tri, true), 0);
 
     // ── Triangle_Solid: vertex assembly + type/colour ───────────────────────
     printf("\n[Triangle_Solid: assembly]\n");

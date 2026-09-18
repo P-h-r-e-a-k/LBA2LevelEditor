@@ -12,6 +12,8 @@
 #include "INPUT.H"
 
 #include <stdio.h>
+#include <algorithm>
+#include <cmath>
 
 #include <SVGA/SCREEN.H>
 #include <SYSTEM/KEYBOARD_KEYS.H>
@@ -366,16 +368,21 @@ void AffichageActorsZBuf(void) {
 extern void InitObject(U8 numobj);
 extern void ObjectInitBody(T_OBJ_3D *obj, void *body);
 extern void ObjectInitAnim(T_OBJ_3D *obj, void *anim);
+extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
 extern void *GivePtrBody(S32 index);
 extern void *GivePtrAnim(S32 index);
+extern bool g_disableBackfaceCulling;
 
 // Renders one body, alone against a cleared background, for the actor-
 // attributes editor's preview panel -- reuses AffichageActorsZBuf's own
 // per-object draw sequence (immediately above) for the scratch slot, with
 // the *camera* orbiting around it (cameraBeta) rather than the object
-// itself, which looks identical from an otherwise-empty view and is
-// simpler than re-deriving the object's own rotation state every call.
-// Deliberately touches no terrain/sky/decor/real-actor state, so it's safe
+// itself. (Rotating the object's own Beta instead was tried -- expecting
+// it to be an equivalent way to spin the view -- but composing that with
+// this camera's own alpha/gamma setup tipped the whole body onto a
+// diagonal instead of a level turntable spin; camera-orbit doesn't have
+// that composition to go wrong, so it stayed.) Deliberately touches no
+// terrain/sky/decor/real-actor state, so it's safe
 // to call between ordinary frames -- whatever real render happens next
 // clears the screen and resets the camera fully anyway, exactly like
 // RenderIslandTopDown's own minimap snapshots already do to this same
@@ -396,29 +403,78 @@ extern void *GivePtrAnim(S32 index);
 // ANIM.CPP) straight with the archive index sidesteps that mismatch --
 // same primitives InitBody/InitAnim themselves call after resolving a
 // generic index down to one of these.
-// True if animPtr's own keyframe data doesn't reach past bodyPtr's own
-// group/point count. INTFRAME.CPP's interpolation loop ("for (i = 0; i <
-// obj->NbGroups - 1; i++)") walks the body's per-group point data using the
-// *animation's* own group count (obj->NbGroups, set from the anim header by
-// ObjectInitAnim), with no clamp against how many groups the body itself
-// actually has -- an animation authored for a bigger skeleton than the
-// selected body reads past the body's own group data. Duplicated in
+// True if animPtr's own group count fits the fixed-size buffer
+// ObjectInitAnim/ObjectSetInterFrame interpolate into (T_OBJ_3D::
+// CurrentFrame[30], AFF_OBJ.H -- 30 T_GROUP_INFO entries of 4 S16 each, so
+// 60 U32-equivalents; ObjectInitAnim copies animGroups*2-2 of those, capping
+// animGroups at 31). Originally this compared against the *body's* own
+// group count instead (the theory being that INTFRAME.CPP's interpolation
+// loop, driven by the animation's group count with no clamp of its own,
+// could walk past a smaller body's own group data) -- but that loop only
+// ever reads the animation's own keyframe arrays and writes into this fixed
+// CurrentFrame buffer, never touching the body's point/group data directly,
+// so a body with *fewer* groups than the animation is fine (the extra
+// interpolated groups simply have no body geometry to apply to). Comparing
+// against the body was actively wrong: it rejected ordinary pairings like a
+// body's own default idle animation (confirmed by logging body 0 at 19
+// groups against animation 0 at 24, both perfectly normal, silently
+// treated as "incompatible" and left rendering nothing). Duplicated in
 // RENDERER_ACTORS.CPP's ApplyRawBodyAnim for real actors, same reasoning.
 static bool AnimFitsBody(const void *bodyPtr, const void *animPtr)
 {
-    // T_BODY_HEADER (LIB386/H/OBJECT/AFF_OBJ.H): Info(4) SizeHeader(2)
-    // Dummy(2) XMin/XMax/YMin/YMax/ZMin/ZMax (4 each) then NbGroupes(4) at
-    // byte offset 32.
-    S32 bodyGroups = *(const S32 *)((const U8 *)bodyPtr + 32);
+    (void)bodyPtr; // no longer consulted -- kept in the signature so both call sites stay symmetric
     // ObjectInitAnim's own read (LIB386/ANIM/ANIM.CPP): animPtr[1], a U16.
     U16 animGroups = ((const U16 *)animPtr)[1];
-    return (S32)animGroups <= bodyGroups;
+    return animGroups <= 31;
+}
+
+// ListObjet is a fixed global array (DEFINES.H), zero-initialized by C++
+// itself before any code runs -- so ptrobj->Obj.Body.Num/Anim.Num both
+// start at exactly 0, not -1. Whenever the very first preview request of
+// the process happened to be for body 0 anim 0 (the ordinary default for a
+// freshly-added actor), the change check below saw Body.Num(0)==body(0)
+// and Anim.Num(0)==anim(0), skipped initialization entirely, and rendered
+// a scratch object that had never been through ObjectInitBody/
+// ObjectInitAnim at all -- explaining reports of the preview loading
+// "inconsistently" (it depended entirely on which body happened to be
+// requested first) and rendering with body parts missing or adrift
+// (confirmed by temporary logging showing NbGroups stuck at 0, its
+// zero-initialized value, meaning no group ever actually got animated).
+// Tracked here instead of trusting Body.Num/Anim.Num, which start at a
+// value indistinguishable from a real "already initialized to body 0" state.
+static S32 g_previewInitBody = -1;
+static S32 g_previewInitAnim = -1;
+static bool g_previewInitialized = false;
+
+// A conservative bounding-sphere radius (centred on the body's own local
+// origin) computed once per body change from BODY.HQR's own header bounds
+// (T_BODY_HEADER::XMin/XMax/YMin/YMax/ZMin/ZMax, AFF_OBJ.H). Used to keep
+// the turntable's camera distance far enough out that no part of the body
+// -- not just its silhouette centre -- crosses NearClip as the camera
+// orbits. Confirmed by testing: the auto-fit calibration (C#, 2D-silhouette
+// based) picks a distance tight enough for a *thin* profile silhouette that
+// individual vertices (an outstretched arm, the far side of the torso) were
+// landing closer to the camera than NearClip and failing to project at all
+// (LongProjectPoint3D, LPROJ3DF.CPP) -- indistinguishable on screen from a
+// missing/culled polygon, which is what an earlier round misdiagnosed this
+// as (see g_disableBackfaceCulling's own comment for that fix, which is
+// still independently needed for genuine backface visibility).
+static S32 g_previewBodyRadius = 0;
+
+static S32 ComputeBodyBoundingRadius(const void *bodyPtr)
+{
+    const T_BODY_HEADER *header = (const T_BODY_HEADER *)bodyPtr;
+    S32 rx = std::max(std::abs(header->XMin), std::abs(header->XMax));
+    S32 ry = std::max(std::abs(header->YMin), std::abs(header->YMax));
+    S32 rz = std::max(std::abs(header->ZMin), std::abs(header->ZMax));
+    double radius = std::sqrt((double)rx * rx + (double)ry * ry + (double)rz * rz);
+    return (S32)radius;
 }
 
 int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
 {
     T_OBJET *ptrobj = &ListObjet[BODY_PREVIEW_OBJ];
-    if (ptrobj->Obj.Body.Num != body || ptrobj->Obj.Anim.Num != anim) {
+    if (!g_previewInitialized || g_previewInitBody != body || g_previewInitAnim != anim) {
         // ObjectInitAnim() (and, via InitBodyZV()/ObjectDisplay() on later
         // frames, the body side too) dereferences GivePtrBody()/
         // GivePtrAnim()'s return value with no null check -- bail out
@@ -428,12 +484,16 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         // valid but mismatched anim/body pair (see its own comment).
         void *bodyPtr = GivePtrBody(body);
         void *animPtr = GivePtrAnim(anim);
-        if (!bodyPtr || !animPtr || !AnimFitsBody(bodyPtr, animPtr)) return 0;
+        if (!bodyPtr || !animPtr || !AnimFitsBody(bodyPtr, animPtr)) { g_previewInitialized = false; return 0; }
         InitObject(BODY_PREVIEW_OBJ);
         ptrobj->Obj.Body.Num = -1; // see ObjectInitBody's own Body.Num==-1 check
         ObjectInitBody(&ptrobj->Obj, (void *)(uintptr_t)(U32)body);
         ptrobj->Obj.Anim.Num = -1; // see ObjectInitAnim's own Anim.Ptr==anim check
         ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)anim);
+        g_previewBodyRadius = ComputeBodyBoundingRadius(bodyPtr);
+        g_previewInitBody = body;
+        g_previewInitAnim = anim;
+        g_previewInitialized = true;
     }
     if (ptrobj->Obj.Body.Num < 0) return 0;
 
@@ -451,7 +511,8 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     // in the C# calibrator, which has no visibility into NearClip) keeps
     // the fix correct regardless of what NearClip is configured to.
     S32 camDistance = cameraDistance > 0 ? cameraDistance : 5000;
-    if (camDistance < NearClip + 200) camDistance = NearClip + 200;
+    S32 minSafeDistance = NearClip + g_previewBodyRadius + 200;
+    if (camDistance < minSafeDistance) camDistance = minSafeDistance;
 
     ptrobj->Obj.X = 0;
     ptrobj->Obj.Y = 0;
@@ -465,6 +526,33 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     SetFollowCamera(0, 0, 0, 200, cameraBeta, 0, camDistance);
     ManageSystem();
 
+    // ObjectSetInterDep() (INTERDEP.CPP) is what actually advances the
+    // animation timer state machine and sets Status to FLAG_CHANGE (and,
+    // once a frame boundary is crossed, copies the new frame's keyframe
+    // data into CurrentFrame) -- ObjectSetInterFrame() just interpolates
+    // between whatever LastOfsFrame/NextOfsFrame ObjectSetInterDep last set
+    // up, and bails out immediately if FLAG_CHANGE isn't set. Real actors
+    // get this every tick from the main per-object update loop (OBJECT.CPP,
+    // e.g. line ~1112); our scratch object never goes through that, so
+    // without calling it here Status stayed 0 forever, ObjectSetInterFrame
+    // never did anything beyond ObjectInitAnim's own one-time frame-0 copy,
+    // and only whichever body groups that copy happened to leave sensibly
+    // posed rendered -- the rest (missing torso/arms in testing) stayed at
+    // effectively garbage transforms. FLAG_BODY forces it to run even on
+    // the very first call, when TimerRefHR still exactly equals obj->Time
+    // (ObjectSetInterDep's own "nothing changed" fast path otherwise skips
+    // it, matching the FLAG_BODY set immediately before this same call at
+    // OBJECT.CPP's own call site). Saving/restoring X/Y/Z matches that same
+    // call site: ObjectSetInterDep applies the animation's own root motion
+    // to the object's position, which would otherwise walk our preview
+    // object away from the world origin the camera is centred on.
+    S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
+    ptrobj->Obj.Status |= FLAG_BODY;
+    ObjectSetInterDep(&ptrobj->Obj);
+    ptrobj->Obj.X = savedX;
+    ptrobj->Obj.Y = savedY;
+    ptrobj->Obj.Z = savedZ;
+
     LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
     if (LongProjectPoint(X0, Y0, Z0)) {
         S32 zr = CameraZr - Z0;
@@ -472,7 +560,13 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
             SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
             if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) ObjectSetInterFrame(&ptrobj->Obj);
             UnsetClip();
+            // See TestVisible's own comment (AFF_OBJ.CPP): a full rotation
+            // crosses viewing angles a real camera never does, where a
+            // body modeled single-sided for its habitual viewing side
+            // would otherwise render with entire groups missing.
+            g_disableBackfaceCulling = true;
             ObjectDisplay(&ptrobj->Obj);
+            g_disableBackfaceCulling = false;
         }
     }
 

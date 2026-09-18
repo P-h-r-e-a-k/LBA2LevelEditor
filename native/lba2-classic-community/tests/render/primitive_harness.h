@@ -71,7 +71,7 @@ extern S32 Line(U32 typePoly, void *poly);
 extern S32 Triangle_Solid(U32 typePoly, void *poly);
 extern S32 Triangle_Flat(U32 typePoly, void *poly);
 extern S32 Quad_Solid(U32 typePoly, void *poly);
-extern bool TestVisible(STRUC_POLY3_ENV *poly);
+extern bool TestVisible(STRUC_POLY3_ENV *poly, bool ignoreWinding);
 extern T_OBJ_POINT Obj_ListRotatedPoints[];
 extern TYPE_PT Obj_ListProjectedPoints[];
 extern Struc_Point ListFillPoly[]; // AFF_OBJ.CPP scratch: assembled poly vertices

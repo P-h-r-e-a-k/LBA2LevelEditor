@@ -972,15 +972,15 @@ extern S32 NewCube;
 // EXTFUNC.CPP's AffichageBodyPreview for the same fix and fuller writeup;
 // this is the same bug for real actors instead of the preview's scratch
 // object.
-// True if animPtr's own keyframe data doesn't reach past bodyPtr's own
-// group/point count -- duplicated from EXTFUNC.CPP's AffichageBodyPreview,
-// see its own comment for why this check exists (INTFRAME.CPP's
-// interpolation loop has no bounds check of its own against the body).
+// True if animPtr's own group count fits the fixed-size interpolation
+// buffer -- duplicated from EXTFUNC.CPP's AffichageBodyPreview, see its own
+// comment for the full writeup (this used to compare against the body's
+// own group count, which was wrong and rejected ordinary pairings).
 static bool AnimFitsBody(const void *bodyPtr, const void *animPtr)
 {
-    S32 bodyGroups = *(const S32 *)((const U8 *)bodyPtr + 32);
+    (void)bodyPtr;
     U16 animGroups = ((const U16 *)animPtr)[1];
-    return (S32)animGroups <= bodyGroups;
+    return animGroups <= 31;
 }
 
 static void ApplyRawBodyAnim(T_OBJET *ptrobj, S32 rawBody, S32 rawAnim)

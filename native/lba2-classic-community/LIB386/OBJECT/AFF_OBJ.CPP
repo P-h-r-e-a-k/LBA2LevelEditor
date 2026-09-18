@@ -1166,13 +1166,39 @@ S32 Sphere_Transp(U32 typePoly, void *poly) {
     return 0;
 }
 
-bool TestVisible(STRUC_POLY3_ENV *poly) {
+// Off by default (matches every real in-game render, where backface
+// culling on a body's own single-sided polygons is correct: gameplay
+// cameras never need to see the inside of a closed shell). The actor-
+// attributes editor's rotating body preview turns this on for the
+// duration of its own ObjectDisplay() call -- a full 360-degree turn
+// necessarily crosses angles a real camera never does, where a mesh
+// modeled single-sided for one habitual viewing side (confirmed by
+// screenshots: entire groups like the torso vanished completely, not just
+// thinned, at specific rotation angles, then reappeared a bit further
+// around -- the signature of TestVisible's winding test flipping, not a
+// missing-geometry or transform bug) would otherwise render as a hole
+// straight through to the background for roughly half the turn.
+bool g_disableBackfaceCulling = false;
+
+bool TestVisible(STRUC_POLY3_ENV *poly, bool ignoreWinding) {
     TYPE_PT projectedP1 = Obj_ListProjectedPoints[poly->P1];
     TYPE_PT projectedP2 = Obj_ListProjectedPoints[poly->P2];
     TYPE_PT projectedP3 = Obj_ListProjectedPoints[poly->P3];
 
+    // This sentinel/off-screen guard always applies, even when the preview's
+    // culling bypass (below) wants a backface poly drawn: a poly with a point
+    // that never projected (off-frustum/behind-camera) has garbage screen
+    // coordinates sitting at this sentinel, and forcing such a poly "visible"
+    // draws a degenerate triangle/quad stretching out to that sentinel corner
+    // -- exactly the giant diagonal streak the bypass was originally causing,
+    // traced to this check being skipped entirely rather than just the
+    // winding test below.
     if ((projectedP1.X == -0x8000 && projectedP1.Y == -0x8000) || (projectedP2.X == -0x8000 && projectedP2.Y == -0x8000) || (projectedP3.X == -0x8000 && projectedP3.Y == -0x8000)) {
         return false;
+    }
+
+    if (ignoreWinding) {
+        return true;
     }
 
     U32 value = (projectedP2.X - projectedP1.X) * (projectedP1.Y - projectedP3.Y) - (projectedP2.Y - projectedP1.Y) * (projectedP1.X - projectedP3.X);
@@ -1274,7 +1300,7 @@ void InsertTriangle(U8 type, T_POLY_HEADER *header, void **poly, U32 *polyOffset
         // @@Do_Triangle:
         STRUC_POLY3_ENV *poly3 = (STRUC_POLY3_ENV *)*poly;
 
-        if (TestVisible(poly3)) {
+        if (TestVisible(poly3, g_disableBackfaceCulling)) {
             U32 zFar = TestZFar3(poly3);
 
             // | ZFar | Poly Number |
@@ -1311,7 +1337,7 @@ void InsertQuad(U8 type, T_POLY_HEADER *header, void **poly, U32 *polyOffset) {
         // @@Do_Quad:
         STRUC_POLY3_ENV *poly3 = (STRUC_POLY3_ENV *)*poly;
 
-        if (TestVisible(poly3)) {
+        if (TestVisible(poly3, g_disableBackfaceCulling)) {
             STRUC_POLY4_LIGHT *poly4 = (STRUC_POLY4_LIGHT *)*poly;
 
             S16 zFar = TestZFar4(poly3);

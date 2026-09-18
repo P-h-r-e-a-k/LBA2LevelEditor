@@ -194,18 +194,38 @@ internal sealed class CommunityRendererBackend
             var idealDistance = (int)(probeDistance * silhouetteSize / targetSize);
             var distance = Math.Clamp(idealDistance, 200, 40000);
 
-            var finalBounds = distance == probeDistance
-                ? probe
-                : RendererLibrary.RenderBodyPreview(genBody, genAnim, 0, distance) ? MeasureNonBackgroundBounds() : null;
-            if (finalBounds is not { } final) return null;
+            // The live preview orbits the camera around the object (see
+            // AffichageBodyPreview), so the rendered frame's silhouette size
+            // still varies with orientation: a humanoid viewed diagonally
+            // (limbs spread at an angle) can reach further from centre than
+            // head-on. Sampling several angles across the full turn at the
+            // real render distance and unioning their bounds keeps the crop
+            // correct for the whole rotation instead of just whichever
+            // single angle it was measured at.
+            const int angleSamples = 8;
+            int? unionMinX = null, unionMaxX = null, unionMinY = null, unionMaxY = null;
+            var width = probe.Width;
+            var height = probe.Height;
+            for (var i = 0; i < angleSamples; i++)
+            {
+                var angle = i * 4096 / angleSamples;
+                if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, angle, distance)) continue;
+                if (MeasureNonBackgroundBounds() is not { } sample) continue;
+                unionMinX = unionMinX is { } a ? Math.Min(a, sample.MinX) : sample.MinX;
+                unionMaxX = unionMaxX is { } b ? Math.Max(b, sample.MaxX) : sample.MaxX;
+                unionMinY = unionMinY is { } c ? Math.Min(c, sample.MinY) : sample.MinY;
+                unionMaxY = unionMaxY is { } d ? Math.Max(d, sample.MaxY) : sample.MaxY;
+            }
+            if (unionMinX is not int minX || unionMaxX is not int maxX || unionMinY is not int minY || unionMaxY is not int maxY)
+                return null; // every sampled angle failed to render
 
-            var centerX = (final.MinX + final.MaxX) / 2;
-            var centerY = (final.MinY + final.MaxY) / 2;
-            var half = (int)(Math.Max(final.MaxX - final.MinX, final.MaxY - final.MinY) / 2.0 * 1.3) + 4;
-            var left = Math.Clamp(centerX - half, 0, final.Width - 1);
-            var top = Math.Clamp(centerY - half, 0, final.Height - 1);
-            var right = Math.Clamp(centerX + half, left + 1, final.Width);
-            var bottom = Math.Clamp(centerY + half, top + 1, final.Height);
+            var centerX = (minX + maxX) / 2;
+            var centerY = (minY + maxY) / 2;
+            var half = (int)(Math.Max(maxX - minX, maxY - minY) / 2.0 * 1.3) + 4;
+            var left = Math.Clamp(centerX - half, 0, width - 1);
+            var top = Math.Clamp(centerY - half, 0, height - 1);
+            var right = Math.Clamp(centerX + half, left + 1, width);
+            var bottom = Math.Clamp(centerY + half, top + 1, height);
             return new BodyPreviewCalibration(distance, new Int32Rect(left, top, right - left, bottom - top));
         }
     }

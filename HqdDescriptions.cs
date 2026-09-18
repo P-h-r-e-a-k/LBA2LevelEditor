@@ -25,7 +25,15 @@ internal static class HqdDescriptions
         if (!File.Exists(path)) return new LoadResult(Array.Empty<string?>(), $"{hqdFileName} not found at {FileDescDirectory}.");
 
         string[] lines;
-        try { lines = File.ReadAllLines(path); }
+        // Windows-1252/Latin-1, not UTF-8: these files predate UTF-8 tooling
+        // and encode accented letters (Zoé, é, à, ç, ...) as single bytes in
+        // 0xA0-0xFF (confirmed against the raw bytes -- "Zo\xE9" for "Zoé").
+        // Encoding.Latin1 (built in since .NET 5, no extra package needed)
+        // decodes that range identically to Windows-1252; the two only
+        // differ in 0x80-0x9F, which neither file uses. Reading as UTF-8
+        // (File.ReadAllLines' default) mangled every accented name into a
+        // replacement character instead.
+        try { lines = File.ReadAllLines(path, System.Text.Encoding.Latin1); }
         catch (Exception ex) { return new LoadResult(Array.Empty<string?>(), $"Couldn't read {hqdFileName}: {ex.Message}"); }
 
         // Line 0 is the file's own header line ("This file contains..."),

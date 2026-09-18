@@ -323,7 +323,7 @@ typedef struct
 
 void QuickSort(S32 *beginning, S32 *end);
 void QuickSortInv(S32 *beginning, S32 *end);
-bool TestVisible(STRUC_POLY3_ENV *poly);
+bool TestVisible(STRUC_POLY3_ENV *poly, bool ignoreWinding);
 
 extern TYPE_PT Obj_ListProjectedPoints[];
 extern T_OBJ_POINT Obj_ListRotatedPoints[];
@@ -738,7 +738,7 @@ static void run_testvisiblei_case(const char *label, const TYPE_PT *points, U32 
     build_projected_points_snapshot(baseline, points, count);
 
     memcpy(Obj_ListProjectedPoints, baseline, sizeof(baseline));
-    const int cpp_visible = TestVisible((STRUC_POLY3_ENV *)poly) ? 1 : 0;
+    const int cpp_visible = TestVisible((STRUC_POLY3_ENV *)poly, false) ? 1 : 0;
     ASSERT_MEM_EQ(baseline, Obj_ListProjectedPoints, sizeof(baseline));
 
     memcpy(asm_Obj_ListProjectedPoints, baseline, sizeof(baseline));

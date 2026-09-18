@@ -63,16 +63,6 @@ public partial class ActorAttributesWindow : Window
     private static IReadOnlyList<NamedOption>? cachedAnimOptions;
     private static string? cachedBodyWarning;
 
-    // The animation list actually offered right now -- cachedAnimOptions
-    // narrowed to whatever BodyAnimGroups says fits previewBody's own
-    // skeleton (see that class's own comment for why "fits" is a real,
-    // checkable thing and not a guess). Recomputed by
-    // RefreshAnimOptionsForBody() whenever the body changes, falling back
-    // to the full list if nothing matches (an empty dropdown would be
-    // worse than an unfiltered one).
-    private IReadOnlyList<NamedOption> currentAnimOptions = Array.Empty<NamedOption>();
-    private int? animOptionsForBody;
-
     private bool suppressBodyTextChanged;
     private bool suppressAnimTextChanged;
 
@@ -258,9 +248,9 @@ public partial class ActorAttributesWindow : Window
     }
 
     private void BodyCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(AnimCombo, currentAnimOptions, ref suppressAnimTextChanged);
+    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(AnimCombo, cachedAnimOptions!, ref suppressAnimTextChanged);
     private void BodyCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, currentAnimOptions, ref suppressAnimTextChanged);
+    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, cachedAnimOptions!, ref suppressAnimTextChanged);
     private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
     private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
     private void BodyCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
@@ -276,7 +266,6 @@ public partial class ActorAttributesWindow : Window
     private void CommitPreviewChange()
     {
         if (!int.TryParse(ParseLeadingIndex(BodyCombo.Text), out var body)) return;
-        if (animOptionsForBody != body) RefreshAnimOptionsForBody(body);
         var anim = int.TryParse(ParseLeadingIndex(AnimCombo.Text), out var parsedAnim) ? parsedAnim : 0;
         if (previewCalibration.HasValue && body == previewBody && anim == previewAnim) return; // no real change
 
@@ -285,28 +274,6 @@ public partial class ActorAttributesWindow : Window
         previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette)
             ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
         RenderPreviewFrame();
-    }
-
-    // Narrows the animation dropdown to whatever BodyAnimGroups says fits
-    // this body's own skeleton -- called from CommitPreviewChange whenever
-    // the body actually changes, not on every keystroke. Preserves the
-    // combo's current text (which may be mid-edit, or an anim that isn't in
-    // the narrowed list at all -- the actor's own already-applied anim
-    // should still display even if it doesn't fit the newly-picked body)
-    // rather than clearing or reselecting anything.
-    private void RefreshAnimOptionsForBody(int body)
-    {
-        animOptionsForBody = body;
-        var allAnimOptions = cachedAnimOptions!;
-        var gameDirectory = EditorSettings.Current.GameDirectory;
-        var compatible = allAnimOptions.Where(o => BodyAnimGroups.IsCompatible(gameDirectory, body, o.Index)).ToList();
-        currentAnimOptions = compatible.Count > 0 ? compatible : allAnimOptions;
-
-        suppressAnimTextChanged = true;
-        var text = AnimCombo.Text;
-        AnimCombo.ItemsSource = currentAnimOptions;
-        AnimCombo.Text = text;
-        suppressAnimTextChanged = false;
     }
 
     private void TickPreview()
