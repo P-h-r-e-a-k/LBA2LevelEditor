@@ -72,7 +72,15 @@
                     <TextBox x:Name="BetaBox" Grid.Column="6" Style="{StaticResource FieldBox}"/>
                 </Grid>
 
-                <TextBlock Text="Body" Style="{StaticResource FieldLabel}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Body" Style="{StaticResource FieldLabel}"/>
+                    <Button Grid.Column="1" Content="Create New Body&#8230;" Click="CreateNewBody_Click" Style="{StaticResource QuietButton}"
+                            Margin="8,10,0,4" Padding="9,5"/>
+                </Grid>
                 <ComboBox x:Name="BodyCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
                           SelectionChanged="BodyCombo_SelectionChanged"
                           LostFocus="BodyCombo_LostFocus" GotFocus="BodyCombo_GotFocus"/>

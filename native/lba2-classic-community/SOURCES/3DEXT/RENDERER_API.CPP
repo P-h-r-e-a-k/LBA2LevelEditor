@@ -41,6 +41,8 @@ extern int RendererGetActorScript(int index, char *buffer, int bufferSize);
 extern int RendererSetActorAttributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 extern int RendererSetActorPosition(int index, int worldX, int worldY, int worldZ);
 extern int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+extern int RendererIsActorPlaceholder(int index);
+extern int RendererRemoveActor(int index);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
 extern int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
@@ -448,6 +450,16 @@ int lba2_renderer_set_actor_position(int index, int worldX, int worldY, int worl
 int lba2_renderer_add_actor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
 {
     return RendererAddActor(worldX, worldY, worldZ, beta, body, anim, lifePoint, armor, hitForce, move);
+}
+
+int lba2_renderer_is_actor_placeholder(int index)
+{
+    return RendererIsActorPlaceholder(index);
+}
+
+int lba2_renderer_remove_actor(int index)
+{
+    return RendererRemoveActor(index);
 }
 
 int lba2_renderer_get_actor_flags(int index, unsigned int *flags)

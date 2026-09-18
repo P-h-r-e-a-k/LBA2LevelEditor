@@ -601,7 +601,16 @@ public partial class MainWindow : Window
         DebugLog.Log($"MainWindow: opening ActorAttributesWindow for index={index}");
         var window = new ActorAttributesWindow(nativeRenderer, palette, index) { Owner = this };
         window.OpenScriptRequested += OpenActorScriptWindow;
-        window.Closed += (_, _) => openAttributesWindows.Remove(index);
+        // The window's own Closed handler undoes RendererAddActor if this
+        // was a freshly-added actor never applied -- refresh here in case
+        // that just happened, so its marker doesn't linger on screen until
+        // some unrelated redraw happens to come along.
+        window.Closed += (_, _) =>
+        {
+            openAttributesWindows.Remove(index);
+            if (selectedActorIndex == index) selectedActorIndex = null;
+            RenderNativeCamera();
+        };
         openAttributesWindows[index] = window;
         window.Show();
     }

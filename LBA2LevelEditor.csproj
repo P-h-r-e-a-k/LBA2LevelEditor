@@ -6,7 +6,30 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!--
+      LBA Body Studio (BodyStudio/*.cs, absorbed from the standalone
+      LbaBodyStudio project) is a Windows Forms app: .NET lets a single
+      project host both UI stacks side by side, so ActorAttributesWindow
+      (WPF) can launch its MainForm (WinForms) directly in-process rather
+      than shelling out to a separate exe.
+    -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+
+  <!--
+    UseWindowsForms's own implicit global usings (System.Drawing,
+    System.Windows.Forms) collide with the WPF codebase's own bare Color/
+    Point/ComboBox/TextBox/Application/Brush/KeyEventArgs/MouseEventArgs/
+    ScrollEventArgs (all ambiguous against the System.Windows.* equivalent)
+    the moment both UI stacks share one project, so they're removed here to
+    restore the plain-WPF ambient set every existing file already assumed.
+    BodyStudio's own files (which do need System.Drawing/System.Windows.Forms)
+    just say so explicitly instead of relying on an implicit global using.
+  -->
+  <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
 
   <!--
     liblba2_renderer.dll (built from native/lba2-classic-community with the
@@ -41,6 +64,20 @@
     <EmbeddedResource Include="native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll"
           Condition="Exists('native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll')"
           LogicalName="liblba2_renderer.dll" />
+  </ItemGroup>
+
+  <!--
+    Dummy body shown in the Actor Attributes preview panel for a freshly
+    added actor that hasn't had a real body applied yet (see
+    ActorAttributesWindow's showingDummyBody): a real LBA2 body payload
+    (Body.Read/Renderer.Render from BodyStudio parse and draw it directly),
+    not a body actually installed into BODY.HQR. The native renderer only
+    ever resolves GenBody through the installed archive, and this editor
+    has no business rewriting the user's game files just to give a new
+    actor a nicer-looking placeholder.
+  -->
+  <ItemGroup>
+    <Content Include="Assets\DummyBody.lm2" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

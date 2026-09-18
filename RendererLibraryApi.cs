@@ -27,6 +27,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorAttributesFn(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorPositionFn(int index, int worldX, int worldY, int worldZ);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int AddActorFn(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int IsActorPlaceholderFn(int index);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RemoveActorFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
@@ -56,6 +58,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetActorAttributesFn? setActorAttributes;
     private SetActorPositionFn? setActorPosition;
     private AddActorFn? addActor;
+    private IsActorPlaceholderFn? isActorPlaceholder;
+    private RemoveActorFn? removeActor;
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
     private GetActorBoundsFn? getActorBounds;
@@ -113,6 +117,8 @@ internal sealed class RendererLibraryApi : IDisposable
         setActorAttributes = Get<SetActorAttributesFn>("lba2_renderer_set_actor_attributes");
         setActorPosition = Get<SetActorPositionFn>("lba2_renderer_set_actor_position");
         addActor = Get<AddActorFn>("lba2_renderer_add_actor");
+        isActorPlaceholder = Get<IsActorPlaceholderFn>("lba2_renderer_is_actor_placeholder");
+        removeActor = Get<RemoveActorFn>("lba2_renderer_remove_actor");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
         getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
@@ -235,6 +241,18 @@ internal sealed class RendererLibraryApi : IDisposable
         => setActorPosition?.Invoke(index, worldX, worldY, worldZ) == 1;
     public int AddActor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
         => addActor?.Invoke(worldX, worldY, worldZ, beta, body, anim, lifePoint, armor, hitForce, move) ?? -1;
+    // True only for an actor AddActor created that hasn't had
+    // SetActorAttributes called on it since -- never true for an actor read
+    // from a real scene file. Drives the Actor Attributes window's own
+    // dummy-body preview (see ActorAttributesWindow's showingDummyBody) and
+    // gates RemoveActor below.
+    public bool IsActorPlaceholder(int index) => isActorPlaceholder?.Invoke(index) == 1;
+    // Undoes AddActor for an actor still a placeholder; refuses for any
+    // actor that's since had real attributes applied (see
+    // lba2_renderer_remove_actor's own doc comment) -- called when an
+    // attributes window opened for a freshly-added actor closes without an
+    // Apply, so an actor a user backed out of doesn't linger in the world.
+    public bool RemoveActor(int index) => removeActor?.Invoke(index) == 1;
     public bool GetActorFlags(int index, out uint flags)
     {
         if (getActorFlags is null) { flags = 0; return false; }

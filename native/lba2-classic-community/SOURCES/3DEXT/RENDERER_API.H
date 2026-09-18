@@ -131,6 +131,24 @@ LBA2_RENDERER_API int lba2_renderer_set_actor_position(int index, int worldX, in
    its 100-actor limit. */
 LBA2_RENDERER_API int lba2_renderer_add_actor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 
+/* True (1) only for an actor lba2_renderer_add_actor created that hasn't had
+   lba2_renderer_set_actor_attributes called on it since -- never true for an
+   actor read from a real scene file. The editor uses this to decide whether
+   closing that actor's attributes window without ever clicking Apply should
+   undo the add. */
+LBA2_RENDERER_API int lba2_renderer_is_actor_placeholder(int index);
+
+/* Undoes lba2_renderer_add_actor for an actor that's still a placeholder
+   (see lba2_renderer_is_actor_placeholder) -- refuses (returns 0) for any
+   other actor, including a former placeholder that's since had real
+   attributes applied, so this can never destroy a real, kept actor. Every
+   other actor's index is unaffected: this never renumbers g_actors, it just
+   marks the given index gone (subsequent lba2_renderer_get_actor calls for
+   it return 0) and drops it from the scene's own pending-new-actor list so
+   the next real cube reload stops placing it. Returns 1 on success or if
+   this index was already removed. */
+LBA2_RENDERER_API int lba2_renderer_remove_actor(int index);
+
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
    water-lava-reaction toggles) -- lba2_renderer_get_actor_attributes only
    covers the handful of scalar fields the original inspector panel showed.

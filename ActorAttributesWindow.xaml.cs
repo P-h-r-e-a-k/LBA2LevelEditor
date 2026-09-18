@@ -104,6 +104,16 @@ public partial class ActorAttributesWindow : Window
     // correctly, rather than one window's checkbox leaking into another's.
     private bool pauseAnimation;
 
+    // True while this actor is still a native placeholder (RendererLibrary.
+    // IsActorPlaceholder -- added by RendererAddActor, cleared once Apply
+    // actually sets real attributes) with no real body/anim chosen. Set once
+    // from LoadCurrentValues() at construction and cleared the moment Apply
+    // succeeds; RenderPreviewFrame renders Assets/DummyBody.lm2 in this
+    // window's own preview panel instead of the usual native body-preview
+    // render while it's true, so a brand new actor's dialog doesn't open on
+    // a blank/failed preview before the user has picked a real body.
+    private bool showingDummyBody;
+
     internal ActorAttributesWindow(CommunityRendererBackend nativeRenderer, byte[] palette, int actorIndex)
     {
         InitializeComponent();
@@ -161,6 +171,14 @@ public partial class ActorAttributesWindow : Window
         // settles, same pattern as textCommitTimer.
         PreviewBorder.SizeChanged += (_, _) => { resizeTimer!.Stop(); resizeTimer.Start(); };
 
+        // Undoes RendererAddActor for a brand-new actor the user opened this
+        // window for but never clicked Apply on -- RemoveActor itself is a
+        // no-op (returns 0, harmlessly ignored here) for any actor that
+        // isn't still a native placeholder, which covers every ordinary
+        // "Edit Attributes..." open of an existing actor, so this is safe to
+        // call unconditionally on every close rather than tracking "was this
+        // window opened for a freshly-added actor" separately in C#.
+        Closed += (_, _) => nativeRenderer.RendererLibrary?.RemoveActor(actorIndex);
         Closed += (_, _) => previewTimer?.Stop();
         previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
         previewTimer.Tick += (_, _) => TickPreview();
@@ -259,6 +277,7 @@ public partial class ActorAttributesWindow : Window
         }
         library.GetActorAttributes(actorIndex, out var beta, out var body, out var anim, out var lifePoint, out var armor, out var hitForce, out var move);
         library.GetActorFlags(actorIndex, out var flags);
+        showingDummyBody = library.IsActorPlaceholder(actorIndex);
 
         PositionXBox.Text = x.ToString();
         PositionYBox.Text = y.ToString();
@@ -516,6 +535,16 @@ public partial class ActorAttributesWindow : Window
 
     private void RenderPreviewFrame()
     {
+        if (showingDummyBody)
+        {
+            var yaw = previewAngle * (float)(Math.PI * 2 / 4096); // engine's angle unit, see TickPreview's own comment
+            var dummy = DummyBodyPreview.Render((int)PreviewBorder.ActualWidth, (int)PreviewBorder.ActualHeight, yaw);
+            if (dummy is null) { ShowPreviewFallback("no body chosen yet for this new actor"); return; }
+            BodyPreviewImage.Source = dummy;
+            BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
         if (previewCalibration is not { } calibration)
         {
             ShowPreviewFallback("enter a body index to preview");
@@ -594,9 +623,18 @@ public partial class ActorAttributesWindow : Window
         StatusLabel.Text = okAttrs && okPos && okFlags
             ? "Applied for this session. Not yet saved to the game's files."
             : "Failed to apply -- this actor may no longer be valid (e.g. after switching islands).";
+
+        // A successful SetActorAttributes is exactly what clears the native
+        // side's own IsPlaceholderBody (see its own comment) -- mirror that
+        // here so the preview switches from the dummy body over to this
+        // actor's own real body/anim on the very next render rather than
+        // waiting for the window to be closed and reopened.
+        if (okAttrs) { showingDummyBody = false; RenderPreviewFrame(); }
     }
 
     private void EditScript_Click(object sender, RoutedEventArgs e) => OpenScriptRequested?.Invoke(actorIndex);
+
+    private void CreateNewBody_Click(object sender, RoutedEventArgs e) => BodyStudioLauncher.Show(this);
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 

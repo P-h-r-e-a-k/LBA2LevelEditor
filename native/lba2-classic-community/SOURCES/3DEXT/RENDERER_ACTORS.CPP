@@ -77,6 +77,15 @@ struct RendererActor {
     // choice reads as an obvious placeholder rather than a normal-looking
     // (and easily mistaken for deliberately-chosen) Twinsen.
     bool IsPlaceholderBody = false;
+    // True once RendererRemoveActor() has undone this actor -- see that
+    // function's own comment for why this is a soft delete (g_actors is
+    // never actually shrunk, since every other actor's index is that
+    // vector's own position and must stay stable across a removal).
+    // RendererGetActor() is the only thing that checks this; every other
+    // Get/Set API is reached exclusively through an index a live GetActor()
+    // call has already returned, so a removed actor is otherwise just
+    // never noticed by anything again.
+    bool Removed = false;
 };
 
 static std::vector<RendererActor> g_actors;
@@ -987,6 +996,7 @@ int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount)
 {
     if (index < 0 || index >= (int)g_actors.size()) return 0;
     const RendererActor &a = g_actors[(size_t)index];
+    if (a.Removed) return 0;
     if (x) *x = a.X;
     if (y) *y = a.Y;
     if (z) *z = a.Z;
@@ -1388,6 +1398,63 @@ int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int
     NativeDebugLog("RendererAddActor: scene=%d flatIndex=%d world=(%d,%d,%d) body=%d anim=%d", sceneIndex, flatIndex, worldX, worldY, worldZ, body, anim);
     ReapplyIfCurrentlyLoaded(sceneIndex);
     return flatIndex;
+}
+
+// True only for an actor RendererAddActor() created that hasn't had
+// RendererSetActorAttributes called on it since -- the editor uses this to
+// decide whether closing that actor's attributes window (without ever
+// clicking Apply) should undo the add via RendererRemoveActor below, rather
+// than leaving an attribute-less actor sitting in the world. Never true for
+// anything read from a real scene file.
+int RendererIsActorPlaceholder(int index)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    const RendererActor &a = g_actors[(size_t)index];
+    return (!a.Removed && a.IsPlaceholderBody) ? 1 : 0;
+}
+
+// Undoes RendererAddActor() for an actor the user never actually kept --
+// refuses (returns 0) for anything else, including an actor that started as
+// a placeholder but has since had real attributes applied, since removing
+// an actor a user has already set up would silently destroy their work.
+//
+// This never erases from g_actors itself: every other actor's index is that
+// vector's own position, and shifting it after a removal would invalidate
+// every other actor index the editor (and every open window keyed by one)
+// is currently holding. Marking Removed instead, which RendererGetActor()
+// checks, makes the actor invisible to the editor's own enumeration -- see
+// the field's own comment -- while every later index stays exactly where it
+// was.
+//
+// Dropping this actor's own PendingNewActor out of edits.NewActors stops
+// ReapplyPendingEditsToListObjet from placing it into ListObjet the next
+// time this scene's cube actually reloads from disk (which, with the
+// interactive view's own wide-radius render path always active -- see
+// MainWindow's own wideRadius comment -- happens on close to every frame
+// while this cube is on screen); that reload is also what actually erases
+// an already-placed slot, since nothing here can retroactively un-place a
+// slot in an already-live ListObjet without also renumbering every other
+// object's own slot mid-frame.
+int RendererRemoveActor(int index)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    RendererActor &a = g_actors[(size_t)index];
+    if (a.Removed) return 1; // already gone; not an error to ask twice
+    if (!a.IsPlaceholderBody) return 0;
+
+    a.Removed = true;
+    std::map<S32, ScenePendingEdits>::iterator it = g_pendingEdits.find(a.SceneIndex);
+    if (it != g_pendingEdits.end()) {
+        std::vector<PendingNewActor> &list = it->second.NewActors;
+        for (size_t i = 0; i < list.size(); i++) {
+            if (list[i].FlatIndex == index) { list.erase(list.begin() + (long)i); break; }
+        }
+        it->second.Dirty = true;
+    }
+
+    NativeDebugLog("RendererRemoveActor: index=%d scene=%d", index, (int)a.SceneIndex);
+    ReapplyIfCurrentlyLoaded(a.SceneIndex);
+    return 1;
 }
 
 // Full designer-authored T_OBJET.Flags word (COMMON.H) -- collision/physics/
