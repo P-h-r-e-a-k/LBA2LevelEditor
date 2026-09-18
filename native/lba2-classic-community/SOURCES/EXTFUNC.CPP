@@ -364,7 +364,10 @@ void AffichageActorsZBuf(void) {
 #define BODY_PREVIEW_OBJ (MAX_OBJETS - 1)
 
 extern void InitObject(U8 numobj);
-extern void StartInitObj(U8 numobj);
+extern void ObjectInitBody(T_OBJ_3D *obj, void *body);
+extern void ObjectInitAnim(T_OBJ_3D *obj, void *anim);
+extern void *GivePtrBody(S32 index);
+extern void *GivePtrAnim(S32 index);
 
 // Renders one body, alone against a cleared background, for the actor-
 // attributes editor's preview panel -- reuses AffichageActorsZBuf's own
@@ -376,37 +379,63 @@ extern void StartInitObj(U8 numobj);
 // to call between ordinary frames -- whatever real render happens next
 // clears the screen and resets the camera fully anyway, exactly like
 // RenderIslandTopDown's own minimap snapshots already do to this same
-// shared framebuffer. Returns 0 if the body index doesn't resolve to
-// anything drawable (e.g. NO_BODY), 1 on a successful draw.
+// shared framebuffer. Returns 0 if the body/anim index doesn't resolve to
+// anything loadable, 1 on a successful draw.
 //
-// cameraDistance is caller-supplied rather than derived from XMin/XMax/
-// YMin/YMax/ZMin/ZMax: StartInitObj() -> InitBody() only (re)computes
-// those via InitBodyZV() when a global scratch variable (M_XMin,
-// OBJECT.CPP) happens to still hold a specific sentinel left over from
-// whatever else last called InitBody() -- not guaranteed here, and
-// confirmed empirically (logged XMin..ZMax) to come back all zero every
-// time. The caller (CommunityRendererBackend.CalibrateBodyPreviewDistance)
-// instead measures the actual rendered silhouette's pixel size at a probe
-// distance and solves for the distance that fills the frame -- this call
-// just renders at whatever distance it's told.
-int AffichageBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance)
+// body/anim are raw HQR archive indices (BODY.HQR/ANIM.HQR), not the
+// "generic" per-actor indices GenBody/GenAnim normally hold everywhere
+// else in this file. Those generic indices are only meaningful relative
+// to one specific object's own PtrFile3D conversion table (SearchBody/
+// SearchAnim, FICHE.CPP, walk that table to translate a small per-object
+// generic number into the real archive index) -- a scratch preview object
+// has no such table of its own (it was borrowing actor slot 1's, which
+// happens to have a completely different generic numbering than whatever
+// the editor's own body/anim pickers list, since those are built from the
+// archives directly). Bypassing InitBody()/InitAnim()'s generic lookup
+// entirely and calling ObjectInitBody()/ObjectInitAnim() (BODY.CPP/
+// ANIM.CPP) straight with the archive index sidesteps that mismatch --
+// same primitives InitBody/InitAnim themselves call after resolving a
+// generic index down to one of these.
+// True if animPtr's own keyframe data doesn't reach past bodyPtr's own
+// group/point count. INTFRAME.CPP's interpolation loop ("for (i = 0; i <
+// obj->NbGroups - 1; i++)") walks the body's per-group point data using the
+// *animation's* own group count (obj->NbGroups, set from the anim header by
+// ObjectInitAnim), with no clamp against how many groups the body itself
+// actually has -- an animation authored for a bigger skeleton than the
+// selected body reads past the body's own group data. Duplicated in
+// RENDERER_ACTORS.CPP's ApplyRawBodyAnim for real actors, same reasoning.
+static bool AnimFitsBody(const void *bodyPtr, const void *animPtr)
+{
+    // T_BODY_HEADER (LIB386/H/OBJECT/AFF_OBJ.H): Info(4) SizeHeader(2)
+    // Dummy(2) XMin/XMax/YMin/YMax/ZMin/ZMax (4 each) then NbGroupes(4) at
+    // byte offset 32.
+    S32 bodyGroups = *(const S32 *)((const U8 *)bodyPtr + 32);
+    // ObjectInitAnim's own read (LIB386/ANIM/ANIM.CPP): animPtr[1], a U16.
+    U16 animGroups = ((const U16 *)animPtr)[1];
+    return (S32)animGroups <= bodyGroups;
+}
+
+int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
 {
     T_OBJET *ptrobj = &ListObjet[BODY_PREVIEW_OBJ];
-    if (ptrobj->GenBody != (U8)genBody || ptrobj->GenAnim != (U16)genAnim || ptrobj->Obj.Body.Num < 0) {
+    if (ptrobj->Obj.Body.Num != body || ptrobj->Obj.Anim.Num != anim) {
+        // ObjectInitAnim() (and, via InitBodyZV()/ObjectDisplay() on later
+        // frames, the body side too) dereferences GivePtrBody()/
+        // GivePtrAnim()'s return value with no null check -- bail out
+        // before touching the scratch object at all if either index is
+        // out of range, rather than crashing on the next render. The
+        // AnimFitsBody() check guards the *other* out-of-bounds risk: a
+        // valid but mismatched anim/body pair (see its own comment).
+        void *bodyPtr = GivePtrBody(body);
+        void *animPtr = GivePtrAnim(anim);
+        if (!bodyPtr || !animPtr || !AnimFitsBody(bodyPtr, animPtr)) return 0;
         InitObject(BODY_PREVIEW_OBJ);
-        ptrobj->GenBody = (U8)genBody;
-        ptrobj->GenAnim = (U16)genAnim;
-        // A scratch slot never goes through LoadScene's real per-object
-        // LoadFile3D() call, and SearchBody()/SearchAnim() (FICHE.CPP)
-        // dereference PtrFile3D with no null check -- same fix
-        // RendererAddActor needed (RENDERER_ACTORS.CPP), for the same
-        // reason, confirmed there by a real crash before it was added.
-        ptrobj->PtrFile3D = NbObjets > 1 ? ListObjet[1].PtrFile3D : (U8 *)LoadFile3D(0);
-        ptrobj->IndexFile3D = NbObjets > 1 ? ListObjet[1].IndexFile3D : (S16)0;
-        if (!ptrobj->PtrFile3D) return 0;
-        StartInitObj(BODY_PREVIEW_OBJ);
+        ptrobj->Obj.Body.Num = -1; // see ObjectInitBody's own Body.Num==-1 check
+        ObjectInitBody(&ptrobj->Obj, (void *)(uintptr_t)(U32)body);
+        ptrobj->Obj.Anim.Num = -1; // see ObjectInitAnim's own Anim.Ptr==anim check
+        ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)anim);
     }
-    if (ptrobj->Obj.Body.Num < 0) return 0; // genBody didn't resolve to anything (e.g. NO_BODY)
+    if (ptrobj->Obj.Body.Num < 0) return 0;
 
     // The preview object sits exactly at the camera's look-at target (world
     // origin, below), so its camera-space Z after LongWorldRotatePoint is

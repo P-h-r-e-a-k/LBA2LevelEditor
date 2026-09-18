@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace LBA2LevelEditor;
@@ -46,12 +47,12 @@ public partial class ActorAttributesWindow : Window
     // combo boxes' live text happens to contain on every 60ms tick, which
     // was fragile: mid-typing or mid-filter text is often unparseable, and
     // there was no guarantee a freshly-selected value would still be
-    // sitting in .Text by the time the next tick ran. previewDistance is
+    // sitting in .Text by the time the next tick ran. previewCalibration is
     // null until the first calibration completes, which TickPreview()
     // treats as "nothing to draw yet" rather than falling back to a guess.
     private int previewBody;
     private int previewAnim;
-    private int? previewDistance;
+    private CommunityRendererBackend.BodyPreviewCalibration? previewCalibration;
 
     // Body/anim name lists are read from disk (an HQD text file, plus --
     // for body only -- an HQR entry count) and don't change during the
@@ -61,6 +62,16 @@ public partial class ActorAttributesWindow : Window
     private static IReadOnlyList<NamedOption>? cachedBodyOptions;
     private static IReadOnlyList<NamedOption>? cachedAnimOptions;
     private static string? cachedBodyWarning;
+
+    // The animation list actually offered right now -- cachedAnimOptions
+    // narrowed to whatever BodyAnimGroups says fits previewBody's own
+    // skeleton (see that class's own comment for why "fits" is a real,
+    // checkable thing and not a guess). Recomputed by
+    // RefreshAnimOptionsForBody() whenever the body changes, falling back
+    // to the full list if nothing matches (an empty dropdown would be
+    // worse than an unfiltered one).
+    private IReadOnlyList<NamedOption> currentAnimOptions = Array.Empty<NamedOption>();
+    private int? animOptionsForBody;
 
     private bool suppressBodyTextChanged;
     private bool suppressAnimTextChanged;
@@ -247,9 +258,9 @@ public partial class ActorAttributesWindow : Window
     }
 
     private void BodyCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(AnimCombo, cachedAnimOptions!, ref suppressAnimTextChanged);
+    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e) => FilterCombo(AnimCombo, currentAnimOptions, ref suppressAnimTextChanged);
     private void BodyCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, cachedAnimOptions!, ref suppressAnimTextChanged);
+    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(AnimCombo, currentAnimOptions, ref suppressAnimTextChanged);
     private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
     private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => CommitPreviewChange();
     private void BodyCombo_LostFocus(object sender, RoutedEventArgs e) => CommitPreviewChange();
@@ -265,13 +276,37 @@ public partial class ActorAttributesWindow : Window
     private void CommitPreviewChange()
     {
         if (!int.TryParse(ParseLeadingIndex(BodyCombo.Text), out var body)) return;
+        if (animOptionsForBody != body) RefreshAnimOptionsForBody(body);
         var anim = int.TryParse(ParseLeadingIndex(AnimCombo.Text), out var parsedAnim) ? parsedAnim : 0;
-        if (previewDistance.HasValue && body == previewBody && anim == previewAnim) return; // no real change
+        if (previewCalibration.HasValue && body == previewBody && anim == previewAnim) return; // no real change
 
         previewBody = body;
         previewAnim = anim;
-        previewDistance = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette) ?? 5000;
+        previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette)
+            ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
         RenderPreviewFrame();
+    }
+
+    // Narrows the animation dropdown to whatever BodyAnimGroups says fits
+    // this body's own skeleton -- called from CommitPreviewChange whenever
+    // the body actually changes, not on every keystroke. Preserves the
+    // combo's current text (which may be mid-edit, or an anim that isn't in
+    // the narrowed list at all -- the actor's own already-applied anim
+    // should still display even if it doesn't fit the newly-picked body)
+    // rather than clearing or reselecting anything.
+    private void RefreshAnimOptionsForBody(int body)
+    {
+        animOptionsForBody = body;
+        var allAnimOptions = cachedAnimOptions!;
+        var gameDirectory = EditorSettings.Current.GameDirectory;
+        var compatible = allAnimOptions.Where(o => BodyAnimGroups.IsCompatible(gameDirectory, body, o.Index)).ToList();
+        currentAnimOptions = compatible.Count > 0 ? compatible : allAnimOptions;
+
+        suppressAnimTextChanged = true;
+        var text = AnimCombo.Text;
+        AnimCombo.ItemsSource = currentAnimOptions;
+        AnimCombo.Text = text;
+        suppressAnimTextChanged = false;
     }
 
     private void TickPreview()
@@ -282,18 +317,25 @@ public partial class ActorAttributesWindow : Window
 
     private void RenderPreviewFrame()
     {
-        if (previewDistance is null)
+        if (previewCalibration is not { } calibration)
         {
             ShowPreviewFallback("enter a body index to preview");
             return;
         }
-        var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, previewDistance.Value, palette);
+        var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, calibration.Distance, palette);
         if (bitmap is null)
         {
             ShowPreviewFallback("no body to preview for this index");
             return;
         }
-        BodyPreviewImage.Source = bitmap;
+        // Crops to the region CalibrateBodyPreviewDistance measured the
+        // body to actually occupy at this distance (which can be smaller
+        // than the calibration's own target fraction whenever the near-clip
+        // floor in AffichageBodyPreview forced the distance higher than
+        // ideal for a small body) and lets the Image element's own
+        // Stretch="Uniform" scale that crop back up to fill the panel --
+        // CroppedBitmap is a cheap view over the existing frame, not a copy.
+        BodyPreviewImage.Source = new CroppedBitmap(bitmap, calibration.CropRect);
         BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
     }
 

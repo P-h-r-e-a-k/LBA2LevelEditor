@@ -44,7 +44,7 @@ extern int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int bo
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
 extern int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
-extern int AffichageBodyPreview(int genBody, int genAnim, int cameraBeta, int cameraDistance);
+extern int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance);
 
 
 // LoadCube() (LOADISLE.CPP) overwrites ClipZFar/StartZFog from each cube's
@@ -444,8 +444,8 @@ int lba2_renderer_get_actor_bounds(int index, int *xMin, int *xMax, int *yMin, i
     return RendererGetActorBounds(index, xMin, xMax, yMin, yMax, zMin, zMax);
 }
 
-int lba2_renderer_render_body_preview(int genBody, int genAnim, int cameraBeta, int cameraDistance)
+int lba2_renderer_render_body_preview(int body, int anim, int cameraBeta, int cameraDistance)
 {
-    return AffichageBodyPreview(genBody, genAnim, cameraBeta, cameraDistance);
+    return AffichageBodyPreview(body, anim, cameraBeta, cameraDistance);
 }
 

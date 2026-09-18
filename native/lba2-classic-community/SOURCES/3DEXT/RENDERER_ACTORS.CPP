@@ -949,10 +949,51 @@ int RendererGetActorScript(int index, char *buffer, int bufferSize)
 // that a generic "edit any actor" tool has no business overriding.
 // ---------------------------------------------------------------------
 
-extern void InitBody(U8 gennewbody, U8 numobj);
-extern S32 InitAnim(U16 gennewanim, U8 flag, U8 numobj);
 extern void InitObject(U8 numobj);
+extern void ObjectInitBody(T_OBJ_3D *obj, void *body);
+extern void ObjectInitAnim(T_OBJ_3D *obj, void *anim);
+extern void *GivePtrBody(S32 index);
+extern void *GivePtrAnim(S32 index);
 extern S32 NewCube;
+
+// GenBody/GenAnim, here and on PendingAttributeEdit/PendingNewActor, hold a
+// raw BODY.HQR/ANIM.HQR archive index -- what the editor's own body/anim
+// pickers list (built directly from those archives via HQD description
+// files, see ActorAttributesWindow.xaml.cs) -- not the "generic" per-object
+// index InitBody()/InitAnim() (OBJECT.CPP) resolve through SearchBody()/
+// SearchAnim()'s per-object PtrFile3D conversion table (FICHE.CPP). Those
+// generic tables are per-object and usually tiny (a handful of entries an
+// actor's own script actually uses), so a generic index sized off the full
+// archive almost never resolves to the intended body/anim -- often not at
+// all, silently falling back to GEN_BODY_NORMAL/GEN_ANIM_RIEN. Calling
+// ObjectInitBody()/ObjectInitAnim() directly with the archive index (the
+// same primitives InitBody/InitAnim call internally, after their own
+// generic-to-archive resolution) sidesteps that mismatch entirely. See
+// EXTFUNC.CPP's AffichageBodyPreview for the same fix and fuller writeup;
+// this is the same bug for real actors instead of the preview's scratch
+// object.
+// True if animPtr's own keyframe data doesn't reach past bodyPtr's own
+// group/point count -- duplicated from EXTFUNC.CPP's AffichageBodyPreview,
+// see its own comment for why this check exists (INTFRAME.CPP's
+// interpolation loop has no bounds check of its own against the body).
+static bool AnimFitsBody(const void *bodyPtr, const void *animPtr)
+{
+    S32 bodyGroups = *(const S32 *)((const U8 *)bodyPtr + 32);
+    U16 animGroups = ((const U16 *)animPtr)[1];
+    return (S32)animGroups <= bodyGroups;
+}
+
+static void ApplyRawBodyAnim(T_OBJET *ptrobj, S32 rawBody, S32 rawAnim)
+{
+    void *bodyPtr = GivePtrBody(rawBody);
+    void *animPtr = GivePtrAnim(rawAnim);
+    if (!bodyPtr || !animPtr || !AnimFitsBody(bodyPtr, animPtr)) return;
+    ptrobj->Obj.Body.Num = -1; // force ObjectInitBody to commit immediately -- see its own Body.Num==-1 check
+    ObjectInitBody(&ptrobj->Obj, (void *)(uintptr_t)(U32)rawBody);
+    ptrobj->Obj.Anim.Num = -1; // force ObjectInitAnim to (re)init even if rawAnim happens to be unchanged
+    ptrobj->FlagAnim = 0; // matches StartInitObj's own reset before its InitAnim() call
+    ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)rawAnim);
+}
 
 static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
 {
@@ -978,8 +1019,11 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
             ptrobj->Armure = e.Armure;
             ptrobj->HitForce = e.HitForce;
             ptrobj->Move = e.Move;
-            if (ptrobj->GenBody != e.GenBody) { ptrobj->GenBody = e.GenBody; InitBody(e.GenBody, (U8)slot); }
-            if (ptrobj->GenAnim != e.GenAnim) { ptrobj->GenAnim = e.GenAnim; InitAnim(e.GenAnim, ANIM_REPEAT, (U8)slot); }
+            if (ptrobj->GenBody != e.GenBody || ptrobj->GenAnim != e.GenAnim) {
+                ptrobj->GenBody = e.GenBody;
+                ptrobj->GenAnim = e.GenAnim;
+                ApplyRawBodyAnim(ptrobj, e.GenBody, e.GenAnim);
+            }
         }
         if (e.HasFlags) ptrobj->Flags = e.Flags;
     }
@@ -998,17 +1042,19 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
     }
 
     // A real object's PtrFile3D/IndexFile3D (the per-object "generic body
-    // name" conversion table SearchBody() walks -- FICHE.CPP) is set by
-    // LoadScene()'s own per-object loop (DISKFUNC.CPP: "ptrobj->PtrFile3D =
-    // LoadFile3D(indexfile3d);") before StartInitObj() ever runs for that
-    // slot. InitObject() only zeroes a slot, so a synthetic slot never gets
-    // this -- and SearchBody() dereferences PtrFile3D with no NULL check,
-    // so calling StartInitObj() (which calls InitBody() -> SearchBody())
-    // without it segfaults immediately, one call in. Slot 1, if this scene
-    // already has any real actor, has already been through that real load
-    // and is safe to copy from; LoadFile3D(0) (BufferFile3D is a global
-    // boot-time resource, loaded once regardless of which scene/actors
-    // exist) is the fallback for a scene with none.
+    // name" conversion table SearchBody()/SearchAnim() walk -- FICHE.CPP) is
+    // set by LoadScene()'s own per-object loop (DISKFUNC.CPP: "ptrobj->
+    // PtrFile3D = LoadFile3D(indexfile3d);") before a real actor's script
+    // ever runs. InitObject() only zeroes a slot, so a synthetic slot never
+    // gets this on its own -- borrowed here (not for the *initial*
+    // body/anim, which ApplyRawBodyAnim below sets directly by archive
+    // index, but) so that a NULL PtrFile3D doesn't crash SearchBody()/
+    // SearchAnim() the first time this new actor's own life script runs a
+    // BODY/ANIM opcode during ordinary gameplay simulation. Slot 1, if this
+    // scene already has any real actor, has already been through that real
+    // load and is safe to copy from; LoadFile3D(0) (BufferFile3D is a
+    // global boot-time resource, loaded once regardless of which scene/
+    // actors exist) is the fallback for a scene with none.
     U8 *fallbackPtrFile3D = NbObjets > 1 ? ListObjet[1].PtrFile3D : (U8 *)LoadFile3D(0);
     S16 fallbackIndexFile3D = NbObjets > 1 ? ListObjet[1].IndexFile3D : (S16)0;
 
@@ -1030,7 +1076,7 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
         ptrobj->HitForce = newActor.HitForce;
         ptrobj->Move = newActor.Move;
         ptrobj->Flags = newActor.Flags;
-        if (ptrobj->PtrFile3D) StartInitObj((U8)slot); // still refuse to call in if even the fallback came back null
+        ApplyRawBodyAnim(ptrobj, newActor.GenBody, newActor.GenAnim);
         ptrobj->PtrTrack = newActor.TrackBytes.empty() ? NULL : &newActor.TrackBytes[0];
         ptrobj->PtrLife = newActor.LifeBytes.empty() ? NULL : &newActor.LifeBytes[0];
         if (newActor.FlatIndex >= 0 && newActor.FlatIndex < (S32)g_actors.size())

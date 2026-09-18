@@ -108,17 +108,27 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_script(int index, char *buffer, in
    touch actor slot 0 (the hero), which has special-cased behavior
    elsewhere in the engine this generic editor has no business overriding.
    Persisting these edits to the game's SCENE.HQR is a separate operation
-   (not yet exposed here). */
+   (not yet exposed here).
+
+   body/anim are raw BODY.HQR/ANIM.HQR archive indices, matching
+   lba2_renderer_render_body_preview's own body/anim below and what
+   lba2_renderer_get_actor_attributes reads back -- NOT the small
+   per-object "generic" index space a life script's own BODY/ANIM opcodes
+   use (SearchBody()/SearchAnim(), FICHE.CPP), which only resolves
+   correctly against that specific object's own PtrFile3D conversion
+   table. Applied via ObjectInitBody()/ObjectInitAnim() directly for
+   exactly that reason -- see RENDERER_ACTORS.CPP's ApplyRawBodyAnim. */
 
 /* Returns 0 if index is out of range or refers to the hero, 1 on success. */
 LBA2_RENDERER_API int lba2_renderer_set_actor_attributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 /* Returns 0 if index is out of range or refers to the hero, 1 on success. */
 LBA2_RENDERER_API int lba2_renderer_set_actor_position(int index, int worldX, int worldY, int worldZ);
 /* Adds a new actor to whichever scene covers (worldX, worldZ)'s cube, with a
-   trivial one-opcode (END) life and track script. Returns the new actor's
-   index (usable with every other actor API immediately), or -1 if that
-   world position isn't on any loaded scene or the scene is already at its
-   100-actor limit. */
+   trivial one-opcode (END) life and track script. body/anim are raw archive
+   indices, same as lba2_renderer_set_actor_attributes. Returns the new
+   actor's index (usable with every other actor API immediately), or -1 if
+   that world position isn't on any loaded scene or the scene is already at
+   its 100-actor limit. */
 LBA2_RENDERER_API int lba2_renderer_add_actor(int worldX, int worldY, int worldZ, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
 
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
@@ -140,8 +150,12 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_bounds(int index, int *xMin, int *
    attributes editor's rotating preview. Call with a slowly increasing
    cameraBeta (the same 0-4096-per-turn angle unit as lba2_renderer_
    set_camera's alpha/beta/gamma) across successive calls to animate an
-   orbit around the body; genBody/genAnim use the same per-object "generic"
-   index space as lba2_renderer_set_actor_attributes. This does not touch
+   orbit around the body, and the animation itself plays across successive
+   calls the same way (ObjectSetInterFrame steps it each call). body/anim
+   are raw BODY.HQR/ANIM.HQR archive indices -- the same space
+   lba2_renderer_set_actor_attributes' body/anim and lba2_renderer_get_
+   actor_attributes' body/anim use, and what the editor's own body/anim
+   pickers list (built from those archives directly). This does not touch
    terrain/sky/decor or any real actor, so it's safe to call between
    ordinary lba2_renderer_render_frame*() calls without disturbing the main
    view (whatever real render happens next resets the camera and clears the
@@ -151,11 +165,10 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_bounds(int index, int *xMin, int *
    want the body to fill the frame should measure the rendered silhouette
    at a probe distance and solve for the right one themselves (see
    CommunityRendererBackend.CalibrateBodyPreviewDistance in the C# editor
-   for the approach this API was designed around). Returns 0 if genBody
-   doesn't resolve to a drawable body (e.g. NO_BODY), 1 on a successful
-   draw -- callers should show a fallback message rather than a stale/blank
-   frame on 0. */
-LBA2_RENDERER_API int lba2_renderer_render_body_preview(int genBody, int genAnim, int cameraBeta, int cameraDistance);
+   for the approach this API was designed around). Returns 0 if body or
+   anim is out of range, 1 on a successful draw -- callers should show a
+   fallback message rather than a stale/blank frame on 0. */
+LBA2_RENDERER_API int lba2_renderer_render_body_preview(int body, int anim, int cameraBeta, int cameraDistance);
 
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which

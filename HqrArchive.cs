@@ -51,10 +51,18 @@ internal sealed class HqrArchive
         var source = data.AsSpan(offset + 10, compressedSize);
         if (method == 0) return source.ToArray();
         if (method is not (1 or 2)) throw new InvalidDataException($"Unsupported HQR compression method {method}.");
-        return DecodeLz(source, size);
+        // minBlockLength matches the native decoder's own MinBloc parameter
+        // (LIB386/SYSTEM/LZ.CPP's ExpandLZ, called from HQFILE.CPP's
+        // HQF_LoadClose as "ExpandLZ(ptr, ptrdecomp, SizeFile,
+        // CompressMethod + 1)") -- a back-reference's block length is
+        // (nibble + MinBloc), not always (nibble + 2); method 2 uses
+        // MinBloc 3. Hardcoding +2 here previously decoded method-1 records
+        // fine but desynced method-2 ones a nibble at a time, eventually
+        // producing a distance bigger than what had been decoded so far.
+        return DecodeLz(source, size, method + 1);
     }
 
-    private static byte[] DecodeLz(ReadOnlySpan<byte> source, int expectedSize)
+    private static byte[] DecodeLz(ReadOnlySpan<byte> source, int expectedSize, int minBlockLength)
     {
         var output = new byte[expectedSize];
         var sourceIndex = 0;
@@ -74,7 +82,7 @@ internal sealed class HqrArchive
                 var token = BinaryPrimitives.ReadUInt16LittleEndian(source.Slice(sourceIndex, 2));
                 sourceIndex += 2;
                 var distance = ((token >> 4) & 0x0FFF) + 1;
-                var length = (token & 0x0F) + 2;
+                var length = (token & 0x0F) + minBlockLength;
                 if (distance > outputIndex) throw new InvalidDataException("Invalid LZ back-reference.");
                 for (var copy = 0; copy < length && outputIndex < output.Length; copy++)
                     output[outputIndex] = output[outputIndex++ - distance];

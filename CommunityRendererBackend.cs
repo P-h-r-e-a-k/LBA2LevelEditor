@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Media;
@@ -142,6 +143,15 @@ internal sealed class CommunityRendererBackend
         }
     }
 
+    // Distance to render the preview at, and a crop rectangle (in
+    // framebuffer pixels) the caller should crop every subsequent frame to
+    // before displaying it -- both computed once per body/anim selection
+    // and reused across every rotation angle/animation frame until that
+    // selection changes again (recomputing every tick would make the crop
+    // visibly resize as the silhouette's own bounding box changes shape
+    // while animating/rotating).
+    public readonly record struct BodyPreviewCalibration(int Distance, Int32Rect CropRect);
+
     // Solves for a camera distance that fills roughly targetFraction of the
     // frame with the body's own silhouette, since there's no reliable
     // per-body bounding box available here (see AffichageBodyPreview's own
@@ -153,41 +163,82 @@ internal sealed class CommunityRendererBackend
     // drawn into it), and scales the probe distance by how far off that
     // footprint is from the target size (apparent size under perspective is
     // roughly proportional to 1/distance, so distance scales linearly with
-    // the size ratio). Returns null if nothing drew (e.g. NO_BODY) or the
-    // renderer isn't ready; callers should fall back to a fixed distance.
-    public int? CalibrateBodyPreviewDistance(int genBody, int genAnim, byte[] paletteBytes, double targetFraction = 0.8)
+    // the size ratio).
+    //
+    // AffichageBodyPreview (EXTFUNC.CPP) clamps the distance it's actually
+    // given to stay outside the engine's near-clip plane, which for a small
+    // body can be well past the ideal distance computed above -- the
+    // resulting silhouette then comes out smaller than targetFraction asked
+    // for. Rather than duplicate that clamp's exact threshold here, this
+    // re-measures fresh at whatever distance the native side actually used
+    // and derives the crop rectangle from that real measurement, padded for
+    // room to animate/rotate -- so the displayed (cropped-then-stretched)
+    // image still fills the frame regardless of whether the clamp kicked in.
+    //
+    // Returns null if nothing drew (e.g. NO_BODY) or the renderer isn't
+    // ready; callers should fall back to a fixed distance and an
+    // uncropped/full-frame rectangle.
+    public BodyPreviewCalibration? CalibrateBodyPreviewDistance(int genBody, int genAnim, byte[] paletteBytes, double targetFraction = 0.8)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
         const int probeDistance = 5000;
         lock (directRenderLock)
         {
             if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, 0, probeDistance)) return null;
-            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
-            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
+            var probeBounds = MeasureNonBackgroundBounds();
+            if (probeBounds is not { } probe) return null;
 
-            var backgroundIndex = Marshal.ReadByte(pointer); // corner pixel; see comment above
-            var row = new byte[width];
-            int minX = width, maxX = -1, minY = height, maxY = -1;
-            for (var y = 0; y < height; y++)
-            {
-                Marshal.Copy(pointer + y * pitch, row, 0, width);
-                for (var x = 0; x < width; x++)
-                {
-                    if (row[x] == backgroundIndex) continue;
-                    if (x < minX) minX = x;
-                    if (x > maxX) maxX = x;
-                    if (y < minY) minY = y;
-                    if (y > maxY) maxY = y;
-                }
-            }
-            if (maxX < minX || maxY < minY) return null; // nothing drawn at all
-
-            var silhouetteSize = Math.Max(maxX - minX, maxY - minY);
+            var silhouetteSize = Math.Max(probe.MaxX - probe.MinX, probe.MaxY - probe.MinY);
             if (silhouetteSize < 4) return null; // degenerate -- avoid dividing into an absurd distance
-            var targetSize = Math.Min(width, height) * targetFraction;
-            var distance = (int)(probeDistance * silhouetteSize / targetSize);
-            return Math.Clamp(distance, 200, 40000);
+            var targetSize = Math.Min(probe.Width, probe.Height) * targetFraction;
+            var idealDistance = (int)(probeDistance * silhouetteSize / targetSize);
+            var distance = Math.Clamp(idealDistance, 200, 40000);
+
+            var finalBounds = distance == probeDistance
+                ? probe
+                : RendererLibrary.RenderBodyPreview(genBody, genAnim, 0, distance) ? MeasureNonBackgroundBounds() : null;
+            if (finalBounds is not { } final) return null;
+
+            var centerX = (final.MinX + final.MaxX) / 2;
+            var centerY = (final.MinY + final.MaxY) / 2;
+            var half = (int)(Math.Max(final.MaxX - final.MinX, final.MaxY - final.MinY) / 2.0 * 1.3) + 4;
+            var left = Math.Clamp(centerX - half, 0, final.Width - 1);
+            var top = Math.Clamp(centerY - half, 0, final.Height - 1);
+            var right = Math.Clamp(centerX + half, left + 1, final.Width);
+            var bottom = Math.Clamp(centerY + half, top + 1, final.Height);
+            return new BodyPreviewCalibration(distance, new Int32Rect(left, top, right - left, bottom - top));
         }
+    }
+
+    private readonly record struct FrameBounds(int Width, int Height, int MinX, int MaxX, int MinY, int MaxY);
+
+    // Scans the current framebuffer for the bounding box of every pixel that
+    // isn't the background colour -- valid for this isolated, otherwise-
+    // empty preview where the top-left corner pixel is always background
+    // (unlike a real terrain shot, nothing else is ever drawn into it).
+    // Must be called with directRenderLock already held (it reads native
+    // framebuffer state a concurrent render could otherwise be changing).
+    private FrameBounds? MeasureNonBackgroundBounds()
+    {
+        var pointer = RendererLibrary!.GetFramebuffer(out var width, out var height, out var pitch);
+        if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
+
+        var backgroundIndex = Marshal.ReadByte(pointer);
+        var row = new byte[width];
+        int minX = width, maxX = -1, minY = height, maxY = -1;
+        for (var y = 0; y < height; y++)
+        {
+            Marshal.Copy(pointer + y * pitch, row, 0, width);
+            for (var x = 0; x < width; x++)
+            {
+                if (row[x] == backgroundIndex) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        return maxX < minX || maxY < minY ? null : new FrameBounds(width, height, minX, maxX, minY, maxY);
     }
 
     // Alpha=+1023 (of the engine's 4096-per-turn angle unit -- COMMON.H's
