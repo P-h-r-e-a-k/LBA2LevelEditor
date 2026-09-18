@@ -55,6 +55,15 @@ struct RendererActor {
     S32 ObjectSlot = -1;
     S32 CubeX = -1;
     S32 CubeY = -1;
+    // True only for an actor created by RendererAddActor() that hasn't had
+    // its attributes explicitly applied since (RendererSetActorAttributes
+    // clears it) -- never true for anything read from a real scene file.
+    // Consulted by AffichageActorsZBuf (EXTFUNC.CPP) to render this actor
+    // as a flat black silhouette instead of whatever body/anim it happens
+    // to default to, so an editor-added actor waiting on a real body
+    // choice reads as an obvious placeholder rather than a normal-looking
+    // (and easily mistaken for deliberately-chosen) Twinsen.
+    bool IsPlaceholderBody = false;
 };
 
 static std::vector<RendererActor> g_actors;
@@ -995,6 +1004,13 @@ static void ApplyRawBodyAnim(T_OBJET *ptrobj, S32 rawBody, S32 rawAnim)
     ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)rawAnim);
 }
 
+// Defined in EXTFUNC.CPP (the shared engine core) -- see
+// g_placeholderBodySlot's own comment there for why this pushes into an
+// engine-owned array rather than the engine calling back into this
+// (editor-only, 3DEXT) layer to ask.
+extern void SetPlaceholderBodySlot(S32 slot, int isPlaceholder);
+extern void ClearAllPlaceholderBodySlots(void);
+
 static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
 {
     // This whole project builds as C++98 (CMakeLists.txt's own
@@ -1082,6 +1098,22 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
         if (newActor.FlatIndex >= 0 && newActor.FlatIndex < (S32)g_actors.size())
             g_actors[(size_t)newActor.FlatIndex].ObjectSlot = slot;
     }
+
+    // Syncs the engine's own placeholder-slot flags (EXTFUNC.CPP's
+    // g_placeholderBodySlot) to match g_actors for this scene, covering
+    // every actor here -- not just the NewActors placed just above -- since
+    // ObjectSlot can shift across reloads if the actor count in this scene
+    // changes (e.g. another actor added or removed), which would otherwise
+    // leave a stale slot number flagged from a previous reload's own
+    // numbering. Clearing every slot in this scene first, then re-marking
+    // only the ones g_actors still says are placeholders, keeps this
+    // correct regardless of how slot numbers moved around.
+    ClearAllPlaceholderBodySlots();
+    for (size_t gi = 0; gi < g_actors.size(); gi++) {
+        const RendererActor &ga = g_actors[gi];
+        if (ga.SceneIndex == sceneIndex && ga.ObjectSlot >= 1 && ga.ObjectSlot < NbObjets && ga.IsPlaceholderBody)
+            SetPlaceholderBodySlot(ga.ObjectSlot, 1);
+    }
 }
 
 // Re-applies pending edits for whichever scene is currently loaded into
@@ -1105,6 +1137,7 @@ int RendererSetActorAttributes(int index, int beta, int body, int anim, int life
     a.Armure = (U8)armor;
     a.HitForce = (U8)hitForce;
     a.Move = (U8)move;
+    a.IsPlaceholderBody = false; // see the field's own comment -- an explicit Apply means the user has reviewed this actor
 
     PendingAttributeEdit &edit = g_pendingEdits[a.SceneIndex].AttributeEdits[a.ObjectSlot];
     edit.HasAttributes = true;
@@ -1185,6 +1218,7 @@ int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int
     actor.ObjectSlot = -1; // filled in once ReapplyPendingEditsToListObjet places it
     actor.CubeX = cubeX;
     actor.CubeY = cubeY;
+    actor.IsPlaceholderBody = true; // see the field's own comment -- cleared once the user applies real attributes
     g_actors.push_back(actor);
     S32 flatIndex = (S32)g_actors.size() - 1;
 

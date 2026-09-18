@@ -332,6 +332,59 @@ void InitGrilleExt(U32 numcube) {
 // RendererLoadCubeScene() in RENDERER_ACTORS.CPP, called from
 // lba2_renderer_load_cube()); if that never ran (e.g. NbObjets is still 0
 // or 1 from boot), this is a no-op.
+extern U8 Fill_Logical_Palette[256]; // POLY.H -- SetCLUT's own final "raw colour index -> displayed index" remap table
+
+// Tracks, per ListObjet slot, whether AffichageActorsZBuf should render
+// that slot as a flat black placeholder silhouette instead of its real
+// body/anim -- see ObjectDisplayForcedBlack's own comment for why, and
+// RENDERER_ACTORS.CPP's own SetPlaceholderBodySlot/ClearAllPlaceholderBodySlots
+// (RendererAddActor/RendererSetActorAttributes/ReapplyPendingEditsToListObjet)
+// for who actually sets it. Owned here, in the shared engine core, rather
+// than exposing a getter FROM the 3DEXT/editor-only layer for the engine
+// to call INTO -- EXTFUNC.CPP and RENDERER_ACTORS.CPP link into separate
+// static libraries for this build (confirmed the hard way: a call the
+// other way around linked cleanly from RENDERER_API.CPP, in the same
+// library as RENDERER_ACTORS.CPP, but the identical call from here failed
+// with "undefined reference" even after a full clean rebuild), so 3DEXT
+// pushing into a plain array the engine owns is the direction that
+// actually links, matching how every other engine/3DEXT boundary in this
+// file already works (3DEXT calls into the engine's own ObjectInitBody/
+// ListObjet/etc., never the other way around).
+static bool g_placeholderBodySlot[MAX_OBJETS];
+
+void SetPlaceholderBodySlot(S32 slot, int isPlaceholder)
+{
+    if (slot >= 0 && slot < MAX_OBJETS) g_placeholderBodySlot[slot] = isPlaceholder != 0;
+}
+
+void ClearAllPlaceholderBodySlots(void)
+{
+    memset(g_placeholderBodySlot, 0, sizeof(g_placeholderBodySlot));
+}
+
+// Renders obj with its polygons forced toward a single flat colour (BLACK,
+// DEFINES.H -- palette index 0, the conventional black entry) by
+// overriding Fill_Logical_Palette -- the table every *flat/gouraud* fill
+// routine reads as its own last step before writing a pixel (POLY.CPP/
+// POLYGOUR.ASM/POLYDISC.ASM) -- for the duration of this one object's own
+// ObjectDisplay() call, then restoring it immediately after. Confirmed by
+// testing: this correctly blacks out flat-shaded areas (skin, limbs), but
+// a textured area (e.g. Twinsen's own sweater) keeps its own colours --
+// its fill path resolves texture pixels through something this override
+// doesn't reach, not yet tracked down. Good enough for a placeholder that
+// only needs to read as "obviously not a real body yet" rather than a
+// pixel-perfect silhouette; see RendererAddActor's own IsPlaceholderBody
+// comment for the full intent. Being a pure render-time override, it never
+// touches BODY.HQR or this object's own actual body/anim data regardless.
+static void ObjectDisplayForcedBlack(T_OBJ_3D *obj)
+{
+    U8 saved[256];
+    memcpy(saved, Fill_Logical_Palette, sizeof(saved));
+    memset(Fill_Logical_Palette, 0, sizeof(Fill_Logical_Palette)); // 0 == BLACK, DEFINES.H
+    ObjectDisplay(obj);
+    memcpy(Fill_Logical_Palette, saved, sizeof(saved));
+}
+
 void AffichageActorsZBuf(void) {
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
@@ -356,7 +409,11 @@ void AffichageActorsZBuf(void) {
         }
 
         UnsetClip();
-        ObjectDisplay(&ptrobj->Obj);
+        if (g_placeholderBodySlot[n]) {
+            ObjectDisplayForcedBlack(&ptrobj->Obj);
+        } else {
+            ObjectDisplay(&ptrobj->Obj);
+        }
     }
 }
 
