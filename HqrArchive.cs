@@ -17,6 +17,21 @@ internal sealed class HqrArchive
     public int Count => offsets.Length;
     public IEnumerable<int> ValidIndices => Enumerable.Range(0, offsets.Length).Where(IsValid);
 
+    // Count is deliberately not used for this: it treats the raw offset-
+    // table-length header value as the slot count directly instead of
+    // dividing by 4 first, so it runs ~4x too high (confirmed against
+    // BODY.HQR while building the actor attributes editor's Body picker).
+    // This reads the same header and applies the real formula (matching
+    // the native engine's own HQF_NbRes()) instead.
+    public static int CountEntries(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.Length < 4) return 0;
+        var tableBytes = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
+        var slots = (int)(tableBytes / 4);
+        return Math.Max(0, slots - 1);
+    }
+
     public static HqrArchive Open(string path)
     {
         var data = File.ReadAllBytes(path);

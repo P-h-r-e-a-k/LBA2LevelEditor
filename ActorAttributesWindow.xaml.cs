@@ -171,30 +171,15 @@ public partial class ActorAttributesWindow : Window
     // padded against any HQR archive's own entry count (see the ANIM case
     // above) -- LoadResult then sizes purely from the HQD file's own line
     // count. HqrArchive.Count/ValidIndices are deliberately not used for
-    // the cross-validated (body) case: HqrArchive.Open() treats the raw
-    // offset-table-length header value as the slot count directly instead
-    // of dividing by 4 first, so its own Count runs ~4x too high, and
-    // ValidIndices' bounds-check filtering happened to let exactly one
-    // bogus entry at the boundary through for BODY.HQR -- reading the
-    // header and applying the real formula (matching the native engine's
-    // own HQF_NbRes()) here avoids both problems without touching that
-    // shared reader (used elsewhere for scene enumeration) under time
-    // pressure.
-    private static int CountHqrEntries(string path)
-    {
-        var bytes = File.ReadAllBytes(path);
-        if (bytes.Length < 4) return 0;
-        var tableBytes = BitConverter.ToUInt32(bytes, 0);
-        var slots = (int)(tableBytes / 4);
-        return Math.Max(0, slots - 1);
-    }
-
+    // the cross-validated (body) case -- see HqrArchive.CountEntries's own
+    // comment for why -- ValidIndices' bounds-check filtering also happened
+    // to let exactly one bogus entry at the boundary through for BODY.HQR.
     private static IReadOnlyList<NamedOption> LoadOptions(string hqdFileName, string? hqrFileName)
     {
         var hqrCount = 0;
         if (hqrFileName is not null)
         {
-            try { hqrCount = CountHqrEntries(Path.Combine(EditorSettings.Current.GameDirectory, hqrFileName)); }
+            try { hqrCount = HqrArchive.CountEntries(Path.Combine(EditorSettings.Current.GameDirectory, hqrFileName)); }
             catch
             {
                 // No game directory / unreadable HQR yet -- names list
@@ -395,10 +380,23 @@ public partial class ActorAttributesWindow : Window
     // (including that late TextChanged) has already run undoes that,
     // regardless of which order this particular selection happened to use --
     // it's a no-op when the immediate call above already had the last word.
+    // Also fixes a second, related bug found while cleaning up the main
+    // window's own new Island/Scene pickers (same underlying mechanism,
+    // just never previously exercised here): picking an item from an
+    // already-*filtered* list (type a few letters, then click one of the
+    // narrowed-down matches) left the text box blank instead of showing the
+    // picked item's text -- WPF's own automatic selection-to-text sync for
+    // an editable ComboBox apparently loses track of what to display when
+    // ItemsSource gets swapped back to the full list (by ResetComboFilter)
+    // while that sync is still in-flight. Setting Text ourselves from the
+    // actual selected item, rather than trusting that sync to happen at
+    // all, sidesteps it entirely instead of chasing WPF's own internal
+    // timing.
     private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (suppressBodyTextChanged) return;
         DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: BodyCombo selection changed, text='{BodyCombo.Text}'");
+        if (BodyCombo.SelectedItem is NamedOption selected) { suppressBodyTextChanged = true; BodyCombo.Text = selected.Display; suppressBodyTextChanged = false; }
         CommitPreviewChange();
         ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
@@ -408,6 +406,7 @@ public partial class ActorAttributesWindow : Window
     {
         if (suppressAnimTextChanged) return;
         DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: AnimCombo selection changed, text='{AnimCombo.Text}'");
+        if (AnimCombo.SelectedItem is NamedOption selected) { suppressAnimTextChanged = true; AnimCombo.Text = selected.Display; suppressAnimTextChanged = false; }
         CommitPreviewChange();
         ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>

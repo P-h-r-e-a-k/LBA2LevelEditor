@@ -61,9 +61,15 @@
                     <TextBlock Text="LBA2 / LEVEL WORKSHOP" FontFamily="Consolas" FontSize="11" Foreground="#D6C86A" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Settings" Click="Settings_Click" Style="{StaticResource QuietButton}"/>
-                    <Button Content="Open" Click="Open_Click" Style="{StaticResource QuietButton}"/>
-                    <Button Content="Save" Click="Save_Click" Style="{StaticResource QuietButton}"/>
+                    <Button x:Name="FileMenuButton" Content="File ▾" Click="FileMenuButton_Click" Style="{StaticResource QuietButton}">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="FileMenu" Placement="Bottom">
+                                <MenuItem Header="Settings…" Click="Settings_Click"/>
+                                <MenuItem Header="Open…" Click="Open_Click"/>
+                                <MenuItem Header="Save" Click="Save_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                     <Button Content="Export" Click="Export_Click" Style="{StaticResource PrimaryButton}"/>
                 </StackPanel>
                 <TextBlock x:Name="FileLabel" Text="●  DESERT.ILE" FontFamily="Consolas" FontSize="13" Foreground="#C5C6B9" VerticalAlignment="Center" Margin="34,0,0,0"/>
@@ -77,10 +83,10 @@
                     <TextBlock x:Name="DocumentTitle" Text="Island" FontSize="22" Margin="0,14,0,4"/>
                     <TextBlock x:Name="DocumentSummary" Text="Native ILE / 16 x 16 cubes" Foreground="#89958B" FontSize="12"/>
                     <Separator Margin="0,28,0,22"/>
-                    <TextBlock Text="ISLANDS" Style="{StaticResource Eyebrow}"/>
-                    <ListBox x:Name="IslandList" SelectionChanged="IslandList_SelectionChanged" Background="Transparent" BorderThickness="0" Foreground="#AEB7AB" Margin="0,10,0,18"/>
-                    <TextBlock Text="SCENES" Style="{StaticResource Eyebrow}"/>
-                    <ListBox x:Name="SceneList" SelectionChanged="SceneList_SelectionChanged" Background="Transparent" BorderThickness="0" Foreground="#AEB7AB" Height="120" Margin="0,10,0,0"/>
+                    <TextBlock Text="ISLAND" Style="{StaticResource Eyebrow}"/>
+                    <ComboBox x:Name="IslandCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" Margin="0,10,0,18"/>
+                    <TextBlock Text="SCENE" Style="{StaticResource Eyebrow}"/>
+                    <ComboBox x:Name="SceneCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" Margin="0,10,0,0"/>
                     <TextBlock Text="▦   Source folder linked&#x0a;      E:\GOG Games\...\Levels" FontFamily="Consolas" FontSize="10" Foreground="#849087" Margin="0,44,0,0"/>
                 </StackPanel>
             </Border>
@@ -105,15 +111,6 @@
                         <Grid Grid.Row="0" Grid.Column="0" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown">
                             <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
                             <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
-                            <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="16" Background="#CC101418" BorderBrush="#344039" BorderThickness="1" Padding="4">
-                                <ScrollViewer x:Name="MinimapScrollViewer" Width="220" Height="220" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                    <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
-                                        <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                        <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
-                                        <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
-                                    </Grid>
-                                </ScrollViewer>
-                            </Border>
                         </Grid>
                         <ScrollBar x:Name="PanVerticalScrollBar" Grid.Row="0" Grid.Column="1" Orientation="Vertical"
                                    SmallChange="8192" LargeChange="65536"
@@ -131,8 +128,21 @@
             <Border Grid.Column="2" BorderBrush="#344039" BorderThickness="1,0,0,0" Background="#141B19" Padding="20,30">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
+                    <StackPanel x:Name="MinimapPanel">
+                        <TextBlock Text="MINIMAP" Style="{StaticResource Eyebrow}"/>
+                        <Border Margin="0,14,0,22" Background="#0D1210" BorderBrush="#3A4740" BorderThickness="1" Padding="4">
+                            <ScrollViewer x:Name="MinimapScrollViewer" Width="206" Height="206" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <Grid Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown">
+                                    <Image x:Name="MinimapImage" Stretch="None" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
+                                    <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                                </Grid>
+                            </ScrollViewer>
+                        </Border>
+                        <Separator/>
+                    </StackPanel>
                     <StackPanel x:Name="TerrainPalettePanel">
-                        <TextBlock Text="TERRAIN PALETTE" Style="{StaticResource Eyebrow}"/>
+                        <TextBlock Text="TERRAIN PALETTE" Style="{StaticResource Eyebrow}" Margin="0,22,0,0"/>
                         <ItemsControl x:Name="Palette" Margin="0,14,0,22"/>
                         <Separator/>
                         <TextBlock Text="SELECTION" Style="{StaticResource Eyebrow}" Margin="0,22,0,0"/>
@@ -142,19 +152,6 @@
                         <TextBlock Text="Walkable" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
                         <ComboBox SelectedIndex="0" Style="{StaticResource FieldBox}"><ComboBoxItem>Yes</ComboBoxItem><ComboBoxItem>No</ComboBoxItem></ComboBox>
                         <TextBlock Text="Native .ILE import and binary writing will plug into this panel." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#78847B" Margin="0,28,0,0"/>
-                    </StackPanel>
-                    <StackPanel x:Name="ActorInspectorPanel" Visibility="Collapsed">
-                        <TextBlock Text="ACTOR" Style="{StaticResource Eyebrow}"/>
-                        <TextBlock x:Name="ActorTitleLabel" Text="Actor 0" FontSize="13" Margin="0,14,0,16"/>
-                        <TextBlock Text="Position (X, Y, Z)" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="ActorPositionBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,10"/>
-                        <TextBlock Text="Facing / Body / Anim" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="ActorFacingBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,10"/>
-                        <TextBlock Text="Life / Armor / Hit force / Move" Style="{StaticResource FieldLabel}"/>
-                        <TextBox x:Name="ActorStatsBox" IsReadOnly="True" Style="{StaticResource FieldBox}" Margin="0,0,0,16"/>
-                        <TextBlock Text="SCRIPT" Style="{StaticResource Eyebrow}" Margin="0,0,0,8"/>
-                        <Button x:Name="OpenScriptEditorButton" Content="Open Script Editor" Click="OpenScriptEditor_Click" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
-                        <Button Content="Close" Click="CloseActorInspector_Click" Style="{StaticResource QuietButton}" Margin="0,16,0,0" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </StackPanel>
                 </ScrollViewer>

@@ -41,6 +41,10 @@ public partial class MainWindow : Window
     private byte[] palette = Array.Empty<byte>();
     private byte[] shadeTable = Array.Empty<byte>();
     private int shadeLevel;
+    private IReadOnlyList<FilterableComboBox.Option> islandOptions = Array.Empty<FilterableComboBox.Option>();
+    private IReadOnlyList<FilterableComboBox.Option> sceneOptions = Array.Empty<FilterableComboBox.Option>();
+    private FilterableComboBox? islandFilter;
+    private FilterableComboBox? sceneFilter;
 
     public MainWindow()
     {
@@ -50,11 +54,23 @@ public partial class MainWindow : Window
         KeyDown += MainWindow_KeyDown;
         SeedFallbackMap();
         BuildPalette();
+
+        islandFilter = new FilterableComboBox(IslandCombo, () => islandOptions);
+        islandFilter.Committed += () => { if (IslandCombo.SelectedItem is FilterableComboBox.Option o) LoadIsland(Path.Combine(gameRoot, o.Display)); };
+        sceneFilter = new FilterableComboBox(SceneCombo, () => sceneOptions);
+        sceneFilter.Committed += () =>
+        {
+            if (SceneCombo.SelectedItem is not FilterableComboBox.Option o) return;
+            FileLabel.Text = $"●  {o.Display} / SCENE.HQR";
+            DocumentTitle.Text = o.Display;
+            DocumentSummary.Text = "Native SCENE.HQR record / object and zone data";
+        };
+
         if (Directory.Exists(gameRoot))
         {
             PopulateAssetLists();
             // PopulateAssetLists() already selects activeFile in the list,
-            // which fires IslandList_SelectionChanged -> LoadIsland() -- if
+            // which fires the combo's own Committed -> LoadIsland() -- if
             // that succeeded (activeFile was actually in the list), calling
             // LoadIsland() again here would load the same island a second
             // time back to back. That redundant second load isn't just
@@ -67,7 +83,7 @@ public partial class MainWindow : Window
             // "correct" here. Only fall back to an explicit call if the
             // selection didn't already cover it (e.g. activeFile no longer
             // exists in gameRoot).
-            if (IslandList.SelectedItem is null) LoadIsland(Path.Combine(gameRoot, activeFile));
+            if (IslandCombo.SelectedItem is null) LoadIsland(Path.Combine(gameRoot, activeFile));
         }
         else
         {
@@ -78,18 +94,54 @@ public partial class MainWindow : Window
 
     private void PopulateAssetLists()
     {
-        IslandList.Items.Clear();
-        SceneList.Items.Clear();
-        if (!Directory.Exists(gameRoot)) return;
-        foreach (var path in Directory.EnumerateFiles(gameRoot, "*.ILE").Where(path => !Path.GetFileName(path).StartsWith("_", StringComparison.OrdinalIgnoreCase)))
-            IslandList.Items.Add(Path.GetFileName(path));
-        IslandList.SelectedItem = activeFile;
-        var scenePath = Path.Combine(gameRoot, "SCENE.HQR");
-        if (File.Exists(scenePath))
+        var islands = new List<FilterableComboBox.Option>();
+        if (Directory.Exists(gameRoot))
         {
-            var scenes = HqrArchive.Open(scenePath);
-            foreach (var index in scenes.ValidIndices.Where(index => index > 0)) SceneList.Items.Add($"SCENE {index:000}");
+            var i = 0;
+            foreach (var path in Directory.EnumerateFiles(gameRoot, "*.ILE").Where(path => !Path.GetFileName(path).StartsWith("_", StringComparison.OrdinalIgnoreCase)))
+                islands.Add(new FilterableComboBox.Option(i++, Path.GetFileName(path)));
         }
+        islandOptions = islands;
+        islandFilter?.Refresh();
+        var activeOption = islands.FirstOrDefault(o => o.Display == activeFile);
+        if (activeOption is not null) IslandCombo.SelectedItem = activeOption; else IslandCombo.Text = "";
+
+        sceneOptions = BuildSceneOptions();
+        sceneFilter?.Refresh();
+        SceneCombo.Text = "";
+    }
+
+    // SCENE.HQR's own entry 0 isn't a scene at all -- DISKFUNC.CPP's
+    // LoadScene() reads its own scene data from HQR entry `numscene + 1`,
+    // with the comment "numscene+1 car en 0 se trouve SizeCube.MAX" (entry
+    // 0 holds the largest .SCC's size, not scene data) -- so real scenes
+    // start at HQR entry 1, i.e. numscene 0. SCENE2.HQD (LBAPackageManager's
+    // own text descriptions) agrees exactly: after its own file-header line,
+    // the first *described* entry (index 0, matching HqdDescriptions' own
+    // "line 2 -> entry 0" convention) is "Count of all entries and count of
+    // outside scenes" -- the same metadata slot, not a real scene -- with
+    // real scene descriptions starting only from described entry 1. Showing
+    // `numscene = hqrIndex - 1` here (rather than the raw HQR index) means
+    // this list already uses the same numbering LoadScene(numscene) expects,
+    // ready for whenever scene selection is wired to actually load one.
+    private IReadOnlyList<FilterableComboBox.Option> BuildSceneOptions()
+    {
+        var scenePath = Path.Combine(gameRoot, "SCENE.HQR");
+        if (!File.Exists(scenePath)) return Array.Empty<FilterableComboBox.Option>();
+
+        var hqrCount = HqrArchive.CountEntries(scenePath);
+        var descriptions = HqdDescriptions.Load("SCENE2.HQD", hqrCount);
+        var archive = HqrArchive.Open(scenePath);
+
+        var options = new List<FilterableComboBox.Option>();
+        for (var hqrIndex = 1; hqrIndex < hqrCount; hqrIndex++)
+        {
+            if (!archive.IsValid(hqrIndex)) continue;
+            var numscene = hqrIndex - 1;
+            var name = hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null;
+            options.Add(new FilterableComboBox.Option(numscene, name is null ? $"{numscene}" : $"{numscene}: {name}"));
+        }
+        return options;
     }
 
     private void LoadIsland(string path)
@@ -127,7 +179,6 @@ public partial class MainWindow : Window
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
             selectedActorIndex = null;
-            ActorInspectorPanel.Visibility = Visibility.Collapsed;
             ActorMarkerCanvas.Children.Clear();
             lastNativeActorScreens = null;
             lastNativeActorRoutes = null;
@@ -218,10 +269,10 @@ public partial class MainWindow : Window
     // dot on top of the rendered frame. Only meaningful while the software
     // camera is active -- the native renderer's camera/perspective isn't
     // reproduced in C#, so markers are cleared instead of drawn at a wrong
-    // position while nativeViewActive. Body-mesh rendering and full script
-    // editing are intentionally out of scope for this first pass; clicking a
-    // marker opens a read-only attributes + script panel (see
-    // ShowActorInspector) instead.
+    // position while nativeViewActive. Body-mesh rendering is intentionally
+    // out of scope for this first pass; double-clicking a marker (or its
+    // context menu) opens the full ActorAttributesWindow/ActorScriptWindow
+    // instead -- a single click only selects/highlights it.
     private int? selectedActorIndex;
 
     // Software view only: no real body-mesh rendering exists on this path
@@ -431,28 +482,11 @@ public partial class MainWindow : Window
         e.Handled = true;
         selectedActorIndex = index;
         RefreshActorOverlayForSelection();
-        ShowActorInspector(index);
-        if (e.ClickCount >= 2) OpenActorAttributesWindow(index);
-    }
-
-    private void ShowActorInspector(int index)
-    {
-        var library = nativeRenderer.RendererLibrary;
-        if (library is null) return;
-        if (!library.GetActor(index, out var x, out var y, out var z, out var waypointCount)) return;
-        library.GetActorAttributes(index, out var beta, out var body, out var anim, out var lifePoint, out var armor, out var hitForce, out var move);
-
-        ActorTitleLabel.Text = $"Actor {index} ({waypointCount} waypoint{(waypointCount == 1 ? "" : "s")})";
-        ActorPositionBox.Text = $"{x}, {y}, {z}";
-        ActorFacingBox.Text = $"beta={beta}  body={body}  anim={anim}";
-        ActorStatsBox.Text = $"life={lifePoint}  armor={armor}  hit={hitForce}  move={move}";
-        ActorInspectorPanel.Visibility = Visibility.Visible;
-
         // Keep an already-open script window in sync with whichever actor is
         // now selected, but don't pop one open on every click -- only
-        // explicit actions (the sidebar button, double-click, context menu)
-        // do that.
+        // explicit actions (double-click, context menu) do that.
         if (openScriptWindows.TryGetValue(index, out var openScript)) openScript.ShowActor(index);
+        if (e.ClickCount >= 2) OpenActorAttributesWindow(index);
     }
 
     // One independent, non-modal window per actor per kind (script/
@@ -464,11 +498,6 @@ public partial class MainWindow : Window
     // actor later creates a fresh window rather than resurrecting a stale one.
     private readonly Dictionary<int, ActorScriptWindow> openScriptWindows = new();
     private readonly Dictionary<int, ActorAttributesWindow> openAttributesWindows = new();
-
-    private void OpenScriptEditor_Click(object sender, RoutedEventArgs e)
-    {
-        if (selectedActorIndex is int index) OpenActorScriptWindow(index);
-    }
 
     private void OpenActorScriptWindow(int index)
     {
@@ -505,7 +534,6 @@ public partial class MainWindow : Window
         e.Handled = true;
         selectedActorIndex = index;
         RefreshActorOverlayForSelection();
-        ShowActorInspector(index);
 
         var menu = new ContextMenu();
         var editAttributes = new MenuItem { Header = "Edit Attributes…" };
@@ -516,13 +544,6 @@ public partial class MainWindow : Window
         menu.Items.Add(editScript);
         ((FrameworkElement)sender).ContextMenu = menu;
         menu.IsOpen = true;
-    }
-
-    private void CloseActorInspector_Click(object sender, RoutedEventArgs e)
-    {
-        selectedActorIndex = null;
-        ActorInspectorPanel.Visibility = Visibility.Collapsed;
-        RefreshActorOverlayForSelection();
     }
 
     // Islands are a 16x16 grid of cubes, each spanning 32768 world units
@@ -1078,8 +1099,11 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
     private void Palette_Click(object sender, RoutedEventArgs e) { selectedTerrain = (TerrainType)((Button)sender).Tag; SelectedLabel.Text = $"{selectedTerrain} / selected brush"; }
-    private void IslandList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (IslandList.SelectedItem is string file) LoadIsland(Path.Combine(gameRoot, file)); }
-    private void SceneList_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (SceneList.SelectedItem is string scene) { FileLabel.Text = $"●  {scene} / SCENE.HQR"; DocumentTitle.Text = scene; DocumentSummary.Text = "Native SCENE.HQR record / object and zone data"; } }
+    private void FileMenuButton_Click(object sender, RoutedEventArgs e)
+    {
+        FileMenu.PlacementTarget = FileMenuButton;
+        FileMenu.IsOpen = true;
+    }
     private void Open_Click(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
 
     private void Settings_Click(object sender, RoutedEventArgs e)
