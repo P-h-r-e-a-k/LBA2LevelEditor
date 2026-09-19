@@ -49,6 +49,11 @@ extern int RendererGetInteriorCameraPosition(int *x, int *y, int *z);
 extern int RendererRenderInteriorFrame(void);
 extern int RendererRenderInteriorFull(unsigned char *canvas, int width, int height);
 extern int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *halfH, int *marker);
+extern int RendererGetActorSprite(int index);
+extern int RendererGetZoneCount(void);
+extern int RendererGetZone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num);
+extern int RendererProjectInteriorPoint(int x, int y, int z, int *cx, int *cy);
+extern int RendererRenderSpritePreview(int sprite, int *x, int *y, int *w, int *h);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
 extern int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
@@ -505,6 +510,31 @@ int lba2_renderer_set_interior_camera_position(int x, int y, int z)
 int lba2_renderer_get_interior_camera_position(int *x, int *y, int *z)
 {
     return RendererGetInteriorCameraPosition(x, y, z);
+}
+
+int lba2_renderer_get_actor_sprite(int index)
+{
+    return RendererGetActorSprite(index);
+}
+
+int lba2_renderer_get_zone_count(void)
+{
+    return RendererGetZoneCount();
+}
+
+int lba2_renderer_get_zone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num)
+{
+    return RendererGetZone(index, x0, y0, z0, x1, y1, z1, type, num);
+}
+
+int lba2_renderer_project_interior_point(int x, int y, int z, int *cx, int *cy)
+{
+    return RendererProjectInteriorPoint(x, y, z, cx, cy);
+}
+
+int lba2_renderer_render_sprite_preview(int sprite, int *x, int *y, int *w, int *h)
+{
+    return RendererRenderSpritePreview(sprite, x, y, w, h);
 }
 
 int lba2_renderer_get_actor_flags(int index, unsigned int *flags)

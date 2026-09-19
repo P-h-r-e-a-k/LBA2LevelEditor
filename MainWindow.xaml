@@ -81,6 +81,21 @@
                 <MenuItem Header="Zoom _In" Click="ZoomIn_Click"/>
                 <MenuItem Header="Zoom _Out" Click="ZoomOut_Click"/>
                 <MenuItem Header="Zoom to _Fit / Reset View" Click="ViewFit_Click"/>
+                <Separator/>
+                <MenuItem Header="_Zones">
+                    <MenuItem Header="Show scene _zones" IsCheckable="True" IsChecked="True" Tag="all" Click="ZoneOptions_Changed"/>
+                    <Separator/>
+                    <MenuItem Header="Cube change" IsCheckable="True" IsChecked="False" Tag="0" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Camera" IsCheckable="True" IsChecked="False" Tag="1" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Scenaric" IsCheckable="True" IsChecked="True" Tag="2" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Grid" IsCheckable="True" IsChecked="True" Tag="3" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Giver" IsCheckable="True" IsChecked="True" Tag="4" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Message" IsCheckable="True" IsChecked="True" Tag="5" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Ladder" IsCheckable="True" IsChecked="True" Tag="6" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Escalator" IsCheckable="True" IsChecked="True" Tag="7" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Hit" IsCheckable="True" IsChecked="True" Tag="8" Click="ZoneOptions_Changed"/>
+                    <MenuItem Header="Rail" IsCheckable="True" IsChecked="True" Tag="9" Click="ZoneOptions_Changed"/>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Tools" Foreground="#C5C6B9">
                 <MenuItem Header="_Body Studio…" Click="BodyStudio_Click"/>

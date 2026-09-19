@@ -175,10 +175,12 @@ internal sealed class CommunityRendererBackend
     // InteriorCanvasWidth x InteriorCanvasHeight indexed bitmap (the native
     // side stitches camera-stepped tiles -- see
     // lba2_renderer_render_interior_full), plus each scene actor's position
-    // and hit size in that bitmap's pixel space.
-    public BitmapSource? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors)
+    // and hit size in that bitmap's pixel space, and the actors' patrol routes
+    // and the scene's zones projected into the same space.
+    public BitmapSource? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors, out InteriorOverlay overlay)
     {
         actors = new();
+        overlay = InteriorOverlay.Empty;
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
         {
@@ -190,11 +192,60 @@ internal sealed class CommunityRendererBackend
             }
             finally { handle.Free(); }
             var count = RendererLibrary.GetActorCount();
+            var routes = new List<(int, List<Point>)>();
             for (var i = 0; i < count; i++)
+            {
                 if (RendererLibrary.GetInteriorActorCanvas(i, out var x, out var y, out var hw, out var hh, out var marker)) actors.Add((i, x, y, hw, hh, marker));
+
+                // Patrol route: the actor's own position, then each track waypoint.
+                if (!RendererLibrary.GetActor(i, out var ax, out var ay, out var az, out var waypointCount) || waypointCount <= 0) continue;
+                if (!RendererLibrary.ProjectInteriorPoint(ax, ay, az, out var px, out var py)) continue;
+                var points = new List<Point> { new(px, py) };
+                for (var w = 0; w < waypointCount; w++)
+                    if (RendererLibrary.GetActorWaypoint(i, w, out var wx, out var wy, out var wz) && RendererLibrary.ProjectInteriorPoint(wx, wy, wz, out var qx, out var qy))
+                        points.Add(new Point(qx, qy));
+                if (points.Count > 1) routes.Add((i, points));
+            }
+
+            var zones = new List<ProjectedZone>();
+            var zoneCount = RendererLibrary.GetZoneCount();
+            for (var z = 0; z < zoneCount; z++)
+            {
+                if (!RendererLibrary.GetZone(z, out var x0, out var y0, out var z0, out var x1, out var y1, out var z1, out var type, out var num)) continue;
+                var world = ZoneStyle.Corners(x0, y0, z0, x1, y1, z1);
+                var corners = new Point[8];
+                var ok = true;
+                for (var c = 0; c < 8 && ok; c++)
+                {
+                    ok = RendererLibrary.ProjectInteriorPoint(world[c].X, world[c].Y, world[c].Z, out var cx, out var cy);
+                    corners[c] = new Point(cx, cy);
+                }
+                if (ok) zones.Add(new ProjectedZone(type, num, corners));
+            }
+            overlay = new InteriorOverlay(routes, zones);
+
             var bitmap = BitmapSource.Create(InteriorCanvasWidth, InteriorCanvasHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, InteriorCanvasWidth);
             bitmap.Freeze();
             return bitmap;
+        }
+    }
+
+    // A SPRITE_3D actor's sprite (a key, coin, chest...) on a transparent-looking
+    // black frame, cropped to the sprite, for the attributes window's preview.
+    public BitmapSource? RenderSpritePreview(int sprite, byte[] paletteBytes)
+    {
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
+        lock (directRenderLock)
+        {
+            if (!RendererLibrary.RenderSpritePreview(sprite, out var sx, out var sy, out var sw, out var sh)) return null;
+            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
+            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) return null;
+            var pixels = new byte[width * height];
+            for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            var crop = new CroppedBitmap(bitmap, new Int32Rect(Math.Max(0, sx), Math.Max(0, sy), Math.Min(sw, width - Math.Max(0, sx)), Math.Min(sh, height - Math.Max(0, sy))));
+            crop.Freeze();
+            return crop;
         }
     }
 

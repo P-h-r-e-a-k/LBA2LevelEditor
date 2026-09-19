@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
@@ -113,6 +114,9 @@ public partial class ActorAttributesWindow : Window
     // render while it's true, so a brand new actor's dialog doesn't open on
     // a blank/failed preview before the user has picked a real body.
     private bool showingDummyBody;
+    // SPRITE_3D actors (keys, coins, chests...) have a sprite instead of a body; -1 for real bodies.
+    private int spriteId = -1;
+    private BitmapSource? spritePreview;
 
     internal ActorAttributesWindow(CommunityRendererBackend nativeRenderer, byte[] palette, int actorIndex)
     {
@@ -278,6 +282,7 @@ public partial class ActorAttributesWindow : Window
         library.GetActorAttributes(actorIndex, out var beta, out var body, out var anim, out var lifePoint, out var armor, out var hitForce, out var move);
         library.GetActorFlags(actorIndex, out var flags);
         showingDummyBody = library.IsActorPlaceholder(actorIndex);
+        spriteId = library.GetActorSprite(actorIndex);
 
         PositionXBox.Text = x.ToString();
         PositionYBox.Text = y.ToString();
@@ -460,7 +465,8 @@ public partial class ActorAttributesWindow : Window
     // only ever silently no-ops on unparseable text, it never reverts it.
     private static void RevertIfUnresolved(ComboBox combo, int committedValue, IReadOnlyList<NamedOption> allOptions, ref bool suppress)
     {
-        if (int.TryParse(ParseLeadingIndex(combo.Text), out var value) && allOptions.Any(o => o.Index == value)) return;
+        // -1 is valid for the body box: an actor with no body.
+        if (int.TryParse(ParseLeadingIndex(combo.Text), out var value) && (value == -1 || allOptions.Any(o => o.Index == value))) return;
         var match = allOptions.FirstOrDefault(o => o.Index == committedValue);
         suppress = true;
         combo.ItemsSource = allOptions;
@@ -511,6 +517,13 @@ public partial class ActorAttributesWindow : Window
     private void Recalibrate()
     {
         DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: recalibrating preview body={previewBody} anim={previewAnim}");
+        // No body (-1): nothing native to calibrate against; the dummy body / sprite is drawn instead.
+        if (previewBody < 0)
+        {
+            previewCalibration = null;
+            RenderPreviewFrame();
+            return;
+        }
         previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette, targetAspect: GetPreviewAspect())
             ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
         RenderPreviewFrame();
@@ -535,11 +548,26 @@ public partial class ActorAttributesWindow : Window
 
     private void RenderPreviewFrame()
     {
-        if (showingDummyBody)
+        // A sprite actor with no body: show its sprite.
+        if (previewBody < 0 && spriteId >= 0)
+        {
+            spritePreview ??= nativeRenderer.RenderSpritePreview(spriteId, palette);
+            if (spritePreview is not null)
+            {
+                RenderOptions.SetBitmapScalingMode(BodyPreviewImage, BitmapScalingMode.NearestNeighbor);
+                BodyPreviewImage.Source = spritePreview;
+                BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
+                return;
+            }
+        }
+        RenderOptions.SetBitmapScalingMode(BodyPreviewImage, BitmapScalingMode.Unspecified);
+
+        // No body at all (index -1): the dummy body stands in, same as for a brand-new actor.
+        if (showingDummyBody || previewBody < 0)
         {
             var yaw = previewAngle * (float)(Math.PI * 2 / 4096); // engine's angle unit, see TickPreview's own comment
             var dummy = DummyBodyPreview.Render((int)PreviewBorder.ActualWidth, (int)PreviewBorder.ActualHeight, yaw);
-            if (dummy is null) { ShowPreviewFallback("no body chosen yet for this new actor"); return; }
+            if (dummy is null) { ShowPreviewFallback(previewBody < 0 ? "this actor has no body" : "no body chosen yet for this new actor"); return; }
             BodyPreviewImage.Source = dummy;
             BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
             return;

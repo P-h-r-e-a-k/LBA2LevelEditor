@@ -35,6 +35,11 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFrameFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFullFn(IntPtr canvas, int width, int height);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorActorCanvasFn(int index, out int x, out int y, out int halfW, out int halfH, out int marker);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorSpriteFn(int index);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneCountFn();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneFn(int index, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1, out int type, out int num);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectInteriorPointFn(int x, int y, int z, out int cx, out int cy);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderSpritePreviewFn(int sprite, out int x, out int y, out int w, out int h);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
@@ -72,6 +77,11 @@ internal sealed class RendererLibraryApi : IDisposable
     private RenderInteriorFrameFn? renderInteriorFrame;
     private RenderInteriorFullFn? renderInteriorFull;
     private GetInteriorActorCanvasFn? getInteriorActorCanvas;
+    private GetActorSpriteFn? getActorSprite;
+    private GetZoneCountFn? getZoneCount;
+    private GetZoneFn? getZone;
+    private ProjectInteriorPointFn? projectInteriorPoint;
+    private RenderSpritePreviewFn? renderSpritePreview;
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
     private GetActorBoundsFn? getActorBounds;
@@ -137,6 +147,11 @@ internal sealed class RendererLibraryApi : IDisposable
         renderInteriorFrame = Get<RenderInteriorFrameFn>("lba2_renderer_render_interior_frame");
         renderInteriorFull = Get<RenderInteriorFullFn>("lba2_renderer_render_interior_full");
         getInteriorActorCanvas = Get<GetInteriorActorCanvasFn>("lba2_renderer_get_interior_actor_canvas");
+        getActorSprite = Get<GetActorSpriteFn>("lba2_renderer_get_actor_sprite");
+        getZoneCount = Get<GetZoneCountFn>("lba2_renderer_get_zone_count");
+        getZone = Get<GetZoneFn>("lba2_renderer_get_zone");
+        projectInteriorPoint = Get<ProjectInteriorPointFn>("lba2_renderer_project_interior_point");
+        renderSpritePreview = Get<RenderSpritePreviewFn>("lba2_renderer_render_sprite_preview");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
         getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
@@ -299,6 +314,24 @@ internal sealed class RendererLibraryApi : IDisposable
         var ok = getInteriorActorCanvas(index, out x, out y, out halfW, out halfH, out var m) == 1;
         marker = m != 0;
         return ok;
+    }
+    // The sprite a SPRITE_3D actor draws instead of a body, or -1.
+    public int GetActorSprite(int index) => getActorSprite?.Invoke(index) ?? -1;
+    public int GetZoneCount() => getZoneCount?.Invoke() ?? 0;
+    public bool GetZone(int index, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1, out int type, out int num)
+    {
+        if (getZone is null) { x0 = y0 = z0 = x1 = y1 = z1 = type = num = 0; return false; }
+        return getZone(index, out x0, out y0, out z0, out x1, out y1, out z1, out type, out num) == 1;
+    }
+    public bool ProjectInteriorPoint(int x, int y, int z, out int cx, out int cy)
+    {
+        if (projectInteriorPoint is null) { cx = cy = 0; return false; }
+        return projectInteriorPoint(x, y, z, out cx, out cy) == 1;
+    }
+    public bool RenderSpritePreview(int sprite, out int x, out int y, out int w, out int h)
+    {
+        if (renderSpritePreview is null) { x = y = w = h = 0; return false; }
+        return renderSpritePreview(sprite, out x, out y, out w, out h) == 1;
     }
     public bool GetActorFlags(int index, out uint flags)
     {

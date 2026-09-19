@@ -86,6 +86,7 @@ struct RendererActor {
     // the attributes dialog never has to re-load the scene to resolve the
     // generic per-actor numbers. -1 until first snapshotted.
     bool Cached = false; // scene has been live at least once (see CacheResolvedBodyAnimForScene)
+    S32 SpriteId = -1;   // SPRITE_3D actors: the sprite drawn instead of a body
     S32 ResolvedBody = -1;
     S32 ResolvedAnim = -1;
     // True once GenBody/GenAnim hold raw archive indices (set by
@@ -114,6 +115,31 @@ static std::vector<S32> g_waypointX;
 static std::vector<S32> g_waypointY;
 static std::vector<S32> g_waypointZ;
 
+// Scene trigger boxes (T_ZONE, COMMON.H / docs/ZONES.md): cube changes, camera
+// shots, scenaric triggers, ... Copied out of the scene buffer at scan / load
+// time. Exterior coordinates are absolute (cube offset added, like actors);
+// interior ones are scene-local.
+struct RendererZone {
+    S32 X0, Y0, Z0, X1, Y1, Z1;
+    S32 Type, Num;
+    S32 SceneIndex;
+};
+static std::vector<RendererZone> g_zones;
+
+static void AppendSceneZones(S32 sceneIndex, S32 baseX, S32 baseZ)
+{
+    for (S32 z = 0; z < NbZones; z++) {
+        const T_ZONE &zn = ListZone[z];
+        RendererZone rz;
+        rz.X0 = baseX + zn.X0; rz.X1 = baseX + zn.X1;
+        rz.Y0 = zn.Y0; rz.Y1 = zn.Y1;
+        rz.Z0 = baseZ + zn.Z0; rz.Z1 = baseZ + zn.Z1;
+        rz.Type = zn.Type; rz.Num = zn.Num;
+        rz.SceneIndex = sceneIndex;
+        g_zones.push_back(rz);
+    }
+}
+
 // Session edits (attribute changes, re-encoded scripts, new actors) that
 // haven't been written back to SCENE.HQR yet, keyed by scene index -- see
 // SceneEdit's own comment block further down for the full design.
@@ -121,6 +147,7 @@ struct PendingAttributeEdit {
     bool HasPosition = false;
     S32 X = 0, Y = 0, Z = 0; // cube-local, matching what the record itself stores
     bool HasAttributes = false;
+    bool KeepBody = false; // body/anim fields below are to be ignored (the actor has no body to set)
     S16 Beta = 0;
     U8 GenBody = 0;
     U16 GenAnim = 0;
@@ -913,6 +940,7 @@ static int LoadSceneLive(S32 scene);
 int RendererScanIslandActors(int islandIndex)
 {
     g_actors.clear();
+    g_zones.clear();
     g_waypointX.clear();
     g_waypointY.clear();
     g_waypointZ.clear();
@@ -950,6 +978,7 @@ int RendererScanIslandActors(int islandIndex)
 
         S32 baseX = cubeX * ACTORS_WORLD_CUBE_SIZE;
         S32 baseZ = cubeY * ACTORS_WORLD_CUBE_SIZE;
+        AppendSceneZones(scene, baseX, baseZ);
         // Object 0 is always the hero (Twinsen); scene actors start at 1.
         for (S32 n = 1; n < NbObjets; n++) {
             T_OBJET *ptrobj = &ListObjet[n];
@@ -1136,7 +1165,7 @@ static void CacheResolvedBodyAnimForScene(S32 sceneIndex)
         if (ga.SceneIndex != sceneIndex || ga.ObjectSlot < 1 || ga.ObjectSlot >= NbObjets) continue;
         const T_OBJET &o = ListObjet[ga.ObjectSlot];
         ga.Cached = true;
-        if (o.Flags & SPRITE_3D) continue;
+        if (o.Flags & SPRITE_3D) { ga.SpriteId = (S32)o.Obj.Body.Num; continue; }
         if (!ga.GenIsRaw && o.Obj.Body.Num >= 0) ga.ResolvedBody = (S32)o.Obj.Body.Num;
         if (!ga.GenIsRaw && o.Obj.Anim.Num >= 0) ga.ResolvedAnim = (S32)o.Obj.Anim.Num;
         if (o.Obj.Body.Num >= 0) {
@@ -1390,6 +1419,8 @@ int RendererLoadInteriorScene(int numscene)
     // Get/Set APIs the exterior path uses (attributes window etc.). Interior
     // coordinates are already scene-local, so cube offsets are 0.
     g_actors.clear();
+    g_zones.clear();
+    AppendSceneZones(numscene, 0, 0);
     g_waypointX.clear();
     g_waypointY.clear();
     g_waypointZ.clear();
@@ -1407,8 +1438,9 @@ int RendererLoadInteriorScene(int numscene)
         actor.HitForce = ptrobj->HitForce;
         actor.Move = ptrobj->Move;
         actor.Flags = ptrobj->Flags;
-        actor.WaypointStart = 0;
-        actor.WaypointCount = 0;
+        actor.WaypointStart = (S32)g_waypointX.size();
+        ExtractTrackWaypoints(ptrobj, 0, 0);
+        actor.WaypointCount = (S32)g_waypointX.size() - actor.WaypointStart;
         DecodeTrackScript(ptrobj, actor.TrackScript);
         DecodeLifeScript(ptrobj, actor.LifeScript);
         actor.SceneIndex = numscene;
@@ -1530,6 +1562,15 @@ int RendererRenderInteriorFrame(void)
 // they overlap. Palette index 0 is treated as background.
 #define INTERIOR_CANVAS_W 3712
 #define INTERIOR_CANVAS_H 2400
+
+// Canvas origin of the tile rendered with the camera at brick (sx, sy, sz):
+// a screen pixel (X, Y) of that tile lands at (X + ox, Y + oy) on the canvas.
+#define INTERIOR_TILE_SY 8
+static inline void InteriorTileOrigin(S32 sx, S32 sy, S32 sz, S32 *ox, S32 *oy)
+{
+    *ox = (sx - sz) * 24 + 1536 - 288 + 300;
+    *oy = (sx + sz) * 12 - sy * 15 + 400;
+}
 static S32 g_interiorActorCanvas[MAX_OBJETS][6];
 static bool g_interiorActorCanvasValid[MAX_OBJETS];
 
@@ -1548,7 +1589,7 @@ int RendererRenderInteriorFull(unsigned char *canvas, int width, int height)
     // stepped wall tops). Hence the lattice extends past the grid on every
     // side, and the camera sits at mid height (sy) so both the top and the
     // bottom layers stay inside the window.
-    const S32 sy = 8;
+    const S32 sy = INTERIOR_TILE_SY;
     const S32 first = -24, last = 88, stride = 8;
     for (S32 sz = first; sz <= last; sz += stride) {
         for (S32 sx = first; sx <= last; sx += stride) {
@@ -1557,8 +1598,8 @@ int RendererRenderInteriorFull(unsigned char *canvas, int width, int height)
             RendererSetInteriorCameraPosition(sx * SIZE_BRICK_XZ, sy * SIZE_BRICK_Y, sz * SIZE_BRICK_XZ);
             RendererRenderInteriorFrame();
 
-            S32 ox = (sx - sz) * 24 + 1536 - 288 + 300;
-            S32 oy = (sx + sz) * 12 - sy * 15 + 400;
+            S32 ox, oy;
+            InteriorTileOrigin(sx, sy, sz, &ox, &oy);
             const U8 *src = (const U8 *)Log;
             for (S32 y = 0; y < (S32)ModeDesiredY; y++) {
                 S32 cy = y + oy;
@@ -1604,6 +1645,73 @@ int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *h
     if (halfW) *halfW = g_interiorActorCanvas[slot][2];
     if (halfH) *halfH = g_interiorActorCanvas[slot][3];
     if (marker) *marker = g_interiorActorCanvas[slot][4];
+    return 1;
+}
+
+// The sprite id a SPRITE_3D actor (a key, coin, chest...) draws instead of a
+// body, or -1 for a real body / no sprite. Only known once its scene has been
+// live at least once (see CacheResolvedBodyAnimForScene).
+int RendererGetActorSprite(int index)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return -1;
+    return (int)g_actors[(size_t)index].SpriteId;
+}
+
+int RendererGetZoneCount()
+{
+    return (int)g_zones.size();
+}
+
+int RendererGetZone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num)
+{
+    if (index < 0 || index >= (int)g_zones.size()) return 0;
+    const RendererZone &z = g_zones[(size_t)index];
+    if (x0) *x0 = z.X0;
+    if (y0) *y0 = z.Y0;
+    if (z0) *z0 = z.Z0;
+    if (x1) *x1 = z.X1;
+    if (y1) *y1 = z.Y1;
+    if (z1) *z1 = z.Z1;
+    if (type) *type = z.Type;
+    if (num) *num = z.Num;
+    return 1;
+}
+
+// Canvas position (see RendererRenderInteriorFull) of a scene-local world
+// point: the iso projection is linear, so projecting through one fixed
+// reference camera and adding that tile's canvas origin is exact for every
+// tile. Requires the interior iso projection to be current, i.e. call it
+// right after RendererLoadInteriorScene / RendererRenderInteriorFull.
+int RendererProjectInteriorPoint(int x, int y, int z, int *cx, int *cy)
+{
+    RendererSetInteriorCameraPosition(0, INTERIOR_TILE_SY * SIZE_BRICK_Y, 0);
+    LongWorldRotatePoint(x, y, z);
+    LongProjectPoint(X0, Y0, Z0);
+    S32 ox, oy;
+    InteriorTileOrigin(0, INTERIOR_TILE_SY, 0, &ox, &oy);
+    if (cx) *cx = Xp + ox;
+    if (cy) *cy = Yp + oy;
+    return 1;
+}
+
+// Draws one sprite, centred on an otherwise empty frame, for the attributes
+// window's preview (a SPRITE_3D actor has a sprite, not a body). Returns the
+// sprite's rectangle in the framebuffer.
+int RendererRenderSpritePreview(int sprite, int *x, int *y, int *w, int *h)
+{
+    if (sprite < 0 || !PtrZvExtra || !PtrZvExtraRaw) return 0;
+    memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
+    UnsetClip();
+    ScaleFactorSprite = DEF_SCALE_FACTOR;
+    ClearScreenMinMax();
+    // AffGraph places the sprite at its own hot spot relative to this point and
+    // leaves the drawn rectangle in ScreenXMin/Max, ScreenYMin/Max.
+    PtrAffGraph((S32)ModeDesiredX / 2, (S32)ModeDesiredY / 2, sprite);
+    if (ScreenXMax < ScreenXMin || ScreenYMax < ScreenYMin) return 0;
+    if (x) *x = ScreenXMin;
+    if (y) *y = ScreenYMin;
+    if (w) *w = ScreenXMax - ScreenXMin + 1;
+    if (h) *h = ScreenYMax - ScreenYMin + 1;
     return 1;
 }
 
@@ -1686,7 +1794,11 @@ int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *
     // RendererScanIslandActors' preload pass) and refreshed on every real
     // scene load, so Cached is true for anything the editor can click.
     if (!a.GenIsRaw && a.Cached) {
+        // No body at all (sound emitters, triggers) or a sprite instead of a body:
+        // report -1 rather than the disk GenBody (0 or 255), which would read as a
+        // real body index.
         if (a.ResolvedBody >= 0) resolvedBody = a.ResolvedBody;
+        else resolvedBody = -1;
         if (a.ResolvedAnim >= 0) resolvedAnim = a.ResolvedAnim;
     } else if (!a.GenIsRaw && NewCube == a.SceneIndex && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
         S32 b = SearchBody((U8)a.GenBody, a.ObjectSlot);
@@ -1818,7 +1930,7 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
             ptrobj->Armure = e.Armure;
             ptrobj->HitForce = e.HitForce;
             ptrobj->Move = e.Move;
-            if (ptrobj->GenBody != e.GenBody || ptrobj->GenAnim != e.GenAnim) {
+            if (!e.KeepBody && (ptrobj->GenBody != e.GenBody || ptrobj->GenAnim != e.GenAnim)) {
                 ptrobj->GenBody = e.GenBody;
                 ptrobj->GenAnim = e.GenAnim;
                 ApplyRawBodyAnim(ptrobj, e.GenBody, e.GenAnim);
@@ -1919,18 +2031,24 @@ int RendererSetActorAttributes(int index, int beta, int body, int anim, int life
     RendererActor &a = g_actors[(size_t)index];
     if (a.ObjectSlot == 0) return 0; // hero excluded, see file header comment
     NativeDebugLog("RendererSetActorAttributes: index=%d slot=%d body=%d anim=%d beta=%d", index, (int)a.ObjectSlot, body, anim, beta);
+    // body < 0 means "no body" (sound emitters, triggers, sprite goodies): there is no
+    // archive index to store, so the body/anim it has stay as they are.
+    const bool keepBody = body < 0;
     a.Beta = (S16)beta;
-    a.GenBody = (U8)body;
-    a.GenAnim = (U16)anim;
+    if (!keepBody) {
+        a.GenBody = (U8)body;
+        a.GenAnim = (U16)anim;
+        a.GenIsRaw = true;
+    }
     a.LifePoint = (S16)lifePoint;
     a.Armure = (U8)armor;
     a.HitForce = (U8)hitForce;
     a.Move = (U8)move;
     a.IsPlaceholderBody = false; // see the field's own comment -- an explicit Apply means the user has reviewed this actor
-    a.GenIsRaw = true;
 
     PendingAttributeEdit &edit = g_pendingEdits[a.SceneIndex].AttributeEdits[a.ObjectSlot];
     edit.HasAttributes = true;
+    edit.KeepBody = keepBody;
     edit.Beta = a.Beta; edit.GenBody = a.GenBody; edit.GenAnim = a.GenAnim;
     edit.LifePoint = a.LifePoint; edit.Armure = a.Armure; edit.HitForce = a.HitForce; edit.Move = a.Move;
     g_pendingEdits[a.SceneIndex].Dirty = true;

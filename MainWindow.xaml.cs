@@ -448,7 +448,7 @@ public partial class MainWindow : Window
         // Loads the scene (and resets the native camera/projection, which a
         // body preview may have changed) before the full stitched render.
         var first = nativeRenderer.RenderInteriorSceneDirect(numscene, palette, out _, out _, out _);
-        var canvas = first is null ? null : nativeRenderer.RenderInteriorFullDirect(palette, out interiorActors);
+        var canvas = first is null ? null : nativeRenderer.RenderInteriorFullDirect(palette, out interiorActors, out interiorOverlay);
         if (canvas is null)
         {
             DocumentSummary.Text = "Couldn't render this interior scene.";
@@ -568,12 +568,110 @@ public partial class MainWindow : Window
         ActorMarkerCanvas.Children.Add(image);
     }
 
+    // ---- zones ---------------------------------------------------------------
+    // Scene trigger boxes drawn as coloured wireframes, in both the outdoor and the
+    // indoor view. View > Zones toggles them (all, or per type).
+    private bool zonesVisible = true;
+    // Cube-change and camera zones are large and numerous (whole cube edges, whole rooms) and bury
+    // the view, so they start hidden; View > Zones turns them on.
+    private readonly bool[] zoneTypeVisible = Enumerable.Range(0, ZoneStyle.TypeCount).Select(t => t > 1).ToArray();
+    private InteriorOverlay interiorOverlay = InteriorOverlay.Empty;
+    private List<ProjectedZone>? lastNativeZones;
+
+    private bool ZoneShown(int type) => zonesVisible && (uint)type < zoneTypeVisible.Length && zoneTypeVisible[type];
+
+    private void ZoneOptions_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string tag } item)
+        {
+            if (tag == "all") zonesVisible = item.IsChecked;
+            else if (int.TryParse(tag, out var type) && (uint)type < zoneTypeVisible.Length) zoneTypeVisible[type] = item.IsChecked;
+        }
+        RefreshActorOverlayForSelection();
+    }
+
+    // Draws `zones` (corners run through `map` into overlay coordinates; the view is
+    // width x height). Not hit-testable: they sit under the actors' click targets.
+    private void AddZoneShapes(IEnumerable<ProjectedZone> zones, Func<Point, Point> map, double width, double height)
+    {
+        foreach (var zone in zones)
+        {
+            if (!ZoneShown(zone.Type)) continue;
+            var pts = zone.Corners.Select(map).ToArray();
+            double minX = pts.Min(p => p.X), maxX = pts.Max(p => p.X), minY = pts.Min(p => p.Y), maxY = pts.Max(p => p.Y);
+            if (maxX < -20 || minX > width + 20 || maxY < -20 || minY > height + 20) continue;
+            if (maxX - minX > width * 6 || maxY - minY > height * 6) continue;   // camera-plane blow-up: not worth drawing
+
+            var color = ZoneStyle.ColorOf(zone.Type);
+            var brush = new SolidColorBrush(color);
+            var path = new System.Windows.Shapes.Path
+            {
+                Data = ZoneStyle.Wireframe(new ProjectedZone(zone.Type, zone.Num, pts), p => p),
+                Stroke = brush,
+                StrokeThickness = 1.3,
+                Opacity = 0.9,
+                IsHitTestVisible = false,
+            };
+            ActorMarkerCanvas.Children.Add(path);
+
+            // A tinted floor so the box reads as a volume (skipped for huge boxes, which would tint the whole view).
+            if (maxX - minX < 500)
+            {
+                var floor = new System.Windows.Shapes.Polygon
+                {
+                    Points = new PointCollection { pts[0], pts[1], pts[3], pts[2] },
+                    Fill = new SolidColorBrush(Color.FromArgb(38, color.R, color.G, color.B)),
+                    IsHitTestVisible = false,
+                };
+                ActorMarkerCanvas.Children.Insert(ActorMarkerCanvas.Children.Count - 1, floor);
+            }
+
+            if (maxX - minX >= 46)
+            {
+                var label = new TextBlock
+                {
+                    Text = $"{ZoneStyle.NameOf(zone.Type)} {zone.Num}",
+                    FontFamily = new FontFamily("Consolas"),
+                    FontSize = 10,
+                    Foreground = brush,
+                    IsHitTestVisible = false,
+                };
+                Canvas.SetLeft(label, (pts[2].X + pts[3].X + pts[6].X + pts[7].X) / 4 - 24);
+                Canvas.SetTop(label, (pts[2].Y + pts[3].Y + pts[6].Y + pts[7].Y) / 4 - 7);
+                ActorMarkerCanvas.Children.Add(label);
+            }
+        }
+    }
+
     private void DrawInteriorActorOverlay()
     {
         ActorMarkerCanvas.Children.Clear();
         if (!interiorSceneActive) return;
         var vw = ViewportHost.ActualWidth;
         var vh = ViewportHost.ActualHeight;
+        Point ToView(Point p) => new((p.X - interiorCenter.X) * interiorZoom + vw / 2, (p.Y - interiorCenter.Y) * interiorZoom + vh / 2);
+
+        AddZoneShapes(interiorOverlay.Zones, ToView, vw, vh);
+
+        // Patrol routes, drawn the same way as outdoors: a dashed line through the
+        // actor's track waypoints with a flag on each.
+        foreach (var (actorIndex, canvasPoints) in interiorOverlay.Routes)
+        {
+            var brush = new SolidColorBrush(ActorRouteColors[actorIndex % ActorRouteColors.Length]);
+            var points = new PointCollection(canvasPoints.Select(ToView));
+            ActorMarkerCanvas.Children.Add(new System.Windows.Shapes.Polyline
+            {
+                Points = points,
+                Stroke = brush,
+                StrokeThickness = 1.5,
+                StrokeDashArray = new DoubleCollection { 3, 3 },
+                Opacity = 0.85,
+                IsHitTestVisible = false,
+            });
+            for (var w = 1; w < points.Count; w++)
+                ActorMarkerCanvas.Children.Add(CreateRouteFlag(points[w].X, points[w].Y, brush));
+        }
+
         foreach (var (index, x, y, halfWidth, halfHeight, isMarker) in interiorActors)
         {
             var sx = (x - interiorCenter.X) * interiorZoom + vw / 2;
@@ -730,6 +828,8 @@ public partial class MainWindow : Window
         if (fbPtr == IntPtr.Zero || fbWidth < 1 || fbHeight < 1) return;
         var scaleX = width / (double)fbWidth;
         var scaleY = height / (double)fbHeight;
+        if (lastNativeZones is not null)
+            AddZoneShapes(lastNativeZones, p => new Point(p.X * scaleX, p.Y * scaleY), width, height);
 
         if (lastNativeActorRoutes is not null)
         {
@@ -1337,6 +1437,7 @@ public partial class MainWindow : Window
             List<(int, double, double, double, double)>? projected = null;
             List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
             HashSet<int>? projectedInvisible = null;
+            List<ProjectedZone>? projectedZones = null;
 
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
                 wideRadiusCubes: wideRadius,
@@ -1414,6 +1515,28 @@ public partial class MainWindow : Window
                         .ToList();
                     projectedRoutes = routes;
                     projectedInvisible = invisibleSet;
+
+                    // Scene trigger boxes of every cube in the drawn radius, projected with the same
+                    // camera as the frame (like the actors above).
+                    var zoneList = new List<ProjectedZone>();
+                    var zoneCount = library.GetZoneCount();
+                    for (var zi = 0; zi < zoneCount; zi++)
+                    {
+                        if (!library.GetZone(zi, out var zx0, out var zy0, out var zz0, out var zx1, out var zy1, out var zz1, out var ztype, out var znum)) continue;
+                        var zcubeX = (int)Math.Floor((zx0 + zx1) / 2 / 32768.0);
+                        var zcubeZ = (int)Math.Floor((zz0 + zz1) / 2 / 32768.0);
+                        if (Math.Abs(zcubeX - currentCubeX) > wideRadius || Math.Abs(zcubeZ - currentCubeY) > wideRadius) continue;
+                        var world = ZoneStyle.Corners(zx0, zy0, zz0, zx1, zy1, zz1);
+                        var corners = new Point[8];
+                        var visible = true;
+                        for (var c = 0; c < 8 && visible; c++)
+                        {
+                            visible = library.ProjectPoint(world[c].X, world[c].Y, world[c].Z, out var cpx, out var cpy);
+                            corners[c] = new Point(cpx, cpy);
+                        }
+                        if (visible) zoneList.Add(new ProjectedZone(ztype, znum, corners));
+                    }
+                    projectedZones = zoneList;
                 });
 
             var stopLoop = false;
@@ -1444,6 +1567,7 @@ public partial class MainWindow : Window
                     }
                     lastNativeActorScreens = projected;
                     lastNativeInvisibleActors = projectedInvisible;
+                    lastNativeZones = projectedZones;
                     lastNativeActorRoutes = projectedRoutes;
                     DrawNativeActorOverlay();
                 });

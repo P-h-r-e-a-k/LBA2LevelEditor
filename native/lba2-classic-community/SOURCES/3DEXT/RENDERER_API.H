@@ -207,6 +207,25 @@ LBA2_RENDERER_API int lba2_renderer_render_interior_full(unsigned char *canvas, 
    Returns 0 if that actor wasn't drawn. */
 LBA2_RENDERER_API int lba2_renderer_get_interior_actor_canvas(int index, int *x, int *y, int *halfW, int *halfH, int *marker);
 
+/* The sprite id a SPRITE_3D actor draws instead of a body, or -1. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_sprite(int index);
+
+/* Scene trigger boxes ("zones": cube change, camera, scenaric, ...) of the
+   island loaded by lba2_renderer_load_island (absolute world coordinates) or
+   of the interior scene last loaded (scene-local). type: 0 cube, 1 camera,
+   2 scenaric, 3 grid, 4 giver, 5 message, 6 ladder, 7 escalator, 8 hit,
+   9 rail. */
+LBA2_RENDERER_API int lba2_renderer_get_zone_count(void);
+LBA2_RENDERER_API int lba2_renderer_get_zone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num);
+
+/* Canvas position (same space as lba2_renderer_render_interior_full's canvas)
+   of a scene-local point of the loaded interior scene. */
+LBA2_RENDERER_API int lba2_renderer_project_interior_point(int x, int y, int z, int *cx, int *cy);
+
+/* Draws one sprite centred in the framebuffer (for a preview panel) and
+   returns its rectangle. */
+LBA2_RENDERER_API int lba2_renderer_render_sprite_preview(int sprite, int *x, int *y, int *w, int *h);
+
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
    water-lava-reaction toggles) -- lba2_renderer_get_actor_attributes only
    covers the handful of scalar fields the original inspector panel showed.
