@@ -1017,52 +1017,33 @@ extern U8 NumObjFollow;
 extern void SetPosCamera(S32 x, S32 y, S32 z);
 extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
 
-// AffichageActorsZBuf's own per-object draw sequence (EXTFUNC.CPP), plus one
-// addition explained below -- reusing it as-is (simplest option) silently
-// corrupted actor bodies after the first render of a given interior scene,
-// confirmed live: panning (RenderInteriorSceneAtDirect re-rendering the same
-// already-loaded scene from a new camera position) turned a previously
-// clean-looking actor into scattered garbage-colored speckling on the very
-// next frame -- and reproduces identically even panning back to the exact
-// same camera position, so it's not a camera-position issue.
+// AffichageActorsZBuf's own per-object draw sequence (EXTFUNC.CPP), adapted
+// for the interior renderer. Two differences from the exterior version:
 //
-// ObjectSetInterDep/ObjectSetInterFrame (added below, matching what
-// AffichageBodyPreview's own scratch object already does and its own
-// comment explains: real actors get ObjectSetInterDep() every tick from the
-// main per-object update loop, OBJECT.CPP, which this headless renderer
-// never runs) were the first suspect, since they're the one thing this
-// draws that a plain single render of AffichageActorsZBuf doesn't
-// exercise repeatedly elsewhere in this project -- ruled out by direct
-// test: removing both and keeping only ObjectDisplay() still corrupted the
-// second render identically. The corruption is coming from ObjectDisplay()
-// itself being called more than once for this actor in this scene, for a
-// reason not yet root-caused (a plausible next place to look, not yet
-// checked: whether ObjectDisplay's own polygon work buffer -- shared with
-// every other ObjectDisplay call in the process, including terrain/exterior
-// actors -- assumes something about being freshly reset between calls that
-// AffGrilleExt's own per-frame Switch_Fillers/ClsTerrainZBuf sequence
-// happens to provide and this interior path doesn't).
+// 1. Filler: plain FILL_POLY_TEXTURES, not FILL_POLY_FOG_ZBUFFER, and no fog
+//    CLUT. Retail only switches to the fog/Z-buffer fillers outdoors
+//    (OBJECT.CPP, all guarded by CubeMode == CUBE_EXTERIEUR). Indoors,
+//    BufCube and BufferBrick are carved out of the *same* PtrZBuffer
+//    allocation (MEM.CPP: BufCube = ListMem[MEM_PTR_ZBUFFER]; BufferBrick =
+//    BufCube + cube size), so a Z-buffered fill writes depth values straight
+//    over the loaded brick grid and sprite art. That was the memory
+//    corruption seen when this first drew actors: the first frame looked
+//    fine (bricks were already drawn), and every later AffGrille() read
+//    overwritten brick data and painted speckled noise. Ruled out on the way
+//    (each tested, none the cause): animation interpolation, fill-mode
+//    reassertion, drawing actors only once, the framebuffer clear.
+// 2. ObjectSetInterDep before ObjectSetInterFrame, saving/restoring X/Y/Z
+//    around it (see AffichageBodyPreview's comment: real actors get it from
+//    the main per-object update loop, which this renderer never runs; it
+//    also applies root motion, which would otherwise creep actors on every
+//    re-render).
 //
-// Also tested and ruled out as a mitigation: drawing actors only on a
-// scene's first render and skipping them on later ones. The first render
-// looks clean, but the *next* AffGrille() call (any later render, even
-// with actors skipped) is already corrupted -- so the damage is done by
-// ObjectDisplay() during the very first call and only becomes visible when
-// AffGrille() re-reads the affected memory. Confirmed by isolation:
-// rendering with this function fully disabled pans cleanly, with no
-// corruption, at any camera position.
-//
-// CURRENTLY UNUSED (see RendererRenderInteriorFrame): interior actors are
-// not drawn until this is root-caused. Kept, rather than deleted, so the
-// work isn't lost. It also does not occlude actors behind walls (the
-// per-pixel test is Z-buffer based, and AffGrille never populates one --
-// interior bricks use their own screen-column ordering, ListBrickColon) --
-// retail's own DrawRecover (INTEXT.CPP) shows a materially different
-// interior path (DrawOverBrick) would be needed for that.
-__attribute__((unused))
+// Not done: actors are never occluded by walls in front of them. AffGrille
+// never populates a Z-buffer (interior bricks use their own screen-column
+// ordering, ListBrickColon), and retail's DrawRecover (INTEXT.CPP) shows the
+// real interior path is DrawOverBrick, a materially different mechanism.
 static void RendererDrawInteriorActors(void)
 {
-
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 
@@ -1080,11 +1061,15 @@ static void RendererDrawInteriorActors(void)
         LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
         if (!LongProjectPoint(X0, Y0, Z0)) continue;
 
-        S32 zr = CameraZr - Z0;
-        if (zr > ClipZFar) continue;
-
-        SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
-        Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
+        // Plain textured filler, not FILL_POLY_FOG_ZBUFFER: retail only ever
+        // switches to the fog/Z-buffer fillers outdoors (OBJECT.CPP, all
+        // guarded by CubeMode == CUBE_EXTERIEUR). Indoors, BufCube and
+        // BufferBrick are carved out of the *same* PtrZBuffer allocation
+        // (MEM.CPP: BufCube = ListMem[MEM_PTR_ZBUFFER]; BufferBrick =
+        // BufCube + cube size), so a Z-buffered fill writes depth values
+        // straight over the loaded brick grid and sprite data -- the
+        // corruption AffGrille() then reads on the next render.
+        Switch_Fillers(FILL_POLY_TEXTURES);
 
         if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
             ObjectSetInterFrame(&ptrobj->Obj);
@@ -1215,17 +1200,16 @@ int RendererGetInteriorCameraPosition(int *x, int *y, int *z)
 // exterior frame never needed any explicit clear (sky+terrain always
 // covers every pixel); interior bricks can leave gaps.
 //
-// Actors are deliberately NOT drawn here: RendererDrawInteriorActors above
-// works for a single frame, but calling ObjectDisplay() for interior actors
-// corrupts memory that AffGrille() reads on the *next* call -- see that
-// function's own comment for what was ruled out. Re-enable by calling it
-// here once that's root-caused.
+// Actors are drawn on top of the bricks by RendererDrawInteriorActors
+// (above). They are not occluded by walls in front of them -- see that
+// function's own comment.
 extern void *Log;
 extern U32 ModeDesiredX, ModeDesiredY;
 int RendererRenderInteriorFrame(void)
 {
     memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
     AffGrille();
+    RendererDrawInteriorActors();
     return 1;
 }
 
