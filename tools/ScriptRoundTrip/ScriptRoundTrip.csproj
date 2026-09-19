@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Console harness for the LBA script translator (LbaScript/). Compiles the
+    library sources directly (they have no WPF dependency) and runs them over
+    the real SCENE.HQR, so every claim about the bytecode format is checked
+    against the actual game data rather than assumed.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ScriptRoundTrip</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\LbaScript\**\*.cs" Link="LbaScript\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\HqrArchive.cs" Link="HqrArchive.cs" />
+    <Compile Include="..\..\HqrWriter.cs" Link="HqrWriter.cs" />
+    <Compile Include="..\..\ScriptSession.cs" Link="ScriptSession.cs" />
+    <Compile Include="..\..\DebugLog.cs" Link="DebugLog.cs" />
+    <Compile Include="..\..\RendererLibraryApi.cs" Link="RendererLibraryApi.cs" />
+  </ItemGroup>
+
+</Project>

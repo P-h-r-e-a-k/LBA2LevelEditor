@@ -9,8 +9,21 @@ namespace LBA2LevelEditor;
 // lives.
 internal sealed class EditorSettings
 {
-    private static readonly string SettingsDirectory = Path.Combine(
+    private static readonly string DefaultSettingsDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LBA2LevelEditor");
+
+#if DEBUG
+    // Debug builds only: LBA2_EDITOR_SETTINGS_DIR, when set, replaces the %AppData% folder --
+    // for running a second instance (or an automated test) against a copy of the game files
+    // without touching the real settings. Compiled out of Release builds entirely, so a
+    // shipped editor cannot be redirected this way.
+    private static readonly string SettingsDirectory =
+        Environment.GetEnvironmentVariable("LBA2_EDITOR_SETTINGS_DIR") is { Length: > 0 } overrideDirectory
+            ? overrideDirectory
+            : DefaultSettingsDirectory;
+#else
+    private static readonly string SettingsDirectory = DefaultSettingsDirectory;
+#endif
     private static readonly string SettingsPath = Path.Combine(SettingsDirectory, "settings.json");
 
     public string GameDirectory { get; set; } = @"E:\GOG Games\Little Big Adventure 2 - Level viewer";

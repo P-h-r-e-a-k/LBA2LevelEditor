@@ -31,6 +31,14 @@
     <Using Remove="System.Windows.Forms" />
   </ItemGroup>
 
+  <!-- tools/ holds separate console harnesses (each its own project); keep their sources and obj output out of the app. -->
+  <ItemGroup>
+    <Compile Remove="tools\**" />
+    <EmbeddedResource Remove="tools\**" />
+    <None Remove="tools\**" />
+    <Page Remove="tools\**" />
+  </ItemGroup>
+
   <!--
     liblba2_renderer.dll (built from native/lba2-classic-community with the
     LBA2_LINK_STATIC CMake option ON, in the separate

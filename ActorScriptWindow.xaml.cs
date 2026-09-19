@@ -1,107 +1,302 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
+using LBA2LevelEditor.LbaScript;
 
 namespace LBA2LevelEditor;
 
-// Non-modal window for reading/editing one actor's decoded life+track
-// script. Replaces the old cramped, fixed-height, read-only TextBox that
-// used to live in the main window's right sidebar (squeezed in next to the
-// terrain-palette tools) with room to actually work, plus opcode/snippet
-// autocomplete. MainWindow opens one of these per actor (keyed by actor
-// index) rather than reusing a single instance, so several actors' scripts
-// can be open side by side, each as its own taskbar entry; closing one only
-// removes that actor's entry.
+// Non-modal window for reading/editing one actor's life + track script.
+//
+// Three views of the same actor:
+//   * Life (C) / Track (C): the script as C-style source (see LbaScript/), which
+//     is editable and checked by the real compiler as you type. Edits live in a
+//     ScriptSession (shared across windows) until "Save to SCENE.HQR" compiles
+//     the affected scenes and writes them back.
+//   * Disassembly: the native renderer's older read-only text dump, kept for
+//     comparison and as the only view for actors with no scene record (e.g. ones
+//     added in this session).
+//
+// MainWindow opens one of these per actor (keyed by actor index) rather than
+// reusing a single instance, so several actors' scripts can be open side by
+// side, each as its own taskbar entry.
 public partial class ActorScriptWindow : Window
 {
     private sealed record SuggestionItem(string Signature, string Description, string InsertText);
 
     // Row shape for the right-side reference list -- Kind is a plain string
-    // rather than the raw OpcodeKind enum so the DataTemplate can bind it
-    // directly without a converter.
+    // rather than the raw category so the DataTemplate can bind it directly
+    // without a converter.
     private sealed record KeywordItem(string Name, string Kind, string Description, string InsertText);
 
+    private enum ScriptView { Life, Track, Disassembly }
+
+    private static readonly SolidColorBrush OkBrush = Frozen(0x8F, 0xC9, 0x8F);
+    private static readonly SolidColorBrush ErrorBrush = Frozen(0xE0, 0x7A, 0x6A);
+    private static readonly SolidColorBrush NeutralBrush = Frozen(0x89, 0x95, 0x8B);
+
+    private static SolidColorBrush Frozen(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
     private readonly RendererLibraryApi? library;
+    private readonly ScriptSession? session;
+    private readonly Func<int, ActorSource?>? resolveActor;
+    private readonly DispatcherTimer checkTimer;
+    private readonly Dictionary<ScriptKind, IReadOnlyList<KeywordItem>> keywordCache = new();
+
     private List<SuggestionItem> suggestionPool = new();
+    private IReadOnlyList<KeywordItem> currentKeywords = Array.Empty<KeywordItem>();
     private int currentWordStart;
     private bool suppressTextChanged;
+    private bool switchingView;
     private int actorIndex;
 
-    // Every valid script keyword this editor knows about (life actions,
-    // life conditions, comparisons, track actions) -- built once, not per
-    // actor shown, since it's sourced from the engine's own fixed LM_*/LF_*/
-    // LT_*/TM_* opcode tables (Lba2ScriptOpcodes' own header comment has the
-    // COMMON.H line references), not from scanning any particular actor's
-    // script. Deduplicated by name: a handful of names (BODY, ANIM, BETA,
-    // PLAY_ACF...) are reused across life actions, life conditions, and
-    // track actions with different meanings in each, and this reference
-    // list is a name lookup, not a per-context disambiguator -- the
-    // in-editor autocomplete popup (SuggestionList, keyed off actual typing
-    // position) already handles that distinction where it matters.
-    private static readonly IReadOnlyList<KeywordItem> allKeywords = Lba2ScriptOpcodes.All
-        .GroupBy(o => o.Name, StringComparer.Ordinal)
-        .Select(g => g.First())
-        .Select(o => new KeywordItem(o.Name, o.Kind switch
-        {
-            Lba2ScriptOpcodes.OpcodeKind.LifeAction => "life action",
-            Lba2ScriptOpcodes.OpcodeKind.LifeCondition => "life condition",
-            Lba2ScriptOpcodes.OpcodeKind.Comparison => "comparison",
-            Lba2ScriptOpcodes.OpcodeKind.TrackAction => "track action",
-            _ => "",
-        }, o.Description, o.InsertText))
-        .OrderBy(k => k.Name, StringComparer.Ordinal)
-        .ToList();
+    private string nativeScript = "(no script)";
+    private SceneScripts? sceneScripts;
+    private ActorSource source;
+    private ScriptView view = ScriptView.Life;
+    private int lastErrorLine;
 
-    internal ActorScriptWindow(RendererLibraryApi? library)
+    internal ActorScriptWindow(RendererLibraryApi? library, ScriptSession? session = null, Func<int, ActorSource?>? resolveActor = null)
     {
         InitializeComponent();
         this.library = library;
-        KeywordList.ItemsSource = allKeywords;
+        this.session = session;
+        this.resolveActor = resolveActor;
+
+        checkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+        checkTimer.Tick += (_, _) => { checkTimer.Stop(); RunCheck(); };
     }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        // Edits belong to the session, not the window: keep them.
+        CommitEditor();
+        checkTimer.Stop();
+        base.OnClosing(e);
+    }
+
+    private ScriptKind CurrentKind => view == ScriptView.Track ? ScriptKind.Track : ScriptKind.Life;
+    private bool IsCView => view != ScriptView.Disassembly && sceneScripts is not null;
+
+    // WPF's TextBox reports newlines as \r\n; the compiler and the stored
+    // decompilation use \n. Normalise so that merely viewing a script never
+    // looks like an edit.
+    private string EditorText => ScriptTextBox.Text.Replace("\r\n", "\n");
 
     // Called both to first open the window for an actor and to re-point an
     // already-open window at a newly re-selected actor.
     public void ShowActor(int actorIndex)
     {
+        CommitEditor();
         this.actorIndex = actorIndex;
         Title = $"Actor {actorIndex} Script";
         TitleLabel.Text = $"Actor {actorIndex}";
         StatsLabel.Text = "(actor data unavailable)";
-        var script = "(no script)";
+        nativeScript = "(no script)";
 
         if (library is not null && library.GetActor(actorIndex, out var x, out var y, out var z, out var waypointCount))
         {
             library.GetActorAttributes(actorIndex, out var beta, out var body, out var anim, out var lifePoint, out var armor, out var hitForce, out var move);
             StatsLabel.Text = $"pos ({x}, {y}, {z})   beta={beta} body={body} anim={anim}   " +
                                $"life={lifePoint} armor={armor} hit={hitForce} move={move}   waypoints={waypointCount}";
-            script = library.GetActorScript(actorIndex);
+            nativeScript = library.GetActorScript(actorIndex);
         }
 
-        // Rebuilt on every actor shown, not cached: it's cheap (pure string
-        // scanning over scripts the native side already decoded once at
-        // island load -- see ScriptSuggestionIndex's own comment) and keeps
-        // snippet suggestions current if the user has since switched islands.
-        var snippets = ScriptSuggestionIndex.Build(library);
-        suggestionPool = Lba2ScriptOpcodes.All
-            .Select(o => new SuggestionItem(o.Signature, o.Description, o.InsertText))
-            .Concat(snippets.CommonLines.Select(l => new SuggestionItem(l.Text, $"Common pattern (seen {l.Occurrences}x across this island's actors)", l.Text)))
-            .ToList();
+        sceneScripts = null;
+        if (resolveActor?.Invoke(actorIndex) is { } src && session?.GetScene(src.Scene) is { } scene && src.Slot < scene.ActorCount)
+        {
+            sceneScripts = scene;
+            source = src;
+            TitleLabel.Text = $"Actor {actorIndex}   ·   scene {src.Scene}, object {src.Slot}";
+        }
 
-        suppressTextChanged = true;
-        ScriptTextBox.Text = script;
-        ScriptTextBox.CaretIndex = 0;
-        suppressTextChanged = false;
-        SuggestionPopup.IsOpen = false;
+        var hasScene = sceneScripts is not null;
+        ViewLifeButton.IsEnabled = hasScene;
+        ViewTrackButton.IsEnabled = hasScene;
+        RevertButton.IsEnabled = hasScene;
+        SaveButton.IsEnabled = hasScene;
+
+        SelectView(!hasScene ? ScriptView.Disassembly : view == ScriptView.Disassembly ? ScriptView.Life : view);
 
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
     }
 
+    // ---- views ------------------------------------------------------------
+
+    private void SelectView(ScriptView v)
+    {
+        view = v;
+        switchingView = true;
+        (v switch { ScriptView.Life => ViewLifeButton, ScriptView.Track => ViewTrackButton, _ => ViewDisasmButton }).IsChecked = true;
+        switchingView = false;
+        LoadView();
+    }
+
+    private void View_Checked(object sender, RoutedEventArgs e)
+    {
+        if (switchingView) return;
+        var next = ((RadioButton)sender).Tag switch { "life" => ScriptView.Life, "track" => ScriptView.Track, _ => ScriptView.Disassembly };
+        if (next == view) return;
+        CommitEditor();             // still holds the previous view's text
+        view = next;
+        LoadView();
+    }
+
+    private void LoadView()
+    {
+        checkTimer.Stop();
+        string text;
+        if (IsCView)
+        {
+            text = sceneScripts!.GetText(source.Slot, CurrentKind);
+            ScriptTextBox.IsReadOnly = false;
+            HintLabel.Text = "C source — comments are kept in SCENE.HQR.comments.json; edits stay in memory until you Save";
+        }
+        else
+        {
+            text = nativeScript;
+            ScriptTextBox.IsReadOnly = true;
+            HintLabel.Text = sceneScripts is null
+                ? "no scene record for this actor (added this session?) — read-only native disassembly"
+                : "read-only native disassembly (partial decoder; use the C views to edit)";
+        }
+
+        suppressTextChanged = true;
+        ScriptTextBox.Text = text;
+        ScriptTextBox.CaretIndex = 0;
+        ScriptTextBox.ScrollToHome();
+        suppressTextChanged = false;
+        SuggestionPopup.IsOpen = false;
+
+        RefreshKeywordList();
+        RefreshSuggestionPool();
+        RunCheck();
+    }
+
+    // Stores the editor's text into the session for the actor/script being shown.
+    private void CommitEditor()
+    {
+        if (!IsCView || ScriptTextBox.IsReadOnly) return;
+        sceneScripts!.SetText(source.Slot, CurrentKind, EditorText);
+    }
+
+    // ---- compile check --------------------------------------------------------
+
+    private void RunCheck()
+    {
+        lastErrorLine = 0;
+        if (!IsCView)
+        {
+            StatusText.Text = session is { HasUnsavedEdits: true } ? UnsavedNote() : "";
+            StatusText.Foreground = NeutralBrush;
+            return;
+        }
+
+        var text = EditorText;
+        var (size, error) = sceneScripts!.CheckText(source.Slot, CurrentKind, text);
+        var edited = text != sceneScripts.OriginalText(source.Slot, CurrentKind);
+        if (error is not null)
+        {
+            lastErrorLine = error.Line;
+            StatusText.Text = $"✗ line {error.Line}, col {error.Column}: {error.Message}   (click to jump)";
+            StatusText.Foreground = ErrorBrush;
+        }
+        else
+        {
+            var stored = sceneScripts.OriginalSize(source.Slot, CurrentKind);
+            // Stored comments whose statement is gone are listed at the end of the script under a marker line.
+            var detached = text.Contains("lost their statement") ? sceneScripts.DetachedComments(source.Slot, CurrentKind) : 0;
+            StatusText.Text = $"✓ compiles · {size} bytes" + (size != stored ? $" (stored: {stored})" : "") + (edited ? " · edited" : "") +
+                              (detached > 0 ? $" · {detached} comment(s) lost their statement — see end of script" : "") + UnsavedNote();
+            StatusText.Foreground = OkBrush;
+        }
+
+        RefreshSuggestionPool();
+    }
+
+    private string UnsavedNote()
+    {
+        if (session is null) return "";
+        var scenes = session.EditedScenes.ToList();
+        // The scene on screen only counts as edited in the session once its text is
+        // committed, so add it here if the editor already differs from what is stored.
+        if (IsCView && !scenes.Contains(source.Scene) && EditorText != sceneScripts!.OriginalText(source.Slot, CurrentKind))
+            scenes.Add(source.Scene);
+        return scenes.Count == 0 ? "" : $" · unsaved edits in scene {string.Join(", ", scenes.Order())}";
+    }
+
+    private void StatusText_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (lastErrorLine <= 0 || lastErrorLine > ScriptTextBox.LineCount) return;
+        var line = lastErrorLine - 1;
+        ScriptTextBox.Focus();
+        ScriptTextBox.ScrollToLine(line);
+        ScriptTextBox.Select(ScriptTextBox.GetCharacterIndexFromLineIndex(line), Math.Max(0, ScriptTextBox.GetLineLength(line) - 1));
+    }
+
+    // ---- save / revert --------------------------------------------------------
+
+    private void Revert_Click(object sender, RoutedEventArgs e)
+    {
+        if (!IsCView) return;
+        sceneScripts!.RevertText(source.Slot, CurrentKind);
+        LoadView();
+    }
+
+    private void Save_Click(object sender, RoutedEventArgs e)
+    {
+        if (session is null) return;
+        CommitEditor();
+        var scenes = session.EditedScenes;
+        if (scenes.Count == 0)
+        {
+            MessageBox.Show(this, "There are no edited scripts to save.", "Save scripts", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var confirm = MessageBox.Show(this,
+            $"Compile the edited scripts and write scene {string.Join(", ", scenes)} into:\n\n{session.HqrPath}\n\n" +
+            "The first save keeps your original as SCENE.HQR.bak. Comments are stored separately in SCENE.HQR.comments.json " +
+            "(a save that only changes comments leaves SCENE.HQR alone). Reload the island afterwards to see script changes in the viewer.\n\nContinue?",
+            "Save scripts to SCENE.HQR", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.OK) return;
+
+        var result = session.SaveAll();
+        if (!result.Ok)
+        {
+            var detail = result.Errors.Count > 1 ? "\n\n" + string.Join("\n", result.Errors.Take(8)) : "";
+            MessageBox.Show(this, result.Message + detail, "Scripts not saved", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        StatusText.Text = "✓ " + result.Message;
+        StatusText.Foreground = OkBrush;
+        // The session dropped the saved scenes so they reload from disk: point this window at the fresh copy.
+        var keep = StatusText.Text;
+        ShowActor(actorIndex);
+        StatusText.Text = keep;
+        StatusText.Foreground = OkBrush;
+    }
+
+    // ---- editor events ----------------------------------------------------------
+
     private void ScriptTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (suppressTextChanged) return;
-        UpdateSuggestions(forceShowAll: false);
+        if (IsCView)
+        {
+            checkTimer.Stop();
+            checkTimer.Start();
+            UpdateSuggestions(forceShowAll: false);
+        }
     }
 
     private void ScriptTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -118,9 +313,14 @@ public partial class ActorScriptWindow : Window
             }
         }
 
-        if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.Control)
+        if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.Control && IsCView)
         {
             UpdateSuggestions(forceShowAll: true);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control && IsCView)
+        {
+            Save_Click(sender, e);
             e.Handled = true;
         }
     }
@@ -137,16 +337,30 @@ public partial class ActorScriptWindow : Window
         if (SuggestionList.SelectedItem is not null) AcceptSelection();
     }
 
+    // ---- autocomplete -------------------------------------------------------------
+
+    private void RefreshSuggestionPool()
+    {
+        if (!IsCView) { suggestionPool = new(); return; }
+
+        var life = view == ScriptView.Life ? EditorText : sceneScripts!.GetText(source.Slot, ScriptKind.Life);
+        var trk = view == ScriptView.Track ? EditorText : sceneScripts!.GetText(source.Slot, ScriptKind.Track);
+        suggestionPool = ScriptCompletions.For(CurrentKind)
+            .Concat(ScriptCompletions.Symbols(life, trk))
+            .Select(c => new SuggestionItem(c.Signature, c.Description, c.InsertText))
+            .ToList();
+    }
+
     // The word currently being typed, scanned back from the caret to the
     // nearest whitespace/opening-bracket -- stops at '(' and '[' too so
-    // e.g. "DISTANCE(obj=" still offers matches for what follows the bracket
+    // e.g. "DISTANCE(" still offers matches for what follows the bracket
     // rather than treating the whole bracketed expression as one word.
     private (int Start, string Word) GetCurrentWord()
     {
         var caret = ScriptTextBox.CaretIndex;
         var text = ScriptTextBox.Text;
         var start = caret;
-        while (start > 0 && !char.IsWhiteSpace(text[start - 1]) && text[start - 1] != '(' && text[start - 1] != '[')
+        while (start > 0 && !char.IsWhiteSpace(text[start - 1]) && text[start - 1] != '(' && text[start - 1] != '[' && text[start - 1] != ',')
             start--;
         return (start, text[start..caret]);
     }
@@ -189,29 +403,50 @@ public partial class ActorScriptWindow : Window
         SuggestionList.ScrollIntoView(SuggestionList.SelectedItem);
     }
 
+    // Replaces the word being typed with the chosen suggestion. Goes through
+    // SelectedText rather than assigning Text so the editor's undo history survives.
     private void AcceptSelection()
     {
         if (SuggestionList.SelectedItem is not SuggestionItem item) { SuggestionPopup.IsOpen = false; return; }
         var caret = ScriptTextBox.CaretIndex;
-        var text = ScriptTextBox.Text;
         if (currentWordStart > caret || currentWordStart < 0) { SuggestionPopup.IsOpen = false; return; }
 
         suppressTextChanged = true;
-        ScriptTextBox.Text = text[..currentWordStart] + item.InsertText + text[caret..];
+        ScriptTextBox.Select(currentWordStart, caret - currentWordStart);
+        ScriptTextBox.SelectedText = item.InsertText;
         ScriptTextBox.CaretIndex = currentWordStart + item.InsertText.Length;
         suppressTextChanged = false;
 
         SuggestionPopup.IsOpen = false;
         ScriptTextBox.Focus();
+        checkTimer.Stop();
+        checkTimer.Start();
     }
 
-    private void KeywordFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    // ---- keyword reference list -------------------------------------------------------
+
+    private void RefreshKeywordList()
+    {
+        var kind = CurrentKind;
+        if (!keywordCache.TryGetValue(kind, out var list))
+        {
+            list = ScriptCompletions.For(kind)
+                .Select(c => new KeywordItem(c.Name, c.Category, c.Description, c.InsertText))
+                .OrderBy(k => k.Name, StringComparer.Ordinal)
+                .ToList();
+            keywordCache[kind] = list;
+        }
+        currentKeywords = list;
+        KeywordFilterBox_TextChanged(KeywordFilterBox, null!);
+    }
+
+    private void KeywordFilterBox_TextChanged(object sender, TextChangedEventArgs? e)
     {
         var text = KeywordFilterBox.Text;
         KeywordFilterPlaceholder.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         KeywordList.ItemsSource = text.Length == 0
-            ? allKeywords
-            : allKeywords.Where(k => k.Name.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
+            ? currentKeywords
+            : currentKeywords.Where(k => k.Name.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     // Enter from the filter box jumps straight to inserting the top (first
@@ -238,18 +473,14 @@ public partial class ActorScriptWindow : Window
         e.Handled = true;
     }
 
-    // Inserts at the caret's current position in ScriptTextBox (not
-    // replacing a selection or requiring the editor to already have focus),
-    // matching AcceptSelection's own insert behaviour, then hands focus back
-    // to the editor so typing continues right where the keyword landed.
+    // Inserts at the caret's current position in ScriptTextBox (replacing any
+    // selection), then hands focus back to the editor so typing continues right
+    // where the keyword landed. Does nothing in the read-only disassembly view.
     private void InsertKeyword(KeywordItem item)
     {
-        var caret = ScriptTextBox.CaretIndex;
-        var text = ScriptTextBox.Text;
-        suppressTextChanged = true;
-        ScriptTextBox.Text = text[..caret] + item.InsertText + text[caret..];
-        ScriptTextBox.CaretIndex = caret + item.InsertText.Length;
-        suppressTextChanged = false;
+        if (ScriptTextBox.IsReadOnly) return;
+        ScriptTextBox.SelectedText = item.InsertText;
+        ScriptTextBox.CaretIndex = ScriptTextBox.SelectionStart + ScriptTextBox.SelectionLength;
         ScriptTextBox.Focus();
     }
 }

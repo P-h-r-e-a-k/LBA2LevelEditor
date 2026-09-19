@@ -17,6 +17,62 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="7"/>
         </Style>
+        <!-- Flat segmented-control look for the Life / Track / Disassembly switch. -->
+        <Style x:Key="ViewTab" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#AEB7AB"/>
+            <Setter Property="Background" Value="#151B18"/>
+            <Setter Property="BorderBrush" Value="#3A4740"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,-1,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" Padding="12,4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#2A3A30"/>
+                                <Setter Property="Foreground" Value="#E8E6DA"/>
+                                <Setter Property="Panel.ZIndex" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#4E5A52"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#6A7B70"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#DCE0C8"/>
+            <Setter Property="Background" Value="#1B2620"/>
+            <Setter Property="BorderBrush" Value="#3A4740"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" Padding="12,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#8AA08F"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#4E5A52"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid Margin="22">
         <Grid.ColumnDefinitions>
@@ -32,6 +88,8 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="6"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3">
@@ -45,10 +103,18 @@
 
         <DockPanel Grid.Row="4" Grid.Column="0">
             <TextBlock Text="SCRIPT" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-            <TextBlock Text="editing here does not save back to the game files yet"
-                       Foreground="#89958B" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
+            <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                <RadioButton x:Name="ViewLifeButton" Content="Life (C)" GroupName="ScriptView" Tag="life"
+                             Style="{StaticResource ViewTab}" Checked="View_Checked"/>
+                <RadioButton x:Name="ViewTrackButton" Content="Track (C)" GroupName="ScriptView" Tag="track"
+                             Style="{StaticResource ViewTab}" Checked="View_Checked"/>
+                <RadioButton x:Name="ViewDisasmButton" Content="Disassembly" GroupName="ScriptView" Tag="disasm"
+                             Style="{StaticResource ViewTab}" Checked="View_Checked"/>
+            </StackPanel>
             <TextBlock DockPanel.Dock="Right" Text="Ctrl+Space for suggestions"
                        Foreground="#5C6B60" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock x:Name="HintLabel" Text="" TextTrimming="CharacterEllipsis"
+                       Foreground="#89958B" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
         </DockPanel>
 
         <TextBlock Grid.Row="4" Grid.Column="2" Text="KEYWORDS" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
@@ -80,6 +146,21 @@
                     </ListBox>
                 </Border>
             </Popup>
+        </Grid>
+
+        <!-- Compile status of the text in the editor, plus the actions that act on the scene's scripts. -->
+        <Grid Grid.Row="8" Grid.Column="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="Consolas" FontSize="11" Foreground="#89958B"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Cursor="Hand"
+                       MouseLeftButtonDown="StatusText_MouseLeftButtonDown"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="RevertButton" Content="Revert script" Style="{StaticResource ToolButton}" Click="Revert_Click"/>
+                <Button x:Name="SaveButton" Content="Save to SCENE.HQR…" Style="{StaticResource ToolButton}" Click="Save_Click"/>
+            </StackPanel>
         </Grid>
 
         <!-- Full reference list of every valid script keyword (life actions,

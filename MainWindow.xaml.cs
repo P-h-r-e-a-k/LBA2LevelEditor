@@ -79,8 +79,13 @@ public partial class MainWindow : Window
     private List<SceneEntry> allSceneEntries = new();
     private const string OtherIslandLabel = "Other";
 
+    // Scripts edited in the actor script windows live here (as C text, per
+    // scene) until saved back to SCENE.HQR; shared by every script window.
+    private readonly ScriptSession scriptSession;
+
     public MainWindow()
     {
+        scriptSession = new ScriptSession(() => gameRoot);
         nativeRenderer = new CommunityRendererBackend(gameRoot);
         InitializeComponent();
         Focusable = true;
@@ -825,6 +830,18 @@ public partial class MainWindow : Window
     private readonly Dictionary<int, ActorScriptWindow> openScriptWindows = new();
     private readonly Dictionary<int, ActorAttributesWindow> openAttributesWindows = new();
 
+    // Which SCENE.HQR scene / object slot a viewer actor index came from, so the
+    // script window can show and edit its real scripts. Interior scenes list
+    // their objects 1..N-1 in order; an island lists every exterior scene's
+    // objects in scene order (the same walk RendererScanIslandActors does), and
+    // actors added in the editor sit after those and have no record (null).
+    private ActorSource? ResolveActorSource(int actorIndex)
+    {
+        if (interiorSceneActive) return interiorSceneNumber >= 0 ? new ActorSource(interiorSceneNumber, actorIndex + 1) : null;
+        var island = Array.IndexOf(IslandNameByRawSceneId, Path.GetFileNameWithoutExtension(activeFile));
+        return scriptSession.ExteriorActor(island, actorIndex);
+    }
+
     private void OpenActorScriptWindow(int index)
     {
         if (openScriptWindows.TryGetValue(index, out var existing))
@@ -833,7 +850,7 @@ public partial class MainWindow : Window
             existing.Activate();
             return;
         }
-        var window = new ActorScriptWindow(nativeRenderer.RendererLibrary) { Owner = this };
+        var window = new ActorScriptWindow(nativeRenderer.RendererLibrary, scriptSession, ResolveActorSource) { Owner = this };
         window.Closed += (_, _) => openScriptWindows.Remove(index);
         openScriptWindows[index] = window;
         window.ShowActor(index);
@@ -1309,6 +1326,7 @@ public partial class MainWindow : Window
                     if (library is null) return;
                     var count = library.GetActorCount();
                     var list = new List<(int, double, double, double, double)>(count);
+                    var hasBodyFlags = new List<bool>(count);
                     var routes = new List<(int, List<Point>)>();
                     for (var i = 0; i < count; i++)
                     {
@@ -1326,7 +1344,6 @@ public partial class MainWindow : Window
                         // DrawNativeActorOverlay). Actors without bounds
                         // (NO_BODY) fall back to a nominal ~2000-unit-tall
                         // body so a distant actor still gets a proportionate
-                    var hasBodyFlags = new List<bool>(count);
                         // target.
                         double hitCenterY = sy, hitHalfW = 12, hitHalfH = 12;
                         var hasBounds = library.GetActorBounds(i, out var xMin, out var xMax, out var yMin, out var yMax, out var zMin, out var zMax);
@@ -1345,6 +1362,7 @@ public partial class MainWindow : Window
                             hitHalfW = Math.Max(Math.Max(width, height * .6), 12) / 2;
                         }
                         list.Add((i, sx, hitCenterY, hitHalfW, hitHalfH));
+                        hasBodyFlags.Add(hasBounds);
 
                         if (waypointCount <= 0) continue;
                         var points = new List<Point> { new(sx, sy) };
@@ -1373,7 +1391,6 @@ public partial class MainWindow : Window
                         .ThenByDescending(e => e.item.Item4 * e.item.Item5)
                         .Select(e => e.item)
                         .ToList();
-                        hasBodyFlags.Add(hasBounds);
                     projectedRoutes = routes;
                 });
 

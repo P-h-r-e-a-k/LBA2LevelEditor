@@ -29,6 +29,18 @@ The WPF viewport now tries the native renderer first for any island (`nativeView
 
 Panning across a whole island (not just orbiting a single fixed cube) is done through `lba2_renderer_set_view_target(worldX, worldY, worldZ)`, a native export that maps an absolute world position into the 16x16 cube grid (each cube spans 32768 world units, matching HOLO.H's `SCE`), loads whichever cube contains it if that differs from the one currently loaded, and sets the cube-local `VueOffsetX/Y/Z` camera target. Mouse drag, mouse wheel, the zoom buttons, and the arrow keys all update a single world-space `(targetX, targetY, targetZ)` in `MainWindow.xaml.cs`, which `CommunityRendererBackend.RenderIslandDirect()` feeds straight into `SetViewTarget` on every frame -- so terrain streams in continuously as the camera crosses cube boundaries. Panning is clamped per-axis against `IslandDocument.CubeAt()` so a drag that would leave the island's mapped cubes stops cleanly on that axis instead of handing the renderer a position with no data.
 
+## Actor scripts as C
+
+Actor life and track scripts open as C-style source in the actor script window (Life (C) / Track (C) tabs) with
+live compile checking, and can be saved back into `SCENE.HQR` (first save keeps `SCENE.HQR.bak`). The translator is
+verified byte-exact against every script in the game; see [LbaScript/README.md](LbaScript/README.md) for the
+language, how it maps onto the engine's opcodes, and the test tooling.
+
+**Debug builds only:** to run a second instance against a *copy* of the game files (for testing) without touching your
+real settings, set `LBA2_EDITOR_SETTINGS_DIR` to a folder containing a `settings.json` with that copy as `GameDirectory`.
+The override is compiled out of Release builds (`#if DEBUG` in `EditorSettings.cs`); unset, settings live in
+`%AppData%\LBA2LevelEditor` as usual.
+
 ## Source assets
 
 The editor reads the original resources from `E:\GOG Games\Little Big Adventure 2 - Level viewer`:
