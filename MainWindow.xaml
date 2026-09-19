@@ -114,9 +114,9 @@
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
-                        <Grid x:Name="ViewportHost" Grid.Row="0" Grid.Column="0" ClipToBounds="True" SizeChanged="ViewportHost_SizeChanged" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown">
-                            <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel" ClipToBounds="True" />
-                            <Canvas x:Name="InteriorHost" Background="Transparent" Visibility="Collapsed" ClipToBounds="True" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" MouseWheel="TerrainViewport_MouseWheel">
+                        <Grid x:Name="ViewportHost" Grid.Row="0" Grid.Column="0" ClipToBounds="True" SizeChanged="ViewportHost_SizeChanged" MouseWheel="TerrainViewport_MouseWheel" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown">
+                            <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp" ClipToBounds="True" />
+                            <Canvas x:Name="InteriorHost" Background="Transparent" Visibility="Collapsed" ClipToBounds="True" MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp">
                                 <Image x:Name="InteriorViewImage" Stretch="None" SnapsToDevicePixels="False"/>
                             </Canvas>
                             <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>

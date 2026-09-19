@@ -81,6 +81,22 @@ struct RendererActor {
     // choice reads as an obvious placeholder rather than a normal-looking
     // (and easily mistaken for deliberately-chosen) Twinsen.
     bool IsPlaceholderBody = false;
+    // Raw BODY.HQR/ANIM.HQR indices (what Obj.Body.Num/Obj.Anim.Num hold once
+    // a scene is live), snapshotted whenever this actor's scene is loaded, so
+    // the attributes dialog never has to re-load the scene to resolve the
+    // generic per-actor numbers. -1 until first snapshotted.
+    S32 ResolvedBody = -1;
+    S32 ResolvedAnim = -1;
+    // True once GenBody/GenAnim hold raw archive indices (set by
+    // RendererSetActorAttributes/RendererAddActor) rather than the generic
+    // per-actor numbers straight from disk; resolving those again through
+    // SearchBody/SearchAnim would map them to the wrong body.
+    bool GenIsRaw = false;
+    // Body-bounds snapshot (T_OBJET XMin..ZMax) taken with the resolved
+    // body, so click targets can be sized for actors whose scene is not the
+    // one live right now.
+    bool BoundsValid = false;
+    S32 BoundsX[2] = {0, 0}, BoundsY[2] = {0, 0}, BoundsZ[2] = {0, 0};
     // True once RendererRemoveActor() has undone this actor -- see that
     // function's own comment for why this is a soft delete (g_actors is
     // never actually shrunk, since every other actor's index is that
@@ -801,6 +817,8 @@ static void ExtractTrackWaypoints(T_OBJET *ptrobj, S32 baseX, S32 baseZ)
 extern S32 SearchBody(U8 numbody, S32 numobj);
 extern S32 SearchAnim(U16 numanim, S32 numobj);
 
+static int LoadSceneLive(S32 scene);
+
 int RendererScanIslandActors(int islandIndex)
 {
     g_actors.clear();
@@ -887,6 +905,13 @@ int RendererScanIslandActors(int islandIndex)
             // actor's own scene is genuinely live (PtrFile3D guaranteed
             // real then) rather than during this position-only scan.
             DecodeTrackScript(ptrobj, actor.TrackScript);
+            {
+                S16 initialBody = -1;
+                U16 initialAnim = 0xFFFF;
+                DecodeLifeScript(ptrobj, actor.LifeScript, &initialBody, &initialAnim);
+                if (initialBody >= 0) actor.GenBody = initialBody;
+                if (initialAnim != 0xFFFF) actor.GenAnim = initialAnim;
+            }
             actor.SceneIndex = scene;
             actor.ObjectSlot = n;
             actor.CubeX = cubeX;
@@ -895,6 +920,20 @@ int RendererScanIslandActors(int islandIndex)
         }
     }
 
+    // Preload pass: bring each scene fully live once (real PtrFile3D, real
+    // StartInitAllObjs) so every actor's resolved raw body/anim and moveset
+    // are cached up front -- the attributes dialog then never has to
+    // temp-load a far actor's cube (which churned shared native state and
+    // could resolve the wrong body).
+    FlagLoadGame = savedFlagLoadGame;
+    {
+        std::vector<S32> scenes;
+        for (size_t gi = 0; gi < g_actors.size(); gi++) {
+            S32 s = g_actors[gi].SceneIndex;
+            if (std::find(scenes.begin(), scenes.end(), s) == scenes.end()) scenes.push_back(s);
+        }
+        for (size_t si = 0; si < scenes.size(); si++) LoadSceneLive(scenes[si]);
+    }
     FlagLoadGame = savedFlagLoadGame;
     LastCubeMode = savedLastCubeMode;
     return (int)g_actors.size();
@@ -937,6 +976,28 @@ extern void StartInitAllObjs(void);
 // looping over stale actors from a previous cube would draw them in the
 // wrong place, so the caller must not skip this and must treat a false
 // return as "no actors for this cube" by clearing NbObjets itself.
+extern void InitBody(U8 gennewbody, U8 numobj);
+extern S32 InitAnim(U16 gennewanim, U8 flag, U8 numobj);
+
+// Retail actors get their real starting body/animation from their life
+// script's opening unconditional BODY/ANIM lines on the first game tick; the
+// disk GenBody/GenAnim fields are frequently just placeholders. This renderer
+// never runs scripts, so apply those opening lines here right after a scene's
+// StartInitAllObjs(), before any session edits are reapplied on top.
+static void ApplyInitialScriptState(void)
+{
+    for (S32 n = 1; n < NbObjets; n++) {
+        T_OBJET *ptrobj = &ListObjet[n];
+        if (ptrobj->Flags & SPRITE_3D) continue;
+        S16 body = -1;
+        U16 anim = 0xFFFF;
+        std::string ignored;
+        DecodeLifeScript(ptrobj, ignored, &body, &anim);
+        if (body >= 0) InitBody((U8)body, (U8)n);
+        if (anim != 0xFFFF) InitAnim(anim, ANIM_REPEAT, (U8)n);
+    }
+}
+
 static void ReapplyPendingEditsToListObjet(S32 sceneIndex);
 static int WalkFile3DNativeAnims(const U8 *ptrc, int *outAnims, int maxCount);
 
@@ -962,11 +1023,39 @@ static void CacheNativeAnimsForScene(S32 sceneIndex)
     }
 }
 
+// See RendererActor::ResolvedBody. Obj.Body.Num/Obj.Anim.Num hold the raw
+// archive index the engine actually resolved for this object, i.e. exactly
+// what is drawn.
+static void CacheResolvedBodyAnimForScene(S32 sceneIndex)
+{
+    for (size_t gi = 0; gi < g_actors.size(); gi++) {
+        RendererActor &ga = g_actors[gi];
+        if (ga.SceneIndex != sceneIndex || ga.ObjectSlot < 1 || ga.ObjectSlot >= NbObjets) continue;
+        const T_OBJET &o = ListObjet[ga.ObjectSlot];
+        if (o.Flags & SPRITE_3D) continue;
+        if (!ga.GenIsRaw && o.Obj.Body.Num >= 0) ga.ResolvedBody = (S32)o.Obj.Body.Num;
+        if (!ga.GenIsRaw && o.Obj.Anim.Num >= 0) ga.ResolvedAnim = (S32)o.Obj.Anim.Num;
+        if (o.Obj.Body.Num >= 0) {
+            ga.BoundsValid = true;
+            ga.BoundsX[0] = o.XMin; ga.BoundsX[1] = o.XMax;
+            ga.BoundsY[0] = o.YMin; ga.BoundsY[1] = o.YMax;
+            ga.BoundsZ[0] = o.ZMin; ga.BoundsZ[1] = o.ZMax;
+        }
+    }
+}
+
+static int LoadSceneLive(S32 scene);
+
 int RendererLoadCubeScene(int cubeX, int cubeY)
 {
     if (cubeX < 0 || cubeX >= 16 || cubeY < 0 || cubeY >= 16) return 0;
     S32 scene = g_sceneForCube[cubeY][cubeX];
     if (scene < 0) return 0;
+    return LoadSceneLive(scene);
+}
+
+static int LoadSceneLive(S32 scene)
+{
 
     S32 savedFlagLoadGame = FlagLoadGame;
     S32 savedLastCubeMode = LastCubeMode;
@@ -976,6 +1065,7 @@ int RendererLoadCubeScene(int cubeX, int cubeY)
     S32 ok = LoadScene(scene);
     if (ok) {
         StartInitAllObjs();
+        ApplyInitialScriptState();
         // LoadScene() just repopulated ListObjet/NbObjets straight off disk,
         // discarding any session edits made earlier -- reapply them now so
         // an edited actor doesn't appear to "revert" every time the camera
@@ -984,6 +1074,7 @@ int RendererLoadCubeScene(int cubeX, int cubeY)
         // reload).
         ReapplyPendingEditsToListObjet(scene);
         CacheNativeAnimsForScene(scene);
+        CacheResolvedBodyAnimForScene(scene);
     }
 
     FlagLoadGame = savedFlagLoadGame;
@@ -1087,14 +1178,24 @@ static void RendererDrawInteriorActors(void)
         }
 
         UnsetClip();
-        ObjectDisplay(&ptrobj->Obj);
-
-        DrawOverBrick(ptrobj->Obj.X / SIZE_BRICK_XZ, ptrobj->Obj.Y / SIZE_BRICK_Y, ptrobj->Obj.Z / SIZE_BRICK_XZ);
-
         InteriorActorScreen &rec = g_interiorActorScreens[n];
-        rec.Valid = true;
-        rec.X = screenX; rec.Y = screenY;
-        rec.MinX = ClipXMin; rec.MinY = ClipYMin; rec.MaxX = ClipXMax; rec.MaxY = ClipYMax;
+        rec.Valid = false;
+        // Retail (OBJECT.CPP): ObjectDisplay returns non-zero if any of the
+        // body is on screen, and leaves the drawn region in ScreenX/YMin/Max.
+        // DrawOverBrick must be clipped to exactly that region -- with the
+        // full-screen clip UnsetClip leaves, it re-blitted every brick in
+        // front of the actor's cell over the *whole* screen, covering other
+        // actors that should not be occluded.
+        if (ObjectDisplay(&ptrobj->Obj)) {
+            SetClip(ScreenXMin, ScreenYMin, ScreenXMax, ScreenYMax);
+            if (ClipXMin <= ClipXMax && ClipYMin <= ClipYMax) {
+                DrawOverBrick(ptrobj->Obj.X / SIZE_BRICK_XZ, ptrobj->Obj.Y / SIZE_BRICK_Y, ptrobj->Obj.Z / SIZE_BRICK_XZ);
+                rec.Valid = true;
+                rec.X = screenX; rec.Y = screenY;
+                rec.MinX = ClipXMin; rec.MinY = ClipYMin; rec.MaxX = ClipXMax; rec.MaxY = ClipYMax;
+            }
+            UnsetClip();
+        }
     }
 }
 
@@ -1113,6 +1214,7 @@ int RendererLoadInteriorScene(int numscene)
     if (CubeMode != CUBE_INTERIEUR) return 0; // caller should use an exterior Load* instead
 
     StartInitAllObjs();
+    ApplyInitialScriptState();
 
     // Init3DView() (GAMEMENU.CPP) sets up the fixed isometric projection
     // (SetIsoProjection/SetAngleCamera(0,0,0)) interior scenes always use --
@@ -1157,12 +1259,22 @@ int RendererLoadInteriorScene(int numscene)
         actor.WaypointStart = 0;
         actor.WaypointCount = 0;
         DecodeTrackScript(ptrobj, actor.TrackScript);
+        DecodeLifeScript(ptrobj, actor.LifeScript);
         actor.SceneIndex = numscene;
         actor.ObjectSlot = n;
         actor.CubeX = 0;
         actor.CubeY = 0;
+        {
+            std::map<S32, ScenePendingEdits>::iterator pit = g_pendingEdits.find(numscene);
+            if (pit != g_pendingEdits.end()) {
+                std::map<S32, PendingAttributeEdit>::iterator ait = pit->second.AttributeEdits.find(n);
+                if (ait != pit->second.AttributeEdits.end() && ait->second.HasAttributes) actor.GenIsRaw = true;
+            }
+        }
         g_actors.push_back(actor);
     }
+    CacheNativeAnimsForScene(numscene);
+    CacheResolvedBodyAnimForScene(numscene);
 
     return 1;
 }
@@ -1406,12 +1518,17 @@ int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *
     const RendererActor &a = g_actors[(size_t)index];
     S32 resolvedBody = a.GenBody;
     S32 resolvedAnim = a.GenAnim;
+    const bool useCache = !a.GenIsRaw && a.ResolvedBody >= 0;
+    if (useCache) {
+        resolvedBody = a.ResolvedBody;
+        if (a.ResolvedAnim >= 0) resolvedAnim = a.ResolvedAnim;
+    }
 
     bool loadedTemporarily = false;
-    if (NewCube != a.SceneIndex && a.CubeX >= 0 && a.CubeY >= 0)
+    if (!a.GenIsRaw && !useCache && NewCube != a.SceneIndex && a.CubeX >= 0 && a.CubeY >= 0)
         loadedTemporarily = RendererLoadNeighborCubeData(a.CubeX, a.CubeY) != 0;
 
-    if ((NewCube == a.SceneIndex || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
+    if (!a.GenIsRaw && !useCache && (NewCube == a.SceneIndex || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
         S32 b = SearchBody((U8)a.GenBody, a.ObjectSlot);
         if (b >= 0) resolvedBody = b;
         S32 an = SearchAnim(a.GenAnim, a.ObjectSlot);
@@ -1635,7 +1752,10 @@ static void ReapplyPendingEditsToListObjet(S32 sceneIndex)
 // RendererLoadCubeScene's own reapply.
 static void ReapplyIfCurrentlyLoaded(S32 sceneIndex)
 {
-    if (NewCube == sceneIndex) ReapplyPendingEditsToListObjet(sceneIndex);
+    if (NewCube == sceneIndex) {
+        ReapplyPendingEditsToListObjet(sceneIndex);
+        CacheResolvedBodyAnimForScene(sceneIndex);
+    }
 }
 
 int RendererSetActorAttributes(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move)
@@ -1652,6 +1772,7 @@ int RendererSetActorAttributes(int index, int beta, int body, int anim, int life
     a.HitForce = (U8)hitForce;
     a.Move = (U8)move;
     a.IsPlaceholderBody = false; // see the field's own comment -- an explicit Apply means the user has reviewed this actor
+    a.GenIsRaw = true;
 
     PendingAttributeEdit &edit = g_pendingEdits[a.SceneIndex].AttributeEdits[a.ObjectSlot];
     edit.HasAttributes = true;
@@ -1733,6 +1854,7 @@ int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int body, int
     actor.CubeX = cubeX;
     actor.CubeY = cubeY;
     actor.IsPlaceholderBody = true; // see the field's own comment -- cleared once the user applies real attributes
+    actor.GenIsRaw = true;
     g_actors.push_back(actor);
     S32 flatIndex = (S32)g_actors.size() - 1;
 
@@ -1850,7 +1972,15 @@ int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax
 {
     if (index < 0 || index >= (int)g_actors.size()) return 0;
     const RendererActor &a = g_actors[(size_t)index];
-    if (a.SceneIndex != NewCube || a.ObjectSlot < 1 || a.ObjectSlot >= NbObjets) return 0;
+    if (a.SceneIndex != NewCube || a.ObjectSlot < 1 || a.ObjectSlot >= NbObjets) {
+        // Not the live scene: fall back to the snapshot taken when it was
+        // last loaded (see CacheResolvedBodyAnimForScene).
+        if (!a.BoundsValid) return 0;
+        if (xMin) *xMin = a.BoundsX[0]; if (xMax) *xMax = a.BoundsX[1];
+        if (yMin) *yMin = a.BoundsY[0]; if (yMax) *yMax = a.BoundsY[1];
+        if (zMin) *zMin = a.BoundsZ[0]; if (zMax) *zMax = a.BoundsZ[1];
+        return 1;
+    }
     const T_OBJET &o = ListObjet[a.ObjectSlot];
     if (o.Obj.Body.Num < 0) return 0;
     if (xMin) *xMin = o.XMin; if (xMax) *xMax = o.XMax;
@@ -1910,7 +2040,7 @@ int RendererGetActorNativeAnims(int index, int *outAnims, int maxCount)
     // still exists as a last-resort fallback below for the rare case that
     // temporary load itself fails.
     bool loadedTemporarily = false;
-    if (a.SceneIndex != NewCube && a.CubeX >= 0 && a.CubeY >= 0)
+    if (a.SceneIndex != NewCube && a.CachedNativeAnims.empty() && a.CubeX >= 0 && a.CubeY >= 0)
         loadedTemporarily = RendererLoadNeighborCubeData(a.CubeX, a.CubeY) != 0;
 
     if ((a.SceneIndex == NewCube || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {

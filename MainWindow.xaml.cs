@@ -1215,7 +1215,17 @@ public partial class MainWindow : Window
         // flight; a call that arrives mid-render just sets nativeRenderDirty
         // so the loop goes around again with the latest field values,
         // instead of a second task queuing its own redundant pass.
-        _ = Task.Run(() => RunNativeRenderLoop(token), token);
+        _ = Task.Run(() =>
+        {
+            try { RunNativeRenderLoop(token); }
+            catch (Exception error)
+            {
+                // An escaped exception would leave nativeRenderInFlight stuck
+                // true, silently ignoring every later zoom/pan request.
+                DebugLog.Log($"MainWindow: native render loop crashed: {error}");
+                lock (nativeRenderGate) { nativeRenderInFlight = false; }
+            }
+        }, token);
     }
 
     private void RunNativeRenderLoop(CancellationToken token)
@@ -1276,25 +1286,34 @@ public partial class MainWindow : Window
                         if (Math.Abs((int)Math.Floor(x / 32768.0) - currentCubeX) > wideRadius || Math.Abs((int)Math.Floor(z / 32768.0) - currentCubeY) > wideRadius) continue;
                         if (!library.ProjectPoint(x, y, z, out var sx, out var sy)) continue;
 
-                        // A click target sized to the actor's own real body
-                        // bounds, projected in this same locked pass (so it
-                        // uses the identical camera state the position above
-                        // did -- computing this later, e.g. in
-                        // DrawNativeActorOverlay, could race a newer in-flight
-                        // render moving the shared camera first, the same
-                        // "swimming" bug the position projection above
-                        // already had to avoid once). Falls back to a fixed
-                        // half-size for an actor with no body (NO_BODY) or
-                        // whose bounds aren't available for some other reason.
-                        double hitHalfW = 12, hitHalfH = 12;
-                        if (library.GetActorBounds(i, out var xMin, out var xMax, out var yMin, out var yMax, out _, out _)
-                            && library.ProjectPoint(x + xMin, y + yMax, z, out var cx1, out var cy1)
-                            && library.ProjectPoint(x + xMax, y + yMin, z, out var cx2, out var cy2))
+                        // Click target centred on the body's vertical middle
+                        // (the projected point above is the actor's feet) and
+                        // sized from its real body bounds -- cached natively
+                        // per scene, so it is available for actors in any
+                        // loaded cube, not just the live one. Projected in
+                        // this same locked pass so it uses the identical
+                        // camera as the position above (see the comment on
+                        // DrawNativeActorOverlay). Actors without bounds
+                        // (NO_BODY) fall back to a nominal ~2000-unit-tall
+                        // body so a distant actor still gets a proportionate
+                        // target.
+                        double hitCenterY = sy, hitHalfW = 12, hitHalfH = 12;
+                        var hasBounds = library.GetActorBounds(i, out var xMin, out var xMax, out var yMin, out var yMax, out var zMin, out var zMax);
+                        var bodyBottom = hasBounds ? yMin : 0;
+                        var bodyTop = hasBounds ? yMax : 2000;
+                        if (library.ProjectPoint(x, y + bodyBottom, z, out var bx, out var by) && library.ProjectPoint(x, y + bodyTop, z, out var tx, out var ty))
                         {
-                            hitHalfW = Math.Max(Math.Max(Math.Abs(cx2 - cx1), Math.Abs(cy2 - cy1)), 12) / 2;
-                            hitHalfH = hitHalfW;
+                            hitCenterY = (by + ty) / 2.0;
+                            var height = Math.Abs(by - ty);
+                            var width = height;
+                            if (hasBounds
+                                && library.ProjectPoint(x + xMin, y + bodyTop, z + zMin, out var cx1, out var cy1)
+                                && library.ProjectPoint(x + xMax, y + bodyTop, z + zMax, out var cx2, out var cy2))
+                                width = Math.Max(width, Math.Max(Math.Abs(cx2 - cx1), Math.Abs(cy2 - cy1)));
+                            hitHalfH = Math.Max(height, 12) / 2;
+                            hitHalfW = Math.Max(Math.Max(width, height * .6), 12) / 2;
                         }
-                        list.Add((i, sx, sy, hitHalfW, hitHalfH));
+                        list.Add((i, sx, hitCenterY, hitHalfW, hitHalfH));
 
                         if (waypointCount <= 0) continue;
                         var points = new List<Point> { new(sx, sy) };
