@@ -140,7 +140,7 @@ internal sealed class CommunityRendererBackend
     // hundreds of bricks outside the scene's own grid, which is what was
     // actually behind interior panning corrupting into brick noise on the
     // very first scroll, not a rendering bug). Callers use these as the
-    // starting point for RenderInteriorPanDirect once the user starts
+    // starting point once the user starts
     // scrolling, since there's otherwise no way to know where this fixed
     // camera actually ended up.
     public BitmapSource? RenderInteriorSceneDirect(int numscene, byte[] paletteBytes, out int cameraX, out int cameraY, out int cameraZ)
@@ -168,23 +168,31 @@ internal sealed class CommunityRendererBackend
         }
     }
 
-    // Re-renders the scene RenderInteriorSceneDirect last loaded from a
-    // different camera position, keeping its fixed isometric angle -- for
-    // the pan scrollbars to scroll around a room bigger than one screen's
-    // worth, without reloading the scene (which would reset the camera back
-    // to the hero's own position every time).
-    public BitmapSource? RenderInteriorPanDirect(int worldX, int worldY, int worldZ, byte[] paletteBytes)
+    public const int InteriorCanvasWidth = 3712;
+    public const int InteriorCanvasHeight = 2400;
+
+    // Renders the whole scene RenderInteriorSceneDirect last loaded into one
+    // InteriorCanvasWidth x InteriorCanvasHeight indexed bitmap (the native
+    // side stitches camera-stepped tiles -- see
+    // lba2_renderer_render_interior_full), plus each scene actor's position
+    // and hit size in that bitmap's pixel space.
+    public BitmapSource? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight)> actors)
     {
+        actors = new();
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
         {
-            if (!RendererLibrary.SetInteriorCameraPosition(worldX, worldY, worldZ)) { directFailure = "set interior camera position failed"; return null; }
-            if (!RendererLibrary.RenderInteriorFrame()) { directFailure = "native interior render returned failure"; return null; }
-            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
-            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }
-            var pixels = new byte[width * height];
-            for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
-            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            var pixels = new byte[InteriorCanvasWidth * InteriorCanvasHeight];
+            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+            try
+            {
+                if (!RendererLibrary.RenderInteriorFull(handle.AddrOfPinnedObject(), InteriorCanvasWidth, InteriorCanvasHeight)) { directFailure = "native interior full render failed"; return null; }
+            }
+            finally { handle.Free(); }
+            var count = RendererLibrary.GetActorCount();
+            for (var i = 0; i < count; i++)
+                if (RendererLibrary.GetInteriorActorCanvas(i, out var x, out var y, out var hw, out var hh)) actors.Add((i, x, y, hw, hh));
+            var bitmap = BitmapSource.Create(InteriorCanvasWidth, InteriorCanvasHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, InteriorCanvasWidth);
             bitmap.Freeze();
             return bitmap;
         }

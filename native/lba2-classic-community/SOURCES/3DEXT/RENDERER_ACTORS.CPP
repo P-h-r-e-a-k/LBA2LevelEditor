@@ -1038,12 +1038,22 @@ extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
 //    also applies root motion, which would otherwise creep actors on every
 //    re-render).
 //
-// Not done: actors are never occluded by walls in front of them. AffGrille
-// never populates a Z-buffer (interior bricks use their own screen-column
-// ordering, ListBrickColon), and retail's DrawRecover (INTEXT.CPP) shows the
-// real interior path is DrawOverBrick, a materially different mechanism.
+// Occlusion by walls in front of an actor: AffGrille never populates a
+// Z-buffer (interior bricks use their own screen-column ordering,
+// ListBrickColon), so retail's DrawRecover path (INTEXT.CPP) is used instead:
+// DrawOverBrick re-blits the pristine brick pixels (kept in Screen) that sit
+// in front of the actor, masked over the actor just drawn.
+struct InteriorActorScreen {
+    bool Valid;
+    S32 X, Y;
+    S32 MinX, MinY, MaxX, MaxY;
+};
+static InteriorActorScreen g_interiorActorScreens[MAX_OBJETS];
+
 static void RendererDrawInteriorActors(void)
 {
+    for (S32 n = 0; n < MAX_OBJETS; n++) g_interiorActorScreens[n].Valid = false;
+
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 
@@ -1060,6 +1070,7 @@ static void RendererDrawInteriorActors(void)
 
         LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
         if (!LongProjectPoint(X0, Y0, Z0)) continue;
+        S32 screenX = Xp, screenY = Yp;
 
         // Plain textured filler, not FILL_POLY_FOG_ZBUFFER: retail only ever
         // switches to the fog/Z-buffer fillers outdoors (OBJECT.CPP, all
@@ -1076,16 +1087,14 @@ static void RendererDrawInteriorActors(void)
         }
 
         UnsetClip();
-        // No placeholder-black-silhouette handling here (unlike
-        // AffichageActorsZBuf's own g_placeholderBodySlot check): there is
-        // currently no way to reach RendererAddActor for an interior scene
-        // (the "Add Actor Here" context menu is exterior-view-only --
-        // MainWindow.xaml.cs's own TerrainViewport_MouseRightButtonDown
-        // gates on nativeViewActive), so no interior actor is ever actually
-        // a placeholder to begin with. g_placeholderBodySlot/
-        // ObjectDisplayForcedBlack are also static to EXTFUNC.CPP (internal
-        // linkage), not reachable from here regardless.
         ObjectDisplay(&ptrobj->Obj);
+
+        DrawOverBrick(ptrobj->Obj.X / SIZE_BRICK_XZ, ptrobj->Obj.Y / SIZE_BRICK_Y, ptrobj->Obj.Z / SIZE_BRICK_XZ);
+
+        InteriorActorScreen &rec = g_interiorActorScreens[n];
+        rec.Valid = true;
+        rec.X = screenX; rec.Y = screenY;
+        rec.MinX = ClipXMin; rec.MinY = ClipYMin; rec.MaxX = ClipXMax; rec.MaxY = ClipYMax;
     }
 }
 
@@ -1119,6 +1128,41 @@ int RendererLoadInteriorScene(int numscene)
     CameraCenter(1);
 
     InitGrille((U32)NewCube);
+
+    // Re-apply this session's attribute/position edits (kept across reloads,
+    // same as the exterior path's own reload does).
+    ReapplyPendingEditsToListObjet(numscene);
+
+    // Makes this scene's actors reachable through the same g_actors-indexed
+    // Get/Set APIs the exterior path uses (attributes window etc.). Interior
+    // coordinates are already scene-local, so cube offsets are 0.
+    g_actors.clear();
+    g_waypointX.clear();
+    g_waypointY.clear();
+    g_waypointZ.clear();
+    for (S32 n = 1; n < NbObjets; n++) {
+        T_OBJET *ptrobj = &ListObjet[n];
+        RendererActor actor;
+        actor.X = ptrobj->Obj.X;
+        actor.Y = ptrobj->Obj.Y;
+        actor.Z = ptrobj->Obj.Z;
+        actor.Beta = ptrobj->Obj.Beta;
+        actor.GenBody = ptrobj->GenBody;
+        actor.GenAnim = ptrobj->GenAnim;
+        actor.LifePoint = ptrobj->LifePoint;
+        actor.Armure = ptrobj->Armure;
+        actor.HitForce = ptrobj->HitForce;
+        actor.Move = ptrobj->Move;
+        actor.Flags = ptrobj->Flags;
+        actor.WaypointStart = 0;
+        actor.WaypointCount = 0;
+        DecodeTrackScript(ptrobj, actor.TrackScript);
+        actor.SceneIndex = numscene;
+        actor.ObjectSlot = n;
+        actor.CubeX = 0;
+        actor.CubeY = 0;
+        g_actors.push_back(actor);
+    }
 
     return 1;
 }
@@ -1209,7 +1253,83 @@ int RendererRenderInteriorFrame(void)
 {
     memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
     AffGrille();
+    CopyScreen(Log, Screen);
     RendererDrawInteriorActors();
+    return 1;
+}
+
+// Whole-scene render: the interior view is a fixed 640x480 window onto a much
+// larger isometric plane, so to show it all at once the camera is stepped
+// over the 64x64 brick grid and every tile is composited into one canvas. A
+// brick at (xm,ym,zm) lands at screen ((xm-sx)-(zm-sz))*24+288,
+// ((xm-sx)+(zm-sz))*12-(ym-sy)*15+226 for a camera at brick (sx,sy,sz), so a
+// tile's canvas origin depends only on (sx,sz); overlapping tiles agree where
+// they overlap. Palette index 0 is treated as background.
+#define INTERIOR_CANVAS_W 3712
+#define INTERIOR_CANVAS_H 2400
+static S32 g_interiorActorCanvas[MAX_OBJETS][6];
+static bool g_interiorActorCanvasValid[MAX_OBJETS];
+
+int RendererRenderInteriorFull(unsigned char *canvas, int width, int height)
+{
+    if (!canvas || width != INTERIOR_CANVAS_W || height != INTERIOR_CANVAS_H) return 0;
+    memset(canvas, 0, (size_t)width * (size_t)height);
+    for (S32 n = 0; n < MAX_OBJETS; n++) g_interiorActorCanvasValid[n] = false;
+
+    static const S32 steps[] = {0, 8, 16, 24, 32, 40, 48, 56, 63};
+    const S32 nsteps = (S32)(sizeof(steps) / sizeof(steps[0]));
+    for (S32 iz = 0; iz < nsteps; iz++) {
+        for (S32 ix = 0; ix < nsteps; ix++) {
+            S32 sx = steps[ix], sz = steps[iz];
+            RendererSetInteriorCameraPosition(sx * SIZE_BRICK_XZ, 0, sz * SIZE_BRICK_XZ);
+            RendererRenderInteriorFrame();
+
+            S32 ox = (sx - sz) * 24 + 1536 - 288 + 300;
+            S32 oy = (sx + sz) * 12 + 400;
+            const U8 *src = (const U8 *)Log;
+            for (S32 y = 0; y < (S32)ModeDesiredY; y++) {
+                S32 cy = y + oy;
+                if (cy < 0 || cy >= height) continue;
+                U8 *dst = canvas + (size_t)cy * (size_t)width;
+                const U8 *row = src + (size_t)y * (size_t)ModeDesiredX;
+                for (S32 x = 0; x < (S32)ModeDesiredX; x++) {
+                    S32 cx = x + ox;
+                    if (cx < 0 || cx >= width) continue;
+                    if (row[x]) dst[cx] = row[x];
+                }
+            }
+
+            for (S32 n = 1; n < MAX_OBJETS; n++) {
+                const InteriorActorScreen &rec = g_interiorActorScreens[n];
+                if (!rec.Valid) continue;
+                // Keep the tile that puts the actor nearest the tile centre,
+                // so the recorded hit box is never one clipped at a tile edge.
+                S32 dist = abs(rec.X - (S32)ModeDesiredX / 2) + abs(rec.Y - (S32)ModeDesiredY / 2);
+                if (g_interiorActorCanvasValid[n] && g_interiorActorCanvas[n][5] <= dist) continue;
+                g_interiorActorCanvasValid[n] = true;
+                g_interiorActorCanvas[n][0] = rec.X + ox;
+                g_interiorActorCanvas[n][1] = rec.Y + oy;
+                g_interiorActorCanvas[n][2] = (rec.MaxX - rec.MinX) / 2;
+                g_interiorActorCanvas[n][3] = (rec.MaxY - rec.MinY) / 2;
+                g_interiorActorCanvas[n][4] = 0;
+                g_interiorActorCanvas[n][5] = dist;
+            }
+        }
+    }
+    return 1;
+}
+
+// Canvas position + hit half-size of actor g_actors[index], as of the last
+// RendererRenderInteriorFull. Returns 0 if that actor wasn't drawn.
+int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *halfH)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return 0;
+    S32 slot = g_actors[(size_t)index].ObjectSlot;
+    if (slot < 1 || slot >= MAX_OBJETS || !g_interiorActorCanvasValid[slot]) return 0;
+    if (x) *x = g_interiorActorCanvas[slot][0];
+    if (y) *y = g_interiorActorCanvas[slot][1];
+    if (halfW) *halfW = g_interiorActorCanvas[slot][2];
+    if (halfH) *halfH = g_interiorActorCanvas[slot][3];
     return 1;
 }
 

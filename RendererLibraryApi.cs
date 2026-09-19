@@ -33,6 +33,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetInteriorCameraPositionFn(int x, int y, int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorCameraPositionFn(out int x, out int y, out int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFrameFn();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFullFn(IntPtr canvas, int width, int height);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorActorCanvasFn(int index, out int x, out int y, out int halfW, out int halfH);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
@@ -68,6 +70,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetInteriorCameraPositionFn? setInteriorCameraPosition;
     private GetInteriorCameraPositionFn? getInteriorCameraPosition;
     private RenderInteriorFrameFn? renderInteriorFrame;
+    private RenderInteriorFullFn? renderInteriorFull;
+    private GetInteriorActorCanvasFn? getInteriorActorCanvas;
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
     private GetActorBoundsFn? getActorBounds;
@@ -131,6 +135,8 @@ internal sealed class RendererLibraryApi : IDisposable
         setInteriorCameraPosition = Get<SetInteriorCameraPositionFn>("lba2_renderer_set_interior_camera_position");
         getInteriorCameraPosition = Get<GetInteriorCameraPositionFn>("lba2_renderer_get_interior_camera_position");
         renderInteriorFrame = Get<RenderInteriorFrameFn>("lba2_renderer_render_interior_frame");
+        renderInteriorFull = Get<RenderInteriorFullFn>("lba2_renderer_render_interior_full");
+        getInteriorActorCanvas = Get<GetInteriorActorCanvasFn>("lba2_renderer_get_interior_actor_canvas");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
         getActorBounds = Get<GetActorBoundsFn>("lba2_renderer_get_actor_bounds");
@@ -286,6 +292,12 @@ internal sealed class RendererLibraryApi : IDisposable
         return getInteriorCameraPosition(out x, out y, out z) == 1;
     }
     public bool RenderInteriorFrame() => renderInteriorFrame?.Invoke() == 1;
+    public bool RenderInteriorFull(IntPtr canvas, int width, int height) => renderInteriorFull?.Invoke(canvas, width, height) == 1;
+    public bool GetInteriorActorCanvas(int index, out int x, out int y, out int halfW, out int halfH)
+    {
+        if (getInteriorActorCanvas is null) { x = y = halfW = halfH = 0; return false; }
+        return getInteriorActorCanvas(index, out x, out y, out halfW, out halfH) == 1;
+    }
     public bool GetActorFlags(int index, out uint flags)
     {
         if (getActorFlags is null) { flags = 0; return false; }

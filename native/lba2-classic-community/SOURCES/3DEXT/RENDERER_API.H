@@ -189,9 +189,21 @@ LBA2_RENDERER_API int lba2_renderer_get_interior_camera_position(int *x, int *y,
    same framebuffer lba2_renderer_framebuffer() already exposes for the
    exterior path. Also draws this scene's actors on top -- see
    RendererRenderInteriorFrame's own doc comment (RENDERER_ACTORS.CPP) for
-   the one known limitation (no occlusion behind interior walls yet).
+   how walls occlude actors.
    Always returns 1. */
 LBA2_RENDERER_API int lba2_renderer_render_interior_frame(void);
+
+/* Renders the whole loaded interior scene (all 64x64 bricks) into a
+   caller-supplied 8-bit canvas, which must be exactly 3712x2400 bytes
+   (returns 0 otherwise). Index 0 = background. Also records each actor's
+   canvas position for lba2_renderer_get_interior_actor_canvas. Clobbers the
+   interior camera position. */
+LBA2_RENDERER_API int lba2_renderer_render_interior_full(unsigned char *canvas, int width, int height);
+
+/* Canvas-space centre and hit half-size of actor `index` (same indexing as
+   lba2_renderer_get_actor) from the last render_interior_full call.
+   Returns 0 if that actor wasn't drawn. */
+LBA2_RENDERER_API int lba2_renderer_get_interior_actor_canvas(int index, int *x, int *y, int *halfW, int *halfH);
 
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
    water-lava-reaction toggles) -- lba2_renderer_get_actor_attributes only

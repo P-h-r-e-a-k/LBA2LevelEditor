@@ -41,16 +41,18 @@ public partial class MainWindow : Window
     // TerrainViewport_MouseDown so the free-orbit drag never applies to a
     // scene that's only ever meant to be viewed from one fixed angle.
     private bool interiorSceneActive;
-    // The interior camera's own current world position -- there's no
-    // "orbit/zoom" for interior scenes (see interiorSceneActive's own
-    // comment), only pan, so this is the entire state the pan scrollbars
-    // need to track for one. Seeded from RenderInteriorSceneDirect's own
-    // hero-position readout when a scene is first shown; Y never changes
-    // (no vertical scrollbar exists to drive it -- panning between a
-    // building's floors isn't wired up yet).
-    private double interiorCameraX;
-    private double interiorCameraY;
-    private double interiorCameraZ;
+    // Interior view state. The native side renders the whole scene once into
+    // one big canvas bitmap (see RenderInteriorFullDirect); zoom and pan are
+    // then purely a WPF transform of that bitmap, so zooming out to fit the
+    // whole scene costs nothing. interiorCenter is the canvas pixel shown at
+    // the middle of the viewport; interiorZoom is viewport pixels per canvas
+    // pixel (1.0 == "100%").
+    private int interiorSceneNumber = -1;
+    private Rect interiorContent;
+    private double interiorZoom = 1;
+    private Point interiorCenter;
+    private List<(int Index, int X, int Y, int HalfWidth, int HalfHeight)> interiorActors = new();
+    private const double InteriorMaxZoom = 4;
     private CancellationTokenSource? nativeRenderCancellation;
     private readonly object nativeRenderGate = new();
     private bool nativeRenderInFlight;
@@ -305,9 +307,9 @@ public partial class MainWindow : Window
             PanVerticalScrollBar.Maximum = (presentMaxY + 1) * 32768 - 1;
             SyncPanScrollBars();
 
+            ExitInteriorView();
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
-            interiorSceneActive = false;
             selectedActorIndex = null;
             ActorMarkerCanvas.Children.Clear();
             lastNativeActorScreens = null;
@@ -401,15 +403,8 @@ public partial class MainWindow : Window
     // Island/CubeMode -- not modelled here yet) since it's already on hand
     // and close enough to be readable; a scene that actually needs a
     // different one will just look off-colour rather than fail to render.
-    // COMMON.H's SIZE_CUBE_X/Z (64) * SIZE_BRICK_XZ (512): every interior
-    // scene's own brick grid spans exactly this many world units on X/Z,
-    // regardless of how much of it any given room's own geometry actually
-    // fills -- the pan scrollbars below just cover the whole grid rather
-    // than trying to detect each scene's own occupied bounds (there's no
-    // per-scene equivalent of the outdoor island's PresentCubeBounds here).
-    private const double InteriorGridSpan = 64 * 512;
-
-    private void ShowInteriorScene(int numscene)
+    // keepView: re-render after an actor edit without disturbing zoom/pan.
+    private void ShowInteriorScene(int numscene, bool keepView = false)
     {
         if (!nativeRenderer.DirectRendererReady)
         {
@@ -417,55 +412,156 @@ public partial class MainWindow : Window
             return;
         }
 
-        var bitmap = nativeRenderer.RenderInteriorSceneDirect(numscene, palette, out var cameraX, out var cameraY, out var cameraZ);
-        if (bitmap is null)
+        // Loads the scene (and resets the native camera/projection, which a
+        // body preview may have changed) before the full stitched render.
+        var first = nativeRenderer.RenderInteriorSceneDirect(numscene, palette, out _, out _, out _);
+        var canvas = first is null ? null : nativeRenderer.RenderInteriorFullDirect(palette, out interiorActors);
+        if (canvas is null)
         {
             DocumentSummary.Text = "Couldn't render this interior scene.";
             return;
         }
 
+        var width = CommunityRendererBackend.InteriorCanvasWidth;
+        var height = CommunityRendererBackend.InteriorCanvasHeight;
+        var pixels = new byte[width * height];
+        canvas.CopyPixels(pixels, width, 0);
+        int minX = width, minY = height, maxX = -1, maxY = -1;
+        for (var y = 0; y < height; y++)
+        {
+            var row = y * width;
+            for (var x = 0; x < width; x++)
+            {
+                if (pixels[row + x] == 0) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        DebugLog.Log($"MainWindow: interior scene {numscene} canvas content x={minX}..{maxX} y={minY}..{maxY}, {interiorActors.Count} actors");
+        const int pad = 16;
+        interiorContent = maxX < 0
+            ? new Rect(0, 0, width, height)
+            : Rect.Intersect(new Rect(0, 0, width, height), new Rect(minX - pad, minY - pad, maxX - minX + 1 + pad * 2, maxY - minY + 1 + pad * 2));
+
         nativeViewActive = false;
         interiorSceneActive = true;
-        // Clamped defensively: cameraX/Y/Z is wherever the native side's own
-        // CameraCenter(1) actually snapped to, which this editor doesn't
-        // control -- InteriorGridSpan is this scene's own nominal grid size,
-        // not a hard guarantee every scene's own camera start point falls
-        // inside it.
-        interiorCameraX = Math.Clamp(cameraX, 0, InteriorGridSpan - 1);
-        interiorCameraY = cameraY;
-        interiorCameraZ = Math.Clamp(cameraZ, 0, InteriorGridSpan - 1);
-        // Interior scenes use a completely different coordinate space
-        // (0..InteriorGridSpan on this one scene's own brick grid) from the
-        // outdoor pan scrollbars' usual per-island present-cube-bounds range
-        // -- re-ranged here every time, the same way LoadIsland() already
-        // re-ranges them back for the outdoor case when the user picks an
-        // island again.
-        PanHorizontalScrollBar.Minimum = 0;
-        PanHorizontalScrollBar.Maximum = InteriorGridSpan - 1;
-        PanVerticalScrollBar.Minimum = 0;
-        PanVerticalScrollBar.Maximum = InteriorGridSpan - 1;
-        PanHorizontalScrollBar.Value = interiorCameraX;
-        PanVerticalScrollBar.Value = interiorCameraZ;
-        TerrainViewport.Source = bitmap;
-        selectedActorIndex = null;
-        ActorMarkerCanvas.Children.Clear();
+        interiorSceneNumber = numscene;
+        InteriorViewImage.Source = canvas;
+        InteriorHost.Visibility = Visibility.Visible;
+        TerrainViewport.Visibility = Visibility.Collapsed;
+        if (!keepView)
+        {
+            interiorZoom = 0; // clamped up to the fit zoom by ApplyInteriorView
+            interiorCenter = new Point(interiorContent.X + interiorContent.Width / 2, interiorContent.Y + interiorContent.Height / 2);
+            selectedActorIndex = null;
+        }
         lastNativeActorScreens = null;
         lastNativeActorRoutes = null;
         DocumentSummary.Text = $"Native interior scene {numscene} / fixed isometric view";
+        ApplyInteriorView();
     }
 
-    // The pan scrollbars' own interior-mode counterpart to TryPan/
-    // RenderNativeCamera: re-renders from a new camera position without
-    // reloading the scene (which would snap the camera straight back to the
-    // hero). No bounds/validity check against the scene's own occupied
-    // area -- unlike IsWorldPositionOnIsland outdoors, there's no cheap way
-    // to know which part of the 64x64 brick grid a given interior scene
-    // actually uses, so scrolling past the edge of a room just shows empty
-    // black space rather than being clamped.
-    private void RenderInteriorPan()
+    private void ExitInteriorView()
     {
-        var bitmap = nativeRenderer.RenderInteriorPanDirect((int)interiorCameraX, (int)interiorCameraY, (int)interiorCameraZ, palette);
-        if (bitmap is not null) TerrainViewport.Source = bitmap;
+        interiorSceneActive = false;
+        interiorSceneNumber = -1;
+        InteriorHost.Visibility = Visibility.Collapsed;
+        TerrainViewport.Visibility = Visibility.Visible;
+        PanHorizontalScrollBar.ViewportSize = 0;
+        PanVerticalScrollBar.ViewportSize = 0;
+        PanHorizontalScrollBar.SmallChange = PanVerticalScrollBar.SmallChange = 8192;
+        PanHorizontalScrollBar.LargeChange = PanVerticalScrollBar.LargeChange = 65536;
+    }
+
+    private double InteriorFitZoom()
+    {
+        var vw = ViewportHost.ActualWidth;
+        var vh = ViewportHost.ActualHeight;
+        if (vw < 1 || vh < 1 || interiorContent.Width < 1 || interiorContent.Height < 1) return 1;
+        return Math.Min(Math.Min(vw / interiorContent.Width, vh / interiorContent.Height), InteriorMaxZoom);
+    }
+
+    // Applies interiorZoom/interiorCenter (clamped) to the canvas image, the
+    // pan scrollbars and the actor hit targets. Zoom bottoms out at the fit
+    // zoom, where the whole occupied part of the scene fills the viewport.
+    private void ApplyInteriorView()
+    {
+        if (!interiorSceneActive || InteriorViewImage.Source is null) return;
+        var vw = ViewportHost.ActualWidth;
+        var vh = ViewportHost.ActualHeight;
+        if (vw < 1 || vh < 1) return;
+
+        interiorZoom = Math.Clamp(interiorZoom, InteriorFitZoom(), InteriorMaxZoom);
+        var cx = interiorCenter.X;
+        var cy = interiorCenter.Y;
+        cx = vw / interiorZoom >= interiorContent.Width ? interiorContent.X + interiorContent.Width / 2 : Math.Clamp(cx, interiorContent.Left, interiorContent.Right);
+        cy = vh / interiorZoom >= interiorContent.Height ? interiorContent.Y + interiorContent.Height / 2 : Math.Clamp(cy, interiorContent.Top, interiorContent.Bottom);
+        interiorCenter = new Point(cx, cy);
+
+        InteriorViewImage.RenderTransform = new MatrixTransform(interiorZoom, 0, 0, interiorZoom, vw / 2 - cx * interiorZoom, vh / 2 - cy * interiorZoom);
+        RenderOptions.SetBitmapScalingMode(InteriorViewImage, interiorZoom >= 1 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+
+        PanHorizontalScrollBar.Minimum = interiorContent.Left;
+        PanHorizontalScrollBar.Maximum = Math.Max(interiorContent.Left, interiorContent.Right - vw / interiorZoom);
+        PanHorizontalScrollBar.ViewportSize = vw / interiorZoom;
+        PanHorizontalScrollBar.SmallChange = 48;
+        PanHorizontalScrollBar.LargeChange = vw / interiorZoom * .8;
+        PanHorizontalScrollBar.Value = cx - vw / interiorZoom / 2;
+        PanVerticalScrollBar.Minimum = interiorContent.Top;
+        PanVerticalScrollBar.Maximum = Math.Max(interiorContent.Top, interiorContent.Bottom - vh / interiorZoom);
+        PanVerticalScrollBar.ViewportSize = vh / interiorZoom;
+        PanVerticalScrollBar.SmallChange = 48;
+        PanVerticalScrollBar.LargeChange = vh / interiorZoom * .8;
+        PanVerticalScrollBar.Value = cy - vh / interiorZoom / 2;
+
+        DrawInteriorActorOverlay();
+        UpdateZoomLabel();
+    }
+
+    private void DrawInteriorActorOverlay()
+    {
+        ActorMarkerCanvas.Children.Clear();
+        if (!interiorSceneActive) return;
+        var vw = ViewportHost.ActualWidth;
+        var vh = ViewportHost.ActualHeight;
+        foreach (var (index, x, y, halfWidth, halfHeight) in interiorActors)
+        {
+            var sx = (x - interiorCenter.X) * interiorZoom + vw / 2;
+            var sy = (y - interiorCenter.Y) * interiorZoom + vh / 2;
+            if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
+            var selected = selectedActorIndex == index;
+            var hit = new System.Windows.Shapes.Ellipse
+            {
+                Width = Math.Max(halfWidth * 2 * interiorZoom, 20),
+                Height = Math.Max(halfHeight * 2 * interiorZoom, 20),
+                Fill = Brushes.Transparent,
+                Stroke = selected ? Brushes.Yellow : null,
+                StrokeThickness = selected ? 2 : 0,
+                Cursor = Cursors.Hand,
+                Tag = index,
+            };
+            hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+            hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
+            Canvas.SetLeft(hit, sx - hit.Width / 2);
+            Canvas.SetTop(hit, sy - hit.Height / 2);
+            ActorMarkerCanvas.Children.Add(hit);
+        }
+    }
+
+    // Zooms by `factor`, keeping the canvas point under `anchor` (viewport
+    // coordinates) fixed.
+    private void ZoomInterior(double factor, Point? anchor = null)
+    {
+        if (interiorZoom <= 0) return;
+        var vw = ViewportHost.ActualWidth;
+        var vh = ViewportHost.ActualHeight;
+        var a = anchor ?? new Point(vw / 2, vh / 2);
+        var before = new Point((a.X - vw / 2) / interiorZoom + interiorCenter.X, (a.Y - vh / 2) / interiorZoom + interiorCenter.Y);
+        interiorZoom = Math.Clamp(interiorZoom * factor, InteriorFitZoom(), InteriorMaxZoom);
+        interiorCenter = new Point(before.X - (a.X - vw / 2) / interiorZoom, before.Y - (a.Y - vh / 2) / interiorZoom);
+        ApplyInteriorView();
     }
 
     // Simple-marker actor overlay for the main 3D view: projects each actor's
@@ -643,7 +739,7 @@ public partial class MainWindow : Window
     // lastNativeActorScreens.
     private void RefreshActorOverlayForSelection()
     {
-        if (nativeViewActive) DrawNativeActorOverlay(); else UpdateActorMarkersOverlay();
+        if (interiorSceneActive) DrawInteriorActorOverlay(); else if (nativeViewActive) DrawNativeActorOverlay(); else UpdateActorMarkersOverlay();
     }
 
     // Right-clicking empty terrain (anywhere that isn't an actor marker --
@@ -733,7 +829,8 @@ public partial class MainWindow : Window
         {
             openAttributesWindows.Remove(index);
             if (selectedActorIndex == index) selectedActorIndex = null;
-            RenderNativeCamera();
+            if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
+            else RenderNativeCamera();
         };
         openAttributesWindows[index] = window;
         window.Show();
@@ -805,7 +902,7 @@ public partial class MainWindow : Window
 
     private void PanHorizontalScrollBar_Scroll(object sender, ScrollEventArgs e)
     {
-        if (interiorSceneActive) { interiorCameraX = Math.Clamp(e.NewValue, 0, InteriorGridSpan - 1); RenderInteriorPan(); return; }
+        if (interiorSceneActive) { interiorCenter = new Point(e.NewValue + ViewportHost.ActualWidth / interiorZoom / 2, interiorCenter.Y); ApplyInteriorView(); return; }
         if (currentIsland is null) return;
         if (IsWorldPositionOnIsland(e.NewValue, targetZ)) targetX = e.NewValue;
         else PanHorizontalScrollBar.Value = targetX;
@@ -815,7 +912,7 @@ public partial class MainWindow : Window
 
     private void PanVerticalScrollBar_Scroll(object sender, ScrollEventArgs e)
     {
-        if (interiorSceneActive) { interiorCameraZ = Math.Clamp(e.NewValue, 0, InteriorGridSpan - 1); RenderInteriorPan(); return; }
+        if (interiorSceneActive) { interiorCenter = new Point(interiorCenter.X, e.NewValue + ViewportHost.ActualHeight / interiorZoom / 2); ApplyInteriorView(); return; }
         if (currentIsland is null) return;
         if (IsWorldPositionOnIsland(targetX, e.NewValue)) targetZ = e.NewValue;
         else PanVerticalScrollBar.Value = targetZ;
@@ -988,8 +1085,9 @@ public partial class MainWindow : Window
     private const double DefaultCameraDistance = 30000;
     private void UpdateZoomLabel()
     {
+        if (interiorSceneActive) { ZoomLabel.Text = $"{Math.Round(interiorZoom * 100)}%"; return; }
         var distance = nativeViewActive ? nativeDistance : cameraDistance;
-        ZoomLabel.Text = $"{Math.Round(DefaultCameraDistance / distance * 100)}%";
+        ZoomLabel.Text =$"{Math.Round(DefaultCameraDistance / distance * 100)}%";
     }
 
     private void ZoomLabel_GotFocus(object sender, RoutedEventArgs e) => ZoomLabel.SelectAll();
@@ -1012,6 +1110,12 @@ public partial class MainWindow : Window
             UpdateZoomLabel();
             return;
         }
+        if (interiorSceneActive)
+        {
+            interiorZoom = percent / 100.0;
+            ApplyInteriorView();
+            return;
+        }
         var distance = DefaultCameraDistance / (percent / 100.0);
         if (nativeViewActive)
         {
@@ -1027,8 +1131,8 @@ public partial class MainWindow : Window
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
-    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
-    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     // Gated on RotateViewCheckBox so the left mouse button can be freed up
     // for other uses (actor placement/selection, etc.) without it always
     // spinning the camera underneath whatever else is being clicked.
@@ -1038,13 +1142,31 @@ public partial class MainWindow : Window
         // fixed isometric angle Init3DView/CameraCenter set up natively --
         // rotate/tilt-with-mouse only ever makes sense for the outdoor 3D
         // view's own free-orbiting camera.
-        orbiting = e.ChangedButton == MouseButton.Left && RotateViewCheckBox.IsChecked == true && !interiorSceneActive;
+        if (interiorSceneActive)
+        {
+            // Left-drag pans the interior canvas.
+            if (e.ChangedButton != MouseButton.Left) return;
+            interiorPanning = true;
+            lastMousePosition = e.GetPosition(ViewportHost);
+            InteriorHost.CaptureMouse();
+            return;
+        }
+        orbiting = e.ChangedButton == MouseButton.Left && RotateViewCheckBox.IsChecked == true;
         if (!orbiting) return;
         lastMousePosition = e.GetPosition(TerrainViewport);
         TerrainViewport.CaptureMouse();
     }
+    private bool interiorPanning;
     private void TerrainViewport_MouseMove(object sender, MouseEventArgs e)
     {
+        if (interiorPanning)
+        {
+            var p = e.GetPosition(ViewportHost);
+            interiorCenter = new Point(interiorCenter.X - (p.X - lastMousePosition.X) / interiorZoom, interiorCenter.Y - (p.Y - lastMousePosition.Y) / interiorZoom);
+            lastMousePosition = p;
+            ApplyInteriorView();
+            return;
+        }
         if (!orbiting) return;
         var point = e.GetPosition(TerrainViewport);
         var dx = point.X - lastMousePosition.X;
@@ -1061,8 +1183,8 @@ public partial class MainWindow : Window
             RenderSoftwareTerrain();
         }
     }
-    private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; TerrainViewport.ReleaseMouseCapture(); }
-    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e) { orbiting = false; interiorPanning = false; Mouse.Capture(null); }
+    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.Delta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost)); return; } if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     private void RenderNativeCamera()
     {
         if (!nativeViewActive) return;
@@ -1324,7 +1446,8 @@ public partial class MainWindow : Window
         geometry.Figures.Add(pennantFigure);
         return new System.Windows.Shapes.Path { Data = geometry, Stroke = Brushes.Black, StrokeThickness = 0.5, Fill = brush };
     }
-    private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (nativeViewActive) DrawNativeActorOverlay(); else RenderSoftwareTerrain(); }
+    private void ViewportHost_SizeChanged(object sender, SizeChangedEventArgs e) { if (interiorSceneActive) ApplyInteriorView(); }
+    private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (interiorSceneActive) return; if (nativeViewActive) DrawNativeActorOverlay(); else RenderSoftwareTerrain(); }
     private void Window_Loaded(object sender, RoutedEventArgs e) { }
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
