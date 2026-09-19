@@ -1383,7 +1383,7 @@ public partial class MainWindow : Window
                         }
                         list.Add((i, sx, hitCenterY, hitHalfW, hitHalfH));
                         hasBodyFlags.Add(hasBounds);
-                        if (!hasBounds || (library.GetActorFlags(i, out var actorFlags) && (actorFlags & 0x200) != 0)) invisibleSet.Add(i); // 0x200 = INVISIBLE
+                        if (!hasBounds) invisibleSet.Add(i); // no body: show the dummy body at its position
 
                         if (waypointCount <= 0) continue;
                         var points = new List<Point> { new(sx, sy) };

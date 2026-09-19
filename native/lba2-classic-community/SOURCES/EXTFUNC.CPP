@@ -429,10 +429,6 @@ void AffichageActorsZBuf(void) {
         // SPRITE_3D branch. Left for later; this covers real 3D-bodied NPCs.
         if (ptrobj->Flags & SPRITE_3D) continue;
         if (ptrobj->Obj.Body.Num < 0) continue; // no body assigned/loaded
-        // INVISIBLE ("not drawn but all computed"): retail never draws these
-        // (zone triggers, sound emitters, ...). The editor marks their
-        // position instead -- see MainWindow.xaml.cs.
-        if (ptrobj->Flags & INVISIBLE) continue;
 
         LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
         if (!LongProjectPoint(X0, Y0, Z0)) continue;

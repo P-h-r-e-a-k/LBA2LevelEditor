@@ -1256,12 +1256,11 @@ static void RendererDrawInteriorActors(void)
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 
-        // Retail's AffScene skips INVISIBLE ("not drawn but all computed") and
-        // body-less objects, but this is an editor: such actors (zone
-        // triggers, sound emitters, ...) still need to be found. They are not
-        // drawn here; a marker box at their position is recorded instead and
-        // the C# side paints the dummy body there.
-        if ((ptrobj->Flags & INVISIBLE) || ptrobj->Obj.Body.Num < 0) {
+        // Body-less actors (sound emitters, triggers that never get a body)
+        // are not drawn; a marker box at their position is recorded instead
+        // and the C# side paints the dummy body there. INVISIBLE actors that
+        // do have a body are drawn with it like any other.
+        if (ptrobj->Obj.Body.Num < 0) {
             InteriorActorScreen &mrec = g_interiorActorScreens[n];
             LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
             if (!LongProjectPoint(X0, Y0, Z0)) continue;
