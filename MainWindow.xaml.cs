@@ -51,7 +51,7 @@ public partial class MainWindow : Window
     private Rect interiorContent;
     private double interiorZoom = 1;
     private Point interiorCenter;
-    private List<(int Index, int X, int Y, int HalfWidth, int HalfHeight)> interiorActors = new();
+    private List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> interiorActors = new();
     private const double InteriorMaxZoom = 4;
     private CancellationTokenSource? nativeRenderCancellation;
     private readonly object nativeRenderGate = new();
@@ -553,17 +553,33 @@ public partial class MainWindow : Window
         UpdateZoomLabel();
     }
 
+    // Paints the dummy body centred at (cx, cy), `height` px tall, on the
+    // actor overlay: how invisible / body-less actors (sound emitters, zone
+    // triggers, ...) show where they are. Not hit-testable; the actor's usual
+    // click target sits on top.
+    private void AddDummyMarker(double cx, double cy, double height)
+    {
+        var source = DummyBodyPreview.RenderMarker();
+        if (source is null) return;
+        var size = Math.Clamp(height, 18, 500);
+        var image = new Image { Source = source, Width = size, Height = size, Stretch = Stretch.Uniform, IsHitTestVisible = false };
+        Canvas.SetLeft(image, cx - size / 2);
+        Canvas.SetTop(image, cy - size / 2);
+        ActorMarkerCanvas.Children.Add(image);
+    }
+
     private void DrawInteriorActorOverlay()
     {
         ActorMarkerCanvas.Children.Clear();
         if (!interiorSceneActive) return;
         var vw = ViewportHost.ActualWidth;
         var vh = ViewportHost.ActualHeight;
-        foreach (var (index, x, y, halfWidth, halfHeight) in interiorActors)
+        foreach (var (index, x, y, halfWidth, halfHeight, isMarker) in interiorActors)
         {
             var sx = (x - interiorCenter.X) * interiorZoom + vw / 2;
             var sy = (y - interiorCenter.Y) * interiorZoom + vh / 2;
             if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
+            if (isMarker) AddDummyMarker(sx, sy, halfHeight * 2 * interiorZoom);
             var selected = selectedActorIndex == index;
             var hit = new System.Windows.Shapes.Ellipse
             {
@@ -698,6 +714,7 @@ public partial class MainWindow : Window
     // the one that actually produced the displayed frame -- visible as the
     // markers "swimming" a few pixels relative to the terrain.
     private List<(int Index, double ScreenX, double ScreenY, double HitHalfWidth, double HitHalfHeight)>? lastNativeActorScreens;
+    private HashSet<int>? lastNativeInvisibleActors;
     private List<(int ActorIndex, List<Point> ScreenPoints)>? lastNativeActorRoutes;
 
     private void DrawNativeActorOverlay()
@@ -749,6 +766,7 @@ public partial class MainWindow : Window
             // to click reliably before this.
             var hitWidth = Math.Max(hitHalfWidth * 2 * scaleX, 20);
             var hitHeight = Math.Max(hitHalfHeight * 2 * scaleY, 20);
+            if (lastNativeInvisibleActors?.Contains(index) == true) AddDummyMarker(screenX, screenY, hitHeight);
             var hit = new System.Windows.Shapes.Ellipse
             {
                 Width = hitWidth,
@@ -1318,6 +1336,7 @@ public partial class MainWindow : Window
             var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
             List<(int, double, double, double, double)>? projected = null;
             List<(int ActorIndex, List<Point> ScreenPoints)>? projectedRoutes = null;
+            HashSet<int>? projectedInvisible = null;
 
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
                 wideRadiusCubes: wideRadius,
@@ -1327,6 +1346,7 @@ public partial class MainWindow : Window
                     var count = library.GetActorCount();
                     var list = new List<(int, double, double, double, double)>(count);
                     var hasBodyFlags = new List<bool>(count);
+                    var invisibleSet = new HashSet<int>();
                     var routes = new List<(int, List<Point>)>();
                     for (var i = 0; i < count; i++)
                     {
@@ -1363,6 +1383,7 @@ public partial class MainWindow : Window
                         }
                         list.Add((i, sx, hitCenterY, hitHalfW, hitHalfH));
                         hasBodyFlags.Add(hasBounds);
+                        if (!hasBounds || (library.GetActorFlags(i, out var actorFlags) && (actorFlags & 0x200) != 0)) invisibleSet.Add(i); // 0x200 = INVISIBLE
 
                         if (waypointCount <= 0) continue;
                         var points = new List<Point> { new(sx, sy) };
@@ -1392,6 +1413,7 @@ public partial class MainWindow : Window
                         .Select(e => e.item)
                         .ToList();
                     projectedRoutes = routes;
+                    projectedInvisible = invisibleSet;
                 });
 
             var stopLoop = false;
@@ -1421,6 +1443,7 @@ public partial class MainWindow : Window
                         DrawActorMarkers();
                     }
                     lastNativeActorScreens = projected;
+                    lastNativeInvisibleActors = projectedInvisible;
                     lastNativeActorRoutes = projectedRoutes;
                     DrawNativeActorOverlay();
                 });

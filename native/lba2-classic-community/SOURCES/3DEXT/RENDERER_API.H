@@ -201,9 +201,11 @@ LBA2_RENDERER_API int lba2_renderer_render_interior_frame(void);
 LBA2_RENDERER_API int lba2_renderer_render_interior_full(unsigned char *canvas, int width, int height);
 
 /* Canvas-space centre and hit half-size of actor `index` (same indexing as
-   lba2_renderer_get_actor) from the last render_interior_full call.
+   lba2_renderer_get_actor) from the last render_interior_full call. The box
+   centre is returned. *marker is 1 for an invisible/body-less actor that was
+   not drawn (only its position is known).
    Returns 0 if that actor wasn't drawn. */
-LBA2_RENDERER_API int lba2_renderer_get_interior_actor_canvas(int index, int *x, int *y, int *halfW, int *halfH);
+LBA2_RENDERER_API int lba2_renderer_get_interior_actor_canvas(int index, int *x, int *y, int *halfW, int *halfH, int *marker);
 
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/
    water-lava-reaction toggles) -- lba2_renderer_get_actor_attributes only

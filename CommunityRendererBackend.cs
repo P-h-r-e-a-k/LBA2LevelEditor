@@ -176,7 +176,7 @@ internal sealed class CommunityRendererBackend
     // side stitches camera-stepped tiles -- see
     // lba2_renderer_render_interior_full), plus each scene actor's position
     // and hit size in that bitmap's pixel space.
-    public BitmapSource? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight)> actors)
+    public BitmapSource? RenderInteriorFullDirect(byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors)
     {
         actors = new();
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
@@ -191,7 +191,7 @@ internal sealed class CommunityRendererBackend
             finally { handle.Free(); }
             var count = RendererLibrary.GetActorCount();
             for (var i = 0; i < count; i++)
-                if (RendererLibrary.GetInteriorActorCanvas(i, out var x, out var y, out var hw, out var hh)) actors.Add((i, x, y, hw, hh));
+                if (RendererLibrary.GetInteriorActorCanvas(i, out var x, out var y, out var hw, out var hh, out var marker)) actors.Add((i, x, y, hw, hh, marker));
             var bitmap = BitmapSource.Create(InteriorCanvasWidth, InteriorCanvasHeight, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, InteriorCanvasWidth);
             bitmap.Freeze();
             return bitmap;

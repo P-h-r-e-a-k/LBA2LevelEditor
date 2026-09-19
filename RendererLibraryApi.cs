@@ -34,7 +34,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorCameraPositionFn(out int x, out int y, out int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFrameFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFullFn(IntPtr canvas, int width, int height);
-    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorActorCanvasFn(int index, out int x, out int y, out int halfW, out int halfH);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorActorCanvasFn(int index, out int x, out int y, out int halfW, out int halfH, out int marker);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorBoundsFn(int index, out int xMin, out int xMax, out int yMin, out int yMax, out int zMin, out int zMax);
@@ -293,10 +293,12 @@ internal sealed class RendererLibraryApi : IDisposable
     }
     public bool RenderInteriorFrame() => renderInteriorFrame?.Invoke() == 1;
     public bool RenderInteriorFull(IntPtr canvas, int width, int height) => renderInteriorFull?.Invoke(canvas, width, height) == 1;
-    public bool GetInteriorActorCanvas(int index, out int x, out int y, out int halfW, out int halfH)
+    public bool GetInteriorActorCanvas(int index, out int x, out int y, out int halfW, out int halfH, out bool marker)
     {
-        if (getInteriorActorCanvas is null) { x = y = halfW = halfH = 0; return false; }
-        return getInteriorActorCanvas(index, out x, out y, out halfW, out halfH) == 1;
+        if (getInteriorActorCanvas is null) { x = y = halfW = halfH = 0; marker = false; return false; }
+        var ok = getInteriorActorCanvas(index, out x, out y, out halfW, out halfH, out var m) == 1;
+        marker = m != 0;
+        return ok;
     }
     public bool GetActorFlags(int index, out uint flags)
     {

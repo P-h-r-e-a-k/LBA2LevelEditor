@@ -48,7 +48,7 @@ extern int RendererSetInteriorCameraPosition(int x, int y, int z);
 extern int RendererGetInteriorCameraPosition(int *x, int *y, int *z);
 extern int RendererRenderInteriorFrame(void);
 extern int RendererRenderInteriorFull(unsigned char *canvas, int width, int height);
-extern int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *halfH);
+extern int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *halfH, int *marker);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
 extern int RendererGetActorBounds(int index, int *xMin, int *xMax, int *yMin, int *yMax, int *zMin, int *zMax);
@@ -492,9 +492,9 @@ int lba2_renderer_render_interior_full(unsigned char *canvas, int width, int hei
     return RendererRenderInteriorFull(canvas, width, height);
 }
 
-int lba2_renderer_get_interior_actor_canvas(int index, int *x, int *y, int *halfW, int *halfH)
+int lba2_renderer_get_interior_actor_canvas(int index, int *x, int *y, int *halfW, int *halfH, int *marker)
 {
-    return RendererGetInteriorActorCanvas(index, x, y, halfW, halfH);
+    return RendererGetInteriorActorCanvas(index, x, y, halfW, halfH, marker);
 }
 
 int lba2_renderer_set_interior_camera_position(int x, int y, int z)

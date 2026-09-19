@@ -1240,6 +1240,7 @@ extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
 // in front of the actor, masked over the actor just drawn.
 struct InteriorActorScreen {
     bool Valid;
+    bool Marker; // invisible/body-less actor: position only, nothing drawn
     S32 X, Y;
     S32 MinX, MinY, MaxX, MaxY;
 };
@@ -1250,16 +1251,29 @@ extern void PtrProjectSprite(S32 xw, S32 yw, S32 zw, S32 sprite);
 extern void PtrAffGraph(S32 xp, S32 yp, S32 sprite);
 static void RendererDrawInteriorActors(void)
 {
-    for (S32 n = 0; n < MAX_OBJETS; n++) g_interiorActorScreens[n].Valid = false;
+    for (S32 n = 0; n < MAX_OBJETS; n++) { g_interiorActorScreens[n].Valid = false; g_interiorActorScreens[n].Marker = false; }
 
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 
-        // Retail's AffScene skips INVISIBLE ("not drawn but all computed")
-        // and body-less objects. Zone triggers, invisible walls etc. carry a
-        // placeholder body and would otherwise show up as stray shapes.
-        if (ptrobj->Flags & INVISIBLE) continue;
-        if (ptrobj->Obj.Body.Num < 0) continue;
+        // Retail's AffScene skips INVISIBLE ("not drawn but all computed") and
+        // body-less objects, but this is an editor: such actors (zone
+        // triggers, sound emitters, ...) still need to be found. They are not
+        // drawn here; a marker box at their position is recorded instead and
+        // the C# side paints the dummy body there.
+        if ((ptrobj->Flags & INVISIBLE) || ptrobj->Obj.Body.Num < 0) {
+            InteriorActorScreen &mrec = g_interiorActorScreens[n];
+            LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+            if (!LongProjectPoint(X0, Y0, Z0)) continue;
+            // About one brick wide and 1.2 bricks tall, standing on the
+            // actor's position.
+            mrec.Valid = true;
+            mrec.Marker = true;
+            mrec.X = Xp; mrec.Y = Yp;
+            mrec.MinX = Xp - 16; mrec.MaxX = Xp + 16;
+            mrec.MinY = Yp - 46; mrec.MaxY = Yp;
+            continue;
+        }
 
         // Goodies (keys, coins, chests...) are 2D sprites, not bodies: same
         // PtrProjectSprite/PtrAffGraph pair as OBJECT.CPP's TYPE_OBJ_SPRITE
@@ -1567,11 +1581,11 @@ int RendererRenderInteriorFull(unsigned char *canvas, int width, int height)
                 S32 dist = abs(rec.X - (S32)ModeDesiredX / 2) + abs(rec.Y - (S32)ModeDesiredY / 2);
                 if (g_interiorActorCanvasValid[n] && g_interiorActorCanvas[n][5] <= dist) continue;
                 g_interiorActorCanvasValid[n] = true;
-                g_interiorActorCanvas[n][0] = rec.X + ox;
-                g_interiorActorCanvas[n][1] = rec.Y + oy;
+                g_interiorActorCanvas[n][0] = (rec.MinX + rec.MaxX) / 2 + ox;
+                g_interiorActorCanvas[n][1] = (rec.MinY + rec.MaxY) / 2 + oy;
                 g_interiorActorCanvas[n][2] = (rec.MaxX - rec.MinX) / 2;
                 g_interiorActorCanvas[n][3] = (rec.MaxY - rec.MinY) / 2;
-                g_interiorActorCanvas[n][4] = 0;
+                g_interiorActorCanvas[n][4] = rec.Marker ? 1 : 0;
                 g_interiorActorCanvas[n][5] = dist;
             }
         }
@@ -1581,7 +1595,7 @@ int RendererRenderInteriorFull(unsigned char *canvas, int width, int height)
 
 // Canvas position + hit half-size of actor g_actors[index], as of the last
 // RendererRenderInteriorFull. Returns 0 if that actor wasn't drawn.
-int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *halfH)
+int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *halfH, int *marker)
 {
     if (index < 0 || index >= (int)g_actors.size()) return 0;
     S32 slot = g_actors[(size_t)index].ObjectSlot;
@@ -1590,6 +1604,7 @@ int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW, int *h
     if (y) *y = g_interiorActorCanvas[slot][1];
     if (halfW) *halfW = g_interiorActorCanvas[slot][2];
     if (halfH) *halfH = g_interiorActorCanvas[slot][3];
+    if (marker) *marker = g_interiorActorCanvas[slot][4];
     return 1;
 }
 
