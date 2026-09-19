@@ -1526,16 +1526,26 @@ int RendererRenderInteriorFull(unsigned char *canvas, int width, int height)
     memset(canvas, 0, (size_t)width * (size_t)height);
     for (S32 n = 0; n < MAX_OBJETS; n++) g_interiorActorCanvasValid[n] = false;
 
-    static const S32 steps[] = {0, 8, 16, 24, 32, 40, 48, 56, 63};
-    const S32 nsteps = (S32)(sizeof(steps) / sizeof(steps[0]));
-    for (S32 iz = 0; iz < nsteps; iz++) {
-        for (S32 ix = 0; ix < nsteps; ix++) {
-            S32 sx = steps[ix], sz = steps[iz];
-            RendererSetInteriorCameraPosition(sx * SIZE_BRICK_XZ, 0, sz * SIZE_BRICK_XZ);
+    // Tile lattice. A brick at (xm,ym,zm) shows up in a tile only if its
+    // screen position lands inside the 640x480 frame, and that depends on
+    // its height too: screenY = (dx+dz)*12 - (ym-sy)*15 + 226. Tall wall
+    // bricks sit up to ~360px above their floor position, so the tile has to
+    // be placed *behind* them, and near the grid's low corner no tile in
+    // 0..63 is far enough back -- their tops were simply never drawn (jagged
+    // stepped wall tops). Hence the lattice extends past the grid on every
+    // side, and the camera sits at mid height (sy) so both the top and the
+    // bottom layers stay inside the window.
+    const S32 sy = 8;
+    const S32 first = -24, last = 88, stride = 8;
+    for (S32 sz = first; sz <= last; sz += stride) {
+        for (S32 sx = first; sx <= last; sx += stride) {
+            // Skip tiles too far from the grid to show any of it.
+            if (sx + sz < -40 || sx + sz > 160 || sx - sz > 64 || sx - sz < -64) continue;
+            RendererSetInteriorCameraPosition(sx * SIZE_BRICK_XZ, sy * SIZE_BRICK_Y, sz * SIZE_BRICK_XZ);
             RendererRenderInteriorFrame();
 
             S32 ox = (sx - sz) * 24 + 1536 - 288 + 300;
-            S32 oy = (sx + sz) * 12 + 400;
+            S32 oy = (sx + sz) * 12 - sy * 15 + 400;
             const U8 *src = (const U8 *)Log;
             for (S32 y = 0; y < (S32)ModeDesiredY; y++) {
                 S32 cy = y + oy;

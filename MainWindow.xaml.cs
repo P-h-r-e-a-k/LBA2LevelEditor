@@ -1326,6 +1326,7 @@ public partial class MainWindow : Window
                         // DrawNativeActorOverlay). Actors without bounds
                         // (NO_BODY) fall back to a nominal ~2000-unit-tall
                         // body so a distant actor still gets a proportionate
+                    var hasBodyFlags = new List<bool>(count);
                         // target.
                         double hitCenterY = sy, hitHalfW = 12, hitHalfH = 12;
                         var hasBounds = library.GetActorBounds(i, out var xMin, out var xMax, out var yMin, out var yMax, out var zMin, out var zMax);
@@ -1360,7 +1361,19 @@ public partial class MainWindow : Window
                         }
                         if (points.Count > 1) routes.Add((i, points));
                     }
-                    projected = list;
+                    // Hit targets are stacked in list order, so body-less actors
+                    // (invisible sound emitters, triggers) go underneath and
+                    // visible bodies on top, biggest first so a small actor in
+                    // front of a large one stays clickable. Otherwise an
+                    // invisible actor's 20px target sitting over a car won't let
+                    // you click the car.
+                    projected = list
+                        .Select((item, n) => (item, hasBody: hasBodyFlags[n]))
+                        .OrderBy(e => e.hasBody ? 1 : 0)
+                        .ThenByDescending(e => e.item.Item4 * e.item.Item5)
+                        .Select(e => e.item)
+                        .ToList();
+                        hasBodyFlags.Add(hasBounds);
                     projectedRoutes = routes;
                 });
 
