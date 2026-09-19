@@ -245,6 +245,15 @@ static int RendererLoadCubeData(S32 x, S32 y)
         // hero slot) rather than leaving stale actors from whichever cube
         // was loaded previously.
         if (!RendererLoadCubeScene(x, y)) NbObjets = 1;
+    } else {
+        // A cube with no terrain (open sea) still gets drawn as a flat sea
+        // plane by AffGrilleExtWide, and that draw reads whatever
+        // ClipZFar/StartZFog are current. Those are left over from the last
+        // Init3DExtView() (per-frame SetCamera: 60000/14500) rather than the
+        // widened editor values unless a real cube was just loaded, which
+        // truncated the sea of the outermost cubes on every frame but the
+        // first after a cube change.
+        lba2_renderer_set_view_distance(RendererStartFog, RendererClipFar);
     }
     return result;
 }

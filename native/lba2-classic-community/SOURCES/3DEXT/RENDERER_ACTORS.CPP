@@ -85,6 +85,7 @@ struct RendererActor {
     // a scene is live), snapshotted whenever this actor's scene is loaded, so
     // the attributes dialog never has to re-load the scene to resolve the
     // generic per-actor numbers. -1 until first snapshotted.
+    bool Cached = false; // scene has been live at least once (see CacheResolvedBodyAnimForScene)
     S32 ResolvedBody = -1;
     S32 ResolvedAnim = -1;
     // True once GenBody/GenAnim hold raw archive indices (set by
@@ -296,6 +297,49 @@ static bool DecodeLifeCondition(U8 *base, S32 *offset, S32 maxBytes, const char 
     return true;
 }
 
+// LM_ opcodes with a fixed operand length and no effect on the initial
+// body/anim decode, verified against DoLife() (GERELIFE.CPP). Returns the
+// operand byte count, or -1 if op isn't in this table.
+static int LmExtraBytes(U8 op, const char **name)
+{
+    struct E { U8 op; U8 bytes; const char *name; };
+    static const E table[] = {
+        {LM_SAVE_HERO, 0, "SAVE_HERO"}, {LM_RESTORE_HERO, 0, "RESTORE_HERO"}, {LM_ACTION, 0, "ACTION"},
+        {LM_INVERSE_BETA, 0, "INVERSE_BETA"}, {LM_SAVE_COMPORTEMENT, 0, "SAVE_COMPORTEMENT"},
+        {LM_RESTORE_COMPORTEMENT, 0, "RESTORE_COMPORTEMENT"}, {LM_GAME_OVER, 0, "GAME_OVER"},
+        {LM_THE_END, 0, "THE_END"}, {LM_BRUTAL_EXIT, 0, "BRUTAL_EXIT"}, {LM_POPCORN, 0, "POPCORN"},
+        {LM_END_MESSAGE, 0, "END_MESSAGE"}, {LM_END_SWITCH, 0, "END_SWITCH"}, {LM_DEFAULT, 0, "DEFAULT"},
+        {LM_REM, 0, "REM"},
+        {LM_PALETTE, 1, "PALETTE"}, {LM_FADE_TO_PAL, 1, "FADE_TO_PAL"}, {LM_CAMERA_CENTER, 1, "CAMERA_CENTER"},
+        {LM_MEMO_ARDOISE, 1, "MEMO_ARDOISE"}, {LM_TRACK_TO_VAR_GAME, 1, "TRACK_TO_VAR_GAME"},
+        {LM_VAR_GAME_TO_TRACK, 1, "VAR_GAME_TO_TRACK"}, {LM_SET_FRAME, 1, "SET_FRAME"},
+        {LM_SET_FRAME_3DS, 1, "SET_FRAME_3DS"}, {LM_NO_CHOC, 1, "NO_CHOC"}, {LM_CINEMA_MODE, 1, "CINEMA_MODE"},
+        {LM_ANIM_TEXTURE, 1, "ANIM_TEXTURE"}, {LM_END_MESSAGE_OBJ, 1, "END_MESSAGE_OBJ"}, {LM_BULLE, 1, "BULLE"},
+        {LM_PLAY_MUSIC, 1, "PLAY_MUSIC"}, {LM_SET_ARMURE, 1, "SET_ARMURE"},
+        {LM_SAVE_COMPORTEMENT_OBJ, 1, "SAVE_COMPORTEMENT_OBJ"}, {LM_RESTORE_COMPORTEMENT_OBJ, 1, "RESTORE_COMPORTEMENT_OBJ"},
+        {LM_STOP_L_TRACK_OBJ, 1, "STOP_L_TRACK_OBJ"}, {LM_RESTORE_L_TRACK_OBJ, 1, "RESTORE_L_TRACK_OBJ"},
+        {LM_ECLAIR, 1, "ECLAIR"}, {LM_PLUIE, 1, "PLUIE"}, {LM_BACKGROUND, 1, "BACKGROUND"},
+        {LM_SET_CAMERA, 2, "SET_CAMERA"}, {LM_SHADOW_OBJ, 2, "SHADOW_OBJ"}, {LM_SET_SPRITE, 2, "SET_SPRITE"},
+        {LM_ADD_CHOICE, 2, "ADD_CHOICE"}, {LM_ASK_CHOICE, 2, "ASK_CHOICE"}, {LM_ADD_MESSAGE, 2, "ADD_MESSAGE"},
+        {LM_MESSAGE_ZOE, 2, "MESSAGE_ZOE"}, {LM_ANIM_SET, 2, "ANIM_SET"}, {LM_SET_ANIM_DIAL, 2, "SET_ANIM_DIAL"},
+        {LM_SAMPLE, 2, "SAMPLE"}, {LM_SAMPLE_RND, 2, "SAMPLE_RND"}, {LM_SAMPLE_ALWAYS, 2, "SAMPLE_ALWAYS"},
+        {LM_SAMPLE_STOP, 2, "SAMPLE_STOP"}, {LM_ADD_VAR_CUBE, 2, "ADD_VAR_CUBE"}, {LM_SUB_VAR_CUBE, 2, "SUB_VAR_CUBE"},
+        {LM_STATE_INVENTORY, 2, "STATE_INVENTORY"}, {LM_SET_GRM, 2, "SET_GRM"}, {LM_SET_CHANGE_CUBE, 2, "SET_CHANGE_CUBE"},
+        {LM_ESCALATOR, 2, "ESCALATOR"}, {LM_ECHELLE, 2, "ECHELLE"}, {LM_SET_HIT_ZONE, 2, "SET_HIT_ZONE"},
+        {LM_SET_RAIL, 2, "SET_RAIL"}, {LM_SET_ARMURE_OBJ, 2, "SET_ARMURE_OBJ"}, {LM_FLOW_POINT, 2, "FLOW_POINT"},
+        {LM_FLOW_OBJ, 2, "FLOW_OBJ"}, {LM_PCX, 2, "PCX"}, {LM_POS_OBJ_AROUND, 2, "POS_OBJ_AROUND"},
+        {LM_ADD_LIFE_POINT_OBJ, 2, "ADD_LIFE_POINT_OBJ"}, {LM_BREAK, 2, "BREAK"},
+        {LM_ADD_VAR_GAME, 3, "ADD_VAR_GAME"}, {LM_SUB_VAR_GAME, 3, "SUB_VAR_GAME"}, {LM_REPEAT_SAMPLE, 3, "REPEAT_SAMPLE"},
+        {LM_IMPACT_POINT, 3, "IMPACT_POINT"}, {LM_ASK_CHOICE_OBJ, 3, "ASK_CHOICE_OBJ"}, {LM_ADD_MESSAGE_OBJ, 3, "ADD_MESSAGE_OBJ"},
+        {LM_IMPACT_OBJ, 5, "IMPACT_OBJ"}, {LM_PARM_SAMPLE, 5, "PARM_SAMPLE"}, {LM_PCX_MESS_OBJ, 5, "PCX_MESS_OBJ"},
+        {LM_NEW_SAMPLE, 7, "NEW_SAMPLE"},
+    };
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+        if (table[i].op == op) { *name = table[i].name; return table[i].bytes; }
+    }
+    return -1;
+}
+
 // The action-opcode subset of LM_* (GERELIFE.CPP's DoLife()) whose operand
 // layout has been read and confirmed. Life scripts are much larger than
 // track scripts (131 total LM_ opcodes vs. track's ~30 TM_ opcodes), so this
@@ -377,7 +421,7 @@ static const char *LmName(U8 op)
 // makes everything after it conditional, so scanning stops trusting further
 // BODY/ANIM lines as "definitely the starting one" at that point (though the
 // text decode below keeps going for display).
-static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialBody = NULL, U16 *outInitialAnim = NULL)
+static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialBody = NULL, U16 *outInitialAnim = NULL, S16 *outFirstAnyBody = NULL)
 {
     if (!ptrobj->PtrLife) { out = "(no life script)\n"; return; }
     U8 *base = ptrobj->PtrLife;
@@ -385,6 +429,7 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialB
     S32 offset = 0;
     char line[160];
     bool unconditional = true;
+    bool switchValueIsS16 = false;
 
     while (offset < maxBytes) {
         U8 op = base[offset];
@@ -429,6 +474,7 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialB
             {
                 U8 a = base[offset]; offset++;
                 if (unconditional && outInitialBody) *outInitialBody = (S16)a;
+                if (outFirstAnyBody && *outFirstAnyBody < 0) *outFirstAnyBody = (S16)a;
                 std::snprintf(line, sizeof(line), "%s %d\n", LmName(op), (int)a);
                 out += line;
             }
@@ -531,9 +577,54 @@ static void DecodeLifeScript(T_OBJET *ptrobj, std::string &out, S16 *outInitialB
             break;
         }
 
-        default:
-            ok = false;
+        case LM_NO_BODY:
+            if (unconditional && outInitialBody) *outInitialBody = NO_BODY;
+            out += "NO_BODY\n";
             break;
+
+        // SWITCH consumes an LF_ function byte (plus operand) with no test;
+        // each following CASE/OR_CASE then carries a jump offset, a test and
+        // a value sized by that function's answer type.
+        case LM_SWITCH: {
+            if (offset >= maxBytes || base[offset] >= 46) { ok = false; break; }
+            const LifeCondInfo &info = LifeConditions[base[offset]];
+            offset += 1 + info.operandBytes;
+            if (offset > maxBytes) { ok = false; break; }
+            switchValueIsS16 = info.valueIsS16;
+            std::snprintf(line, sizeof(line), "SWITCH %s\n", info.name);
+            out += line;
+            unconditional = false;
+            break;
+        }
+        case LM_CASE:
+        case LM_OR_CASE: {
+            S32 need = 2 + 1 + (switchValueIsS16 ? 2 : 1);
+            if (offset + need > maxBytes) { ok = false; break; }
+            S16 target = *(S16 *)(base + offset);
+            U8 test = base[offset + 2];
+            S32 value = switchValueIsS16 ? *(S16 *)(base + offset + 3) : (S32)(S8)base[offset + 3];
+            offset += need;
+            std::snprintf(line, sizeof(line), "%s %s %d -> goto %d\n", op == LM_CASE ? "CASE" : "OR_CASE", TestOpName(test), (int)value, (int)target);
+            out += line;
+            unconditional = false;
+            break;
+        }
+
+        default: {
+            const char *extraName = NULL;
+            S32 extra = LmExtraBytes(op, &extraName);
+            if (extra < 0 || offset + extra > maxBytes) { ok = false; break; }
+            std::snprintf(line, sizeof(line), "%s", extraName);
+            out += line;
+            for (S32 b = 0; b < extra; b++) {
+                std::snprintf(line, sizeof(line), " %d", (int)base[offset + b]);
+                out += line;
+            }
+            out += "\n";
+            offset += extra;
+            if (op == LM_BREAK) unconditional = false;
+            break;
+        }
         }
 
         if (!ok) {
@@ -908,8 +999,10 @@ int RendererScanIslandActors(int islandIndex)
             {
                 S16 initialBody = -1;
                 U16 initialAnim = 0xFFFF;
-                DecodeLifeScript(ptrobj, actor.LifeScript, &initialBody, &initialAnim);
+                S16 firstAnyBody = -1;
+                DecodeLifeScript(ptrobj, actor.LifeScript, &initialBody, &initialAnim, &firstAnyBody);
                 if (initialBody >= 0) actor.GenBody = initialBody;
+                else if (actor.GenBody == NO_BODY && firstAnyBody >= 0) actor.GenBody = firstAnyBody;
                 if (initialAnim != 0xFFFF) actor.GenAnim = initialAnim;
             }
             actor.SceneIndex = scene;
@@ -992,7 +1085,12 @@ static void ApplyInitialScriptState(void)
         S16 body = -1;
         U16 anim = 0xFFFF;
         std::string ignored;
-        DecodeLifeScript(ptrobj, ignored, &body, &anim);
+        S16 anyBody = -1;
+        DecodeLifeScript(ptrobj, ignored, &body, &anim, &anyBody);
+        // No unconditional BODY: an actor with no disk body (NO_BODY) whose
+        // script only sets one behind a condition gets that first BODY, since
+        // the runtime state that would pick it is unknown here.
+        if (body < 0 && ptrobj->GenBody == NO_BODY && anyBody >= 0) body = anyBody;
         if (body >= 0) InitBody((U8)body, (U8)n);
         if (anim != 0xFFFF) InitAnim(anim, ANIM_REPEAT, (U8)n);
     }
@@ -1019,6 +1117,10 @@ static void CacheNativeAnimsForScene(S32 sceneIndex)
         int count = WalkFile3DNativeAnims(ptrFile3D, buffer, 128);
         if (count <= 0) continue;
         if (count > 128) count = 128;
+        // Skip the write when unchanged: this runs on every scene load (the
+        // render thread reloads neighbours each frame) while the UI thread
+        // may be reading the vector -- reallocating it needlessly would race.
+        if ((int)ga.CachedNativeAnims.size() == count && std::equal(buffer, buffer + count, ga.CachedNativeAnims.begin())) continue;
         ga.CachedNativeAnims.assign(buffer, buffer + count);
     }
 }
@@ -1026,12 +1128,14 @@ static void CacheNativeAnimsForScene(S32 sceneIndex)
 // See RendererActor::ResolvedBody. Obj.Body.Num/Obj.Anim.Num hold the raw
 // archive index the engine actually resolved for this object, i.e. exactly
 // what is drawn.
+extern void NativeDebugLog(const char *fmt, ...);
 static void CacheResolvedBodyAnimForScene(S32 sceneIndex)
 {
     for (size_t gi = 0; gi < g_actors.size(); gi++) {
         RendererActor &ga = g_actors[gi];
         if (ga.SceneIndex != sceneIndex || ga.ObjectSlot < 1 || ga.ObjectSlot >= NbObjets) continue;
         const T_OBJET &o = ListObjet[ga.ObjectSlot];
+        ga.Cached = true;
         if (o.Flags & SPRITE_3D) continue;
         if (!ga.GenIsRaw && o.Obj.Body.Num >= 0) ga.ResolvedBody = (S32)o.Obj.Body.Num;
         if (!ga.GenIsRaw && o.Obj.Anim.Num >= 0) ga.ResolvedAnim = (S32)o.Obj.Anim.Num;
@@ -1141,6 +1245,9 @@ struct InteriorActorScreen {
 };
 static InteriorActorScreen g_interiorActorScreens[MAX_OBJETS];
 
+extern void ClearScreenMinMax();
+extern void PtrProjectSprite(S32 xw, S32 yw, S32 zw, S32 sprite);
+extern void PtrAffGraph(S32 xp, S32 yp, S32 sprite);
 static void RendererDrawInteriorActors(void)
 {
     for (S32 n = 0; n < MAX_OBJETS; n++) g_interiorActorScreens[n].Valid = false;
@@ -1148,8 +1255,39 @@ static void RendererDrawInteriorActors(void)
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 
-        if (ptrobj->Flags & SPRITE_3D) continue;
+        // Retail's AffScene skips INVISIBLE ("not drawn but all computed")
+        // and body-less objects. Zone triggers, invisible walls etc. carry a
+        // placeholder body and would otherwise show up as stray shapes.
+        if (ptrobj->Flags & INVISIBLE) continue;
         if (ptrobj->Obj.Body.Num < 0) continue;
+
+        // Goodies (keys, coins, chests...) are 2D sprites, not bodies: same
+        // PtrProjectSprite/PtrAffGraph pair as OBJECT.CPP's TYPE_OBJ_SPRITE
+        // case. Clip-window sprites (doors) and 3DS animations need per-
+        // object state this headless renderer never sets up, so they are
+        // left out.
+        if (ptrobj->Flags & SPRITE_3D) {
+            if (ptrobj->Flags & (SPRITE_CLIP | ANIM_3DS)) continue;
+            S32 num = ptrobj->Obj.Body.Num;
+            if (!LongProjectPoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z)) continue;
+            ClearScreenMinMax();
+            PtrProjectSprite(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z, num);
+            S32 spriteScreenX = Xp, spriteScreenY = Yp;
+            UnsetClip();
+            PtrAffGraph(SpriteX, SpriteY, num);
+            SetClip(ScreenXMin, ScreenYMin, ScreenXMax, ScreenYMax);
+            InteriorActorScreen &srec = g_interiorActorScreens[n];
+            srec.Valid = false;
+            if (ClipXMin <= ClipXMax && ClipYMin <= ClipYMax) {
+                DrawOverBrick3((ptrobj->Obj.X + ptrobj->XMax) / SIZE_BRICK_XZ, ptrobj->Obj.Y / SIZE_BRICK_Y,
+                               (ptrobj->Obj.Z + ptrobj->ZMax) / SIZE_BRICK_XZ, (ptrobj->Obj.Y + ptrobj->YMax) / SIZE_BRICK_Y);
+                srec.Valid = true;
+                srec.X = spriteScreenX; srec.Y = spriteScreenY;
+                srec.MinX = ClipXMin; srec.MinY = ClipYMin; srec.MaxX = ClipXMax; srec.MaxY = ClipYMax;
+            }
+            UnsetClip();
+            continue;
+        }
 
         if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
             S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
@@ -1518,28 +1656,21 @@ int RendererGetActorAttributes(int index, int *beta, int *body, int *anim, int *
     const RendererActor &a = g_actors[(size_t)index];
     S32 resolvedBody = a.GenBody;
     S32 resolvedAnim = a.GenAnim;
-    const bool useCache = !a.GenIsRaw && a.ResolvedBody >= 0;
-    if (useCache) {
-        resolvedBody = a.ResolvedBody;
+    // Never temp-loads another scene: that churned shared native state (the
+    // terrain/actor arrays the render thread is using) and could move the
+    // view. Every scene's actors are snapshotted once at island load (see
+    // RendererScanIslandActors' preload pass) and refreshed on every real
+    // scene load, so Cached is true for anything the editor can click.
+    if (!a.GenIsRaw && a.Cached) {
+        if (a.ResolvedBody >= 0) resolvedBody = a.ResolvedBody;
         if (a.ResolvedAnim >= 0) resolvedAnim = a.ResolvedAnim;
-    }
-
-    bool loadedTemporarily = false;
-    if (!a.GenIsRaw && !useCache && NewCube != a.SceneIndex && a.CubeX >= 0 && a.CubeY >= 0)
-        loadedTemporarily = RendererLoadNeighborCubeData(a.CubeX, a.CubeY) != 0;
-
-    if (!a.GenIsRaw && !useCache && (NewCube == a.SceneIndex || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
+    } else if (!a.GenIsRaw && NewCube == a.SceneIndex && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
         S32 b = SearchBody((U8)a.GenBody, a.ObjectSlot);
         if (b >= 0) resolvedBody = b;
         S32 an = SearchAnim(a.GenAnim, a.ObjectSlot);
         if (an >= 0) resolvedAnim = an;
-        if (resolvedBody != a.GenBody || resolvedAnim != a.GenAnim)
-            NativeDebugLog("RendererGetActorAttributes: index=%d slot=%d resolved generic body=%d anim=%d -> raw body=%d anim=%d%s",
-                index, (int)a.ObjectSlot, (int)a.GenBody, (int)a.GenAnim, (int)resolvedBody, (int)resolvedAnim,
-                loadedTemporarily ? " (via temporary cube load)" : "");
     }
 
-    if (loadedTemporarily) RendererLoadNeighborCubeData(CurrentCubeX, CurrentCubeY);
     if (beta) *beta = a.Beta;
     if (body) *body = resolvedBody;
     if (anim) *anim = resolvedAnim;
@@ -2039,9 +2170,16 @@ int RendererGetActorNativeAnims(int index, int *outAnims, int maxCount)
     // reasoning) rather than only relying on CachedNativeAnims -- which
     // still exists as a last-resort fallback below for the rare case that
     // temporary load itself fails.
-    bool loadedTemporarily = false;
-    if (a.SceneIndex != NewCube && a.CachedNativeAnims.empty() && a.CubeX >= 0 && a.CubeY >= 0)
-        loadedTemporarily = RendererLoadNeighborCubeData(a.CubeX, a.CubeY) != 0;
+    // Never temp-loads another scene (see RendererGetActorAttributes); the
+    // per-scene CachedNativeAnims snapshot below covers every non-live scene.
+    const bool loadedTemporarily = false;
+
+    if (!a.CachedNativeAnims.empty()) {
+        int count = (int)a.CachedNativeAnims.size();
+        int copyCount = count < maxCount ? count : maxCount;
+        for (int i = 0; i < copyCount; i++) outAnims[i] = a.CachedNativeAnims[(size_t)i];
+        return count;
+    }
 
     if ((a.SceneIndex == NewCube || loadedTemporarily) && a.ObjectSlot >= 1 && a.ObjectSlot < NbObjets && ListObjet[a.ObjectSlot].PtrFile3D) {
         int count = WalkFile3DNativeAnims(ListObjet[a.ObjectSlot].PtrFile3D, outAnims, maxCount);

@@ -404,7 +404,35 @@ public partial class MainWindow : Window
     // and close enough to be readable; a scene that actually needs a
     // different one will just look off-colour rather than fail to render.
     // keepView: re-render after an actor edit without disturbing zoom/pan.
+    // The native engine can pump Windows messages during a scene load, which
+    // lets a queued keystroke (e.g. stepping through the scene combo quickly)
+    // re-enter this method mid-load and interleave two scenes' native state
+    // (seen as one scene rendering with the other's canvas and no actors).
+    // A request that arrives while one is running is deferred until it ends.
+    private bool interiorSceneBusy;
+    private (int Scene, bool KeepView)? pendingInteriorScene;
+
     private void ShowInteriorScene(int numscene, bool keepView = false)
+    {
+        if (interiorSceneBusy)
+        {
+            pendingInteriorScene = (numscene, keepView);
+            return;
+        }
+        interiorSceneBusy = true;
+        try
+        {
+            ShowInteriorSceneCore(numscene, keepView);
+            while (pendingInteriorScene is { } next)
+            {
+                pendingInteriorScene = null;
+                ShowInteriorSceneCore(next.Scene, next.KeepView);
+            }
+        }
+        finally { interiorSceneBusy = false; pendingInteriorScene = null; }
+    }
+
+    private void ShowInteriorSceneCore(int numscene, bool keepView)
     {
         if (!nativeRenderer.DirectRendererReady)
         {
@@ -1131,6 +1159,18 @@ public partial class MainWindow : Window
     }
 
     private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
+    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+    private void BodyStudio_Click(object sender, RoutedEventArgs e) => BodyStudioLauncher.Show(this);
+    private void ViewFit_Click(object sender, RoutedEventArgs e)
+    {
+        if (interiorSceneActive)
+        {
+            interiorZoom = 0; // clamped up to the fit zoom
+            interiorCenter = new Point(interiorContent.X + interiorContent.Width / 2, interiorContent.Y + interiorContent.Height / 2);
+            ApplyInteriorView();
+        }
+        else Reset_Click(sender, e);
+    }
     private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
     // Gated on RotateViewCheckBox so the left mouse button can be freed up
@@ -1243,30 +1283,20 @@ public partial class MainWindow : Window
             // reassert on every render so a minimap regeneration can't leave
             // the main view's sea silently disabled.
             library?.SetDrawSea(true);
-            // Past a certain zoom-out level, a single cube's terrain visibly
-            // runs out before the horizon does -- AffGrilleExtWide loads and
-            // draws neighboring cubes into the same frame to cover that, at
-            // the cost of roughly (2*radius+1)^2 cube loads instead of 1, so
-            // it's only worth asking for once the camera is far back enough
-            // to need it. The actor/waypoint overlay filter below uses this
-            // same radius so it shows exactly the actors sitting on terrain
-            // this frame actually drew, whichever cube each one happens to
-            // be in.
+            // Always radius 2 (5x5 cubes): AffGrilleExtWide loads and draws
+            // neighboring cubes into the same frame. Radius 1 used to be
+            // chosen below 35000 camera distance (86%+ zoom), but the terrain
+            // and sea of the ring-2 cubes are still in view at those
+            // distances -- they visibly vanished at exactly that threshold.
+            // The actor/waypoint overlay filter below uses this same radius
+            // so it shows exactly the actors sitting on terrain this frame
+            // drew, whichever cube each one is in.
             //
-            // Never 0: the plain single-cube render path (radius 0, calling
-            // the native RenderFrame()/AffGrilleExt() instead of
-            // RenderFrameWide()/AffGrilleExtWide()) is a confirmed-broken
-            // choice at close zoom, not just a cheaper one -- reported as a
-            // visibly washed-out/hazy render exactly at this threshold, with
-            // the actor on screen there disappearing entirely. See
-            // lba2_renderer_render_frame's own comment (RENDERER_API.CPP)
-            // for what was actually tried to fix that render path itself
-            // (a same-cube reload before drawing, mirroring what the wide
-            // path already does every frame) and confirmed, live, not to be
-            // enough -- radius 1 is the smallest value proven correct at
-            // every distance, so nativeDistance now only ever chooses
-            // between that and radius 2.
-            var wideRadius = nativeDistance < 35000 ? 1 : 2;
+            // Never 0: the plain single-cube render path (RenderFrame()/
+            // AffGrilleExt()) is broken at close zoom (washed-out, actors
+            // vanishing) -- see lba2_renderer_render_frame's own comment
+            // (RENDERER_API.CPP).
+            var wideRadius = 2;
             var currentCubeX = (int)Math.Floor(targetX / 32768.0);
             var currentCubeY = (int)Math.Floor(targetZ / 32768.0);
             List<(int, double, double, double, double)>? projected = null;

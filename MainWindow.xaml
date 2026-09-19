@@ -35,6 +35,12 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8"/>
         </Style>
+        <Style x:Key="DropdownBox" TargetType="Control" BasedOn="{StaticResource FieldBox}">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="Black"/>
+        </Style>
         <Style x:Key="IconButton" TargetType="Button">
             <Setter Property="Foreground" Value="#AEB7AB"/>
             <Setter Property="Background" Value="#1B2520"/>
@@ -56,11 +62,31 @@
             <Setter Property="Foreground" Value="#C5C6B9"/>
         </Style>
         <Style TargetType="MenuItem">
-            <Setter Property="Foreground" Value="#C5C6B9"/>
-            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="Padding" Value="10,6"/>
         </Style>
     </Window.Resources>
-    <Grid>
+    <DockPanel LastChildFill="True">
+        <Menu DockPanel.Dock="Top" Background="#182019" Foreground="#C5C6B9" Padding="6,2" BorderBrush="#344039" BorderThickness="0,0,0,1">
+            <MenuItem Header="_File" Foreground="#C5C6B9">
+                <MenuItem Header="_Open…" Click="Open_Click"/>
+                <MenuItem Header="_Save" Click="Save_Click"/>
+                <MenuItem Header="_Export…" Click="Export_Click"/>
+                <Separator/>
+                <MenuItem Header="Se_ttings…" Click="Settings_Click"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="_View" Foreground="#C5C6B9">
+                <MenuItem Header="Zoom _In" Click="ZoomIn_Click"/>
+                <MenuItem Header="Zoom _Out" Click="ZoomOut_Click"/>
+                <MenuItem Header="Zoom to _Fit / Reset View" Click="ViewFit_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Tools" Foreground="#C5C6B9">
+                <MenuItem Header="_Body Studio…" Click="BodyStudio_Click"/>
+            </MenuItem>
+        </Menu>
+        <Grid>
         <Grid.RowDefinitions><RowDefinition Height="64"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Border Grid.Row="0" BorderBrush="#344039" BorderThickness="0,0,0,1" Background="#101418">
             <DockPanel Margin="28,0">
@@ -68,15 +94,6 @@
                     <TextBlock Text="✦" Foreground="#D6C86A" FontSize="18" Margin="0,0,10,0"/>
                     <TextBlock Text="LBA2 / LEVEL WORKSHOP" FontFamily="Consolas" FontSize="11" Foreground="#D6C86A" VerticalAlignment="Center"/>
                 </StackPanel>
-                <Menu DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <MenuItem Header="File">
-                        <MenuItem Header="Settings…" Click="Settings_Click"/>
-                        <MenuItem Header="Open…" Click="Open_Click"/>
-                        <MenuItem Header="Save" Click="Save_Click"/>
-                        <Separator/>
-                        <MenuItem Header="Export…" Click="Export_Click"/>
-                    </MenuItem>
-                </Menu>
                 <TextBlock x:Name="FileLabel" Text="●  DESERT.ILE" FontFamily="Consolas" FontSize="13" Foreground="#C5C6B9" VerticalAlignment="Center" Margin="34,0,0,0"/>
             </DockPanel>
         </Border>
@@ -89,9 +106,9 @@
                     <TextBlock x:Name="DocumentSummary" Text="Native ILE / 16 x 16 cubes" Foreground="#89958B" FontSize="12"/>
                     <Separator Margin="0,28,0,22"/>
                     <TextBlock Text="ISLAND" Style="{StaticResource Eyebrow}"/>
-                    <ComboBox x:Name="IslandCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False" Margin="0,10,0,18"/>
+                    <ComboBox x:Name="IslandCombo" Style="{StaticResource DropdownBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False" Margin="0,10,0,18"/>
                     <TextBlock Text="SCENE" Style="{StaticResource Eyebrow}"/>
-                    <ComboBox x:Name="SceneCombo" Style="{StaticResource FieldBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False" Margin="0,10,0,0"/>
+                    <ComboBox x:Name="SceneCombo" Style="{StaticResource DropdownBox}" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False" Margin="0,10,0,0"/>
                     <TextBlock Text="▦   Source folder linked&#x0a;      E:\GOG Games\...\Levels" FontFamily="Consolas" FontSize="10" Foreground="#849087" Margin="0,44,0,0"/>
                 </StackPanel>
             </Border>
@@ -146,7 +163,7 @@
                         <TextBlock Text="Tile height" Style="{StaticResource FieldLabel}"/>
                         <TextBox Text="0.0" IsReadOnly="True" Style="{StaticResource FieldBox}"/>
                         <TextBlock Text="Walkable" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
-                        <ComboBox SelectedIndex="0" Style="{StaticResource FieldBox}"><ComboBoxItem>Yes</ComboBoxItem><ComboBoxItem>No</ComboBoxItem></ComboBox>
+                        <ComboBox SelectedIndex="0" Style="{StaticResource DropdownBox}"><ComboBoxItem>Yes</ComboBoxItem><ComboBoxItem>No</ComboBoxItem></ComboBox>
                         <TextBlock Text="Native .ILE import and binary writing will plug into this panel." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#78847B" Margin="0,28,0,0"/>
                     </StackPanel>
                     <StackPanel x:Name="MinimapPanel">
@@ -166,5 +183,6 @@
                 </ScrollViewer>
             </Border>
         </Grid>
-    </Grid>
+        </Grid>
+    </DockPanel>
 </Window>
