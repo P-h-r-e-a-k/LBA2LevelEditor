@@ -13,6 +13,9 @@ internal sealed class CompiledScript
     public required Assembler Asm { get; init; }
     public List<ExternalRef> Pending { get; } = new();
 
+    // Non-fatal problems found while compiling (e.g. a literal on the right of a comparison).
+    public List<ScriptWarning> Warnings { get; } = new();
+
     // Life scripts: each function's header source line and the index of its first instruction.
     public List<(int HeaderLine, int FirstInstr)> Blocks { get; } = new();
 
@@ -114,7 +117,7 @@ internal static class TrackText
             var args = Operands.Format(def.Args, i,
                 (ix, d) => d.Type == ArgType.Jump ? Target((int)i.A[ix]) : null,
                 ix => HiddenDefault(i.Op, i.A, ix));
-            sb.Append(def.Name).Append('(').Append(args).Append(");\n");
+            sb.Append(ScriptStyle.Func(def.Name, life: false)).Append('(').Append(args).Append(");\n");
             lineNo++;
         }
         return new DecompiledScript

@@ -1582,7 +1582,9 @@ public partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow { Owner = this };
-        if (dialog.ShowDialog() != true || !dialog.GameDirectoryChanged) return;
+        if (dialog.ShowDialog() != true) return;
+        if (dialog.ScriptNamesChanged) RefreshScriptStyle();
+        if (!dialog.GameDirectoryChanged) return;
 
         gameRoot = EditorSettings.Current.GameDirectory;
         nativeRenderer.SetGameDirectory(gameRoot);
@@ -1590,6 +1592,15 @@ public partial class MainWindow : Window
         PopulateAssetLists();
         if (Directory.Exists(gameRoot)) LoadIsland(Path.Combine(gameRoot, activeFile));
     }
+    // The function-name case setting changed: reprint every open script window's untouched scripts.
+    private void RefreshScriptStyle()
+    {
+        var windows = openScriptWindows.Values.ToList();
+        foreach (var w in windows) w.CommitForRestyle();
+        scriptSession.RefreshStyle();
+        foreach (var w in windows) w.ReloadForRestyle();
+    }
+
     private void Save_Click(object sender, RoutedEventArgs e) => Export_Click(sender, e);
     private void Export_Click(object sender, RoutedEventArgs e) { var dialog = new SaveFileDialog { Filter = "JSON draft (*.json)|*.json", FileName = Path.GetFileNameWithoutExtension(activeFile) + ".json" }; if (dialog.ShowDialog() != true) return; var draft = new { format = "lba2-ile-draft", width = 16, height = 16, tiles = fallbackTiles }; File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(draft, new JsonSerializerOptions { WriteIndented = true })); }
 

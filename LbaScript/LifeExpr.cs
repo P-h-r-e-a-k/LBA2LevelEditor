@@ -6,7 +6,7 @@ namespace LBA2LevelEditor.LbaScript;
 // comparisons (AND_IF / OR_IF ... IF) that jump on the result. In C they read
 // as ordinary && / || expressions of comparison leaves:
 //
-//     if (NB_LITTLE_KEYS() > 0 && (ZONE_OBJ(0) == 2 || DISTANCE(0) < 300)) ...
+//     if (0 < nb_little_keys() && (2 == zone_obj(0) || 300 > distance(0))) ...
 //
 // Each leaf is one LF_* condition function (with its operand, if it has one),
 // a comparison operator and a constant.
@@ -26,9 +26,18 @@ internal sealed record OrExpr(Expr L, Expr R) : Expr;
 
 internal static class ExprText
 {
-    public static string FuncCall(CondDef cd, int funcArg) => cd.OperandName is null ? $"{cd.Name}()" : $"{cd.Name}({funcArg})";
+    public static string FuncCall(CondDef cd, int funcArg)
+    {
+        var name = ScriptStyle.Func(cd.Name);
+        return cd.OperandName is null ? $"{name}()" : $"{name}({funcArg})";
+    }
 
-    public static string PrintLeaf(Leaf l) => $"{FuncCall(l.Cond, l.FuncArg)} {Opcodes.TestSymbols[l.Test]} {l.Value}";
+    // Literals always print on the left: `500 > DISTANCE(0)`, never
+    // `DISTANCE(0) < 500`. The operator is mirrored to keep the meaning.
+    public static string PrintLeaf(Leaf l) => $"{l.Value} {Opcodes.TestSymbols[MirrorTest(l.Test)]} {FuncCall(l.Cond, l.FuncArg)}";
+
+    // `a < b` is `b > a`: swap the sides of a comparison.
+    public static byte MirrorTest(byte t) => t switch { 1 => 2, 2 => 1, 3 => 4, 4 => 3, _ => t };
 
     // Precedence: || = 1, && = 2, leaf = 3. A child is parenthesised when it
     // binds looser than its parent, or (for readability) when an && sits
@@ -92,15 +101,34 @@ internal static class ExprText
         return ParseLeaf(ts);
     }
 
-    // FUNC(operand) <op> value      (nullary functions: FUNC() <op> value, or bare FUNC)
+    // value <op> FUNC(operand)      (the canonical form: literals on the left)
+    // FUNC(operand) <op> value      (accepted, with a warning)
+    // Nullary functions: FUNC() <op> value, or bare FUNC.
     public static Leaf ParseLeaf(TokenStream ts)
     {
-        var (cd, arg, at) = ParseCondCall(ts);
-        var test = ParseTestOp(ts);
-        var vt = ts.Peek();
-        var value = (int)ParseValue(ts);
-        Operands.CheckValueRange(cd.Value, value, vt);
-        return new Leaf(cd, arg, test, value);
+        var first = ts.Peek();
+        var literalFirst = first.Kind == TokKind.Number || first.Is("-")
+            || (first.Kind == TokKind.Ident && Opcodes.Cond(first.Text) is null && Operands.TryConstant(first.Text, out _));
+        if (literalFirst)
+        {
+            var vt = ts.Peek();
+            var value = (int)ParseValue(ts);
+            var test = MirrorTest(ParseTestOp(ts));
+            var (cd, arg, _) = ParseCondCall(ts);
+            Operands.CheckValueRange(cd.Value, value, vt);
+            return new Leaf(cd, arg, test, value);
+        }
+        else
+        {
+            var (cd, arg, at) = ParseCondCall(ts);
+            var test = ParseTestOp(ts);
+            var vt = ts.Peek();
+            var value = (int)ParseValue(ts);
+            Operands.CheckValueRange(cd.Value, value, vt);
+            var leaf = new Leaf(cd, arg, test, value);
+            ts.Warn(vt, $"literal on the right of a comparison; write '{PrintLeaf(leaf)}' (literals go on the left)");
+            return leaf;
+        }
     }
 
     // FUNC / FUNC() / FUNC(n)

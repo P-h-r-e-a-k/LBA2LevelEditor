@@ -66,6 +66,12 @@ internal sealed class ScriptSession
         }
     }
 
+    // Reprint every loaded scene's unedited scripts (after a ScriptStyle change).
+    public void RefreshStyle()
+    {
+        foreach (var s in scenes.Values) s.InvalidateTextCache();
+    }
+
     public bool HasUnsavedEdits => scenes.Values.Any(s => s.HasEdits);
 
     public IReadOnlyList<int> EditedScenes => scenes.Where(p => p.Value.HasEdits).Select(p => p.Key).Order().ToList();

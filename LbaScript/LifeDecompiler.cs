@@ -34,14 +34,22 @@ internal sealed class Unstructured : Exception
 
 // The C-style life-script language.
 //
-//   void comportement_0() {
-//       if (ZONE_OBJ(0) == 2) {
-//           SET_DOOR_DOWN(1024);
-//           SET_COMPORTEMENT(comportement_1);
-//       } else {
-//           SET_TRACK(label_1);
+//   void comportement_0()
+//   {
+//       if (2 == zone_obj(0))
+//       {
+//           set_door_down(1024);
+//           set_comportement(comportement_1);
+//       }
+//       else
+//       {
+//           set_track(label_1);
 //       }
 //   }
+//
+// Style: braces on their own lines (Allman), `else` aligned with its `if`,
+// comparisons with the literal on the left (a literal on the right compiles
+// with a warning), function names lowercase (ScriptStyle.LowercaseNames).
 //
 // A life script is a sequence of comportement blocks, each ended by
 // END_COMPORTEMENT (implicit at the closing brace), followed by an optional
@@ -278,7 +286,8 @@ internal static partial class LifeText
                     if (s.Terminated)
                     {
                         blockHeaderLine[s.From] = lineNo;
-                        Line($"void {ComportementName(s.Ordinal)}() {{");
+                        Line($"void {ComportementName(s.Ordinal)}()");
+                        Line("{");
                         indent++;
                     }
 
@@ -370,7 +379,7 @@ internal static partial class LifeText
             var args = Operands.Format(def.Args, ins, (ix, d) => SymbolFor(ins, def, ix, d), null);
             // SET_DIR / SET_DIR_OBJ: name the move mode.
             if (def.Form == LifeForm.Dir) args = FormatDir(ins, def);
-            return $"{def.Name}({args});";
+            return $"{ScriptStyle.Func(def.Name)}({args});";
         }
 
         private static string FormatDir(Instr ins, LifeOpDef def)
@@ -518,13 +527,14 @@ internal static partial class LifeText
                 visited.Add(shape);
                 if (pendingElse >= 0)
                 {
-                    // "} else if (...) {": one line carries the ELSE and the inner chain.
+                    // "else if (...)": one line carries the ELSE and the inner chain.
                     Mark(pendingElse);
                     for (var k = shape.I; k <= shape.J; k++) beforeLine[k] = codeLine[k] = lineNo;
                     pendingElse = -1;
                 }
                 var kw = shape.IsWhile ? "while" : IfKeyword(shape.Term.Op);
-                Line($"{prefix}{kw} ({ExprText.Print(shape.Cond)}) {{");
+                Line($"{prefix}{kw} ({ExprText.Print(shape.Cond)})");
+                Line("{");
                 indent++;
                 EmitRange(shape.J + 1, shape.ThenEnd, breakTarget);
                 indent--;
@@ -537,17 +547,19 @@ internal static partial class LifeText
                     return result;
                 }
 
+                Line("}");
                 if (TryElseIf(shape, out var inner))
                 {
-                    // "} else if (...) {" is printed by the next iteration of this loop.
-                    prefix = "} else ";
+                    // "else if (...)" is printed by the next iteration of this loop.
+                    prefix = "else ";
                     pendingElse = shape.ThenEnd;
                     shape = inner;
                     continue;
                 }
 
                 Mark(shape.ThenEnd);
-                Line("} else {");
+                Line("else");
+                Line("{");
                 indent++;
                 EmitRange(shape.ElseFrom, shape.ElseEnd, breakTarget);
                 indent--;
@@ -627,7 +639,9 @@ internal static partial class LifeText
             if (k < 0) throw new Unstructured("SWITCH without END_SWITCH");
             var endOff = code[k].Offset;
 
-            Line($"switch ({ExprText.FuncCall(Opcodes.Cond(s.Func)!, s.FuncArg)}) {{");
+            Line($"switch ({ExprText.FuncCall(Opcodes.Cond(s.Func)!, s.FuncArg)})");
+            Line("{");
+            indent++;   // case labels sit inside the braces
             var m2 = i + 1;
             while (m2 < k)
             {
@@ -667,6 +681,7 @@ internal static partial class LifeText
                 }
                 else throw new Unstructured($"unexpected {Opcodes.Life(ins.Op)!.Name} directly inside a switch");
             }
+            indent--;
             Mark(k);
             Line("}");
             return k;

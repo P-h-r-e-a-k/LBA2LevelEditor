@@ -30,7 +30,7 @@ internal static class Program
             window.Width = 1180; window.Height = 760;
             window.Show();
             window.UpdateLayout();
-            var tabs = new[] { "ViewLifeButton", "ViewTrackButton", "ViewDisasmButton", "SaveButton", "RevertButton" }
+            var tabs = new[] { "ViewLifeButton", "ViewTrackButton", "DisassemblyTextBox", "SaveButton", "RevertButton" }
                 .Select(n => window.FindName(n) as FrameworkElement).Where(e => e is not null).ToList();
             foreach (var t in tabs) Console.WriteLine($"  {t!.Name}: {t.ActualWidth:0}x{t.ActualHeight:0}");
             var png = Environment.GetEnvironmentVariable("UISMOKE_PNG");

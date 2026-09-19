@@ -9,14 +9,14 @@ namespace LBA2LevelEditor;
 
 // Non-modal window for reading/editing one actor's life + track script.
 //
-// Three views of the same actor:
-//   * Life (C) / Track (C): the script as C-style source (see LbaScript/), which
+// Two parts:
+//   * Life (C) / Track (C) tabs: the script as C-style source (see LbaScript/), which
 //     is editable and checked by the real compiler as you type. Edits live in a
 //     ScriptSession (shared across windows) until "Save to SCENE.HQR" compiles
 //     the affected scenes and writes them back.
-//   * Disassembly: the native renderer's older read-only text dump, kept for
-//     comparison and as the only view for actors with no scene record (e.g. ones
-//     added in this session).
+//   * A Disassembly pane on the left: the native renderer's older read-only text
+//     dump of both scripts, always visible for comparison. It is also the only
+//     view of an actor with no scene record (e.g. one added in this session).
 //
 // MainWindow opens one of these per actor (keyed by actor index) rather than
 // reusing a single instance, so several actors' scripts can be open side by
@@ -30,10 +30,11 @@ public partial class ActorScriptWindow : Window
     // without a converter.
     private sealed record KeywordItem(string Name, string Kind, string Description, string InsertText);
 
-    private enum ScriptView { Life, Track, Disassembly }
+    private enum ScriptView { Life, Track }
 
     private static readonly SolidColorBrush OkBrush = Frozen(0x8F, 0xC9, 0x8F);
     private static readonly SolidColorBrush ErrorBrush = Frozen(0xE0, 0x7A, 0x6A);
+    private static readonly SolidColorBrush WarnBrush = Frozen(0xE0, 0xB0, 0x5A);
     private static readonly SolidColorBrush NeutralBrush = Frozen(0x89, 0x95, 0x8B);
 
     private static SolidColorBrush Frozen(byte r, byte g, byte b)
@@ -82,7 +83,7 @@ public partial class ActorScriptWindow : Window
     }
 
     private ScriptKind CurrentKind => view == ScriptView.Track ? ScriptKind.Track : ScriptKind.Life;
-    private bool IsCView => view != ScriptView.Disassembly && sceneScripts is not null;
+    private bool IsCView => sceneScripts is not null;
 
     // WPF's TextBox reports newlines as \r\n; the compiler and the stored
     // decompilation use \n. Normalise so that merely viewing a script never
@@ -122,12 +123,20 @@ public partial class ActorScriptWindow : Window
         RevertButton.IsEnabled = hasScene;
         SaveButton.IsEnabled = hasScene;
 
-        SelectView(!hasScene ? ScriptView.Disassembly : view == ScriptView.Disassembly ? ScriptView.Life : view);
+        DisassemblyTextBox.Text = nativeScript;
+        DisassemblyTextBox.ScrollToHome();
+        SelectView(view);
 
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
     }
+
+    // After a script-style setting changed (see MainWindow.RefreshScriptStyle): first every
+    // window stores what it shows, then the session regenerates its cached text, then every
+    // window reloads -- so untouched scripts re-print in the new style without counting as edits.
+    internal void CommitForRestyle() => CommitEditor();
+    internal void ReloadForRestyle() { keywordCache.Clear(); LoadView(); }
 
     // ---- views ------------------------------------------------------------
 
@@ -135,7 +144,7 @@ public partial class ActorScriptWindow : Window
     {
         view = v;
         switchingView = true;
-        (v switch { ScriptView.Life => ViewLifeButton, ScriptView.Track => ViewTrackButton, _ => ViewDisasmButton }).IsChecked = true;
+        (v == ScriptView.Track ? ViewTrackButton : ViewLifeButton).IsChecked = true;
         switchingView = false;
         LoadView();
     }
@@ -143,7 +152,7 @@ public partial class ActorScriptWindow : Window
     private void View_Checked(object sender, RoutedEventArgs e)
     {
         if (switchingView) return;
-        var next = ((RadioButton)sender).Tag switch { "life" => ScriptView.Life, "track" => ScriptView.Track, _ => ScriptView.Disassembly };
+        var next = ((RadioButton)sender).Tag is "track" ? ScriptView.Track : ScriptView.Life;
         if (next == view) return;
         CommitEditor();             // still holds the previous view's text
         view = next;
@@ -162,11 +171,9 @@ public partial class ActorScriptWindow : Window
         }
         else
         {
-            text = nativeScript;
+            text = "// No scene record for this actor (added this session?), so there is no C source to edit.\n// The disassembly on the left is the only view.\n";
             ScriptTextBox.IsReadOnly = true;
-            HintLabel.Text = sceneScripts is null
-                ? "no scene record for this actor (added this session?) — read-only native disassembly"
-                : "read-only native disassembly (partial decoder; use the C views to edit)";
+            HintLabel.Text = "no scene record for this actor — read-only";
         }
 
         suppressTextChanged = true;
@@ -201,8 +208,9 @@ public partial class ActorScriptWindow : Window
         }
 
         var text = EditorText;
-        var (size, error) = sceneScripts!.CheckText(source.Slot, CurrentKind, text);
+        var (size, error, warnings) = sceneScripts!.CheckTextFull(source.Slot, CurrentKind, text);
         var edited = text != sceneScripts.OriginalText(source.Slot, CurrentKind);
+        StatusText.ToolTip = null;
         if (error is not null)
         {
             lastErrorLine = error.Line;
@@ -214,9 +222,21 @@ public partial class ActorScriptWindow : Window
             var stored = sceneScripts.OriginalSize(source.Slot, CurrentKind);
             // Stored comments whose statement is gone are listed at the end of the script under a marker line.
             var detached = text.Contains("lost their statement") ? sceneScripts.DetachedComments(source.Slot, CurrentKind) : 0;
-            StatusText.Text = $"✓ compiles · {size} bytes" + (size != stored ? $" (stored: {stored})" : "") + (edited ? " · edited" : "") +
-                              (detached > 0 ? $" · {detached} comment(s) lost their statement — see end of script" : "") + UnsavedNote();
-            StatusText.Foreground = OkBrush;
+            var summary = $"{size} bytes" + (size != stored ? $" (stored: {stored})" : "") + (edited ? " · edited" : "") +
+                          (detached > 0 ? $" · {detached} comment(s) lost their statement — see end of script" : "") + UnsavedNote();
+            if (warnings.Count > 0)
+            {
+                // Compiles, but the text isn't in the canonical style (e.g. a literal on the right of a comparison).
+                lastErrorLine = warnings[0].Line;
+                StatusText.Text = $"⚠ line {warnings[0].Line}: {warnings[0].Message}" + (warnings.Count > 1 ? $" (+{warnings.Count - 1} more)" : "") + $" · compiles, {summary}";
+                StatusText.Foreground = WarnBrush;
+                StatusText.ToolTip = string.Join("\n", warnings.Select(w => $"line {w.Line}, col {w.Column}: {w.Message}"));
+            }
+            else
+            {
+                StatusText.Text = $"✓ compiles · {summary}";
+                StatusText.Foreground = OkBrush;
+            }
         }
 
         RefreshSuggestionPool();
@@ -432,7 +452,7 @@ public partial class ActorScriptWindow : Window
         {
             list = ScriptCompletions.For(kind)
                 .Select(c => new KeywordItem(c.Name, c.Category, c.Description, c.InsertText))
-                .OrderBy(k => k.Name, StringComparer.Ordinal)
+                .OrderBy(k => k.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             keywordCache[kind] = list;
         }

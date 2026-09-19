@@ -87,32 +87,34 @@ internal static class CommentTests
 
     private static void UnitCases()
     {
-        // leading / trailing / end-of-block / after-the-function comments
+        // leading / trailing / end-of-block / after-the-function comments (written in the older
+        // brace-on-the-same-line style with the literal on the right: still compiles, and the
+        // regenerated text is in the canonical style)
         CheckText(Roundtrip(
             "// guard\nvoid comportement_0() {\n    // check the door\n    if (ZONE() == 1) { // inside\n        BODY(2);\n    } else {\n        BODY(3); // other\n    }\n    // end of body\n}\n// after\n",
             ScriptKind.Life),
-            "// guard\nvoid comportement_0() {\n    // check the door\n    if (ZONE() == 1) {  // inside\n        BODY(2);\n    } else {\n        BODY(3);  // other\n    }\n    // end of body\n}\n\n// after\n",
+            "// guard\nvoid comportement_0()\n{\n    // check the door\n    if (1 == zone())  // inside\n    {\n        body(2);\n    }\n    else\n    {\n        body(3);  // other\n    }\n    // end of body\n}\n\n// after\n",
             "leading/trailing/end comments");
 
         // "//" inside a string is not a comment; block comments become // lines
         CheckText(Roundtrip(
             "void comportement_0() {\n    PLAY_ACF(\"x//y\"); /* keep */\n    /* block\n       spanning */\n    BODY(1);\n}\n", ScriptKind.Life),
-            "void comportement_0() {\n    PLAY_ACF(\"x//y\");  // keep\n    // block\n    // spanning\n    BODY(1);\n}\n",
+            "void comportement_0()\n{\n    play_acf(\"x//y\");  // keep\n    // block\n    // spanning\n    body(1);\n}\n",
             "string contents and block comments");
 
         // a comment inside an empty block stays inside it
-        CheckText(Roundtrip("void comportement_0() {\n    if (ZONE() == 1) {\n        // nothing yet\n    }\n}\n", ScriptKind.Life),
-            "void comportement_0() {\n    if (ZONE() == 1) {\n        // nothing yet\n    }\n}\n", "empty block");
+        CheckText(Roundtrip("void comportement_0()\n{\n    if (1 == zone())\n    {\n        // nothing yet\n    }\n}\n", ScriptKind.Life),
+            "void comportement_0()\n{\n    if (1 == zone())\n    {\n        // nothing yet\n    }\n}\n", "empty block");
 
         // else-if / while / switch, comments before case and default
         const string control =
-            "void comportement_0() {\n    // pick\n    if (ZONE() == 1) {\n        BODY(1);\n    } else if (ZONE() == 2) {  // second\n        BODY(2);\n    } else {\n        BODY(3);\n    }\n" +
-            "    while (ACTION() == 0) {\n        // spin\n        NOP();\n    }\n    switch (RND(3)) {\n    // zero\n    case 0:\n        BODY(4);\n        break;\n    // fallback\n    default:\n        BODY(5);\n    }\n}\n";
+            "void comportement_0()\n{\n    // pick\n    if (1 == zone())\n    {\n        body(1);\n    }\n    else if (2 == zone())  // second\n    {\n        body(2);\n    }\n    else\n    {\n        body(3);\n    }\n" +
+            "    while (0 == action())\n    {\n        // spin\n        nop();\n    }\n    switch (rnd(3))\n    {\n        // zero\n        case 0:\n            body(4);\n            break;\n        // fallback\n        default:\n            body(5);\n    }\n}\n";
         CheckText(Roundtrip(control, ScriptKind.Life), control, "else-if / while / switch");
 
         // statements outside any function, with a comment at the end
         CheckText(Roundtrip("// note about tail\nSUICIDE();\n// trailing thought\n", ScriptKind.Life),
-            "// note about tail\nSUICIDE();\n\n// trailing thought\n", "tail statements");
+            "// note about tail\nsuicide();\n\n// trailing thought\n", "tail statements");
 
         // the generated header line is never stored (it is regenerated on load)
         {
@@ -130,10 +132,49 @@ internal static class CommentTests
 
         // track scripts
         CheckText(Roundtrip("// go\nLABEL(0);\nSAMPLE(1); // ping\nWAIT_NB_SECOND(2);\n// loop back\nGOTO(label_0);\n", ScriptKind.Track),
-            "// go\nLABEL(0);\nSAMPLE(1);  // ping\nWAIT_NB_SECOND(2);\n// loop back\nGOTO(label_0);\n", "track comments");
+            "// go\nlabel(0);\nsample(1);  // ping\nwait_nb_second(2);\n// loop back\ngoto(label_0);\n", "track comments");
 
         // a text with no comments is left exactly as decompiled
-        CheckText(Roundtrip("void comportement_0() {\n    BODY(1);\n}\n", ScriptKind.Life), "void comportement_0() {\n    BODY(1);\n}\n", "no comments");
+        CheckText(Roundtrip("void comportement_0() {\n    BODY(1);\n}\n", ScriptKind.Life), "void comportement_0()\n{\n    body(1);\n}\n", "no comments");
+
+        StyleCases();
+    }
+
+    // Style: literal-left comparisons, warnings for literal-right, Allman braces, lower/upper-case names.
+    private static void StyleCases()
+    {
+        var syms = NoSymbols.Instance;
+
+        // literal-left compiles without warnings, literal-right compiles with one
+        var left = LifeText.Compile("void comportement_0()\n{\n    if (500 > distance(0))\n    {\n        body(1);\n    }\n}\n", 0, syms);
+        Check(left.Warnings.Count == 0, "literal on the left: no warnings");
+        var right = LifeText.Compile("void comportement_0()\n{\n    if (DISTANCE(0) < 500)\n    {\n        body(1);\n    }\n}\n", 0, syms);
+        Check(right.Warnings.Count == 1 && right.Warnings[0].Line == 3 && right.Warnings[0].Message.Contains("500 > distance(0)"),
+            $"literal on the right: one warning suggesting the mirrored form (got: {string.Join(" | ", right.Warnings.Select(w => $"{w.Line}: {w.Message}"))})");
+        Check(left.Bytes.AsSpan().SequenceEqual(right.Bytes), "both spellings compile to the same bytes");
+
+        // every comparison operator mirrors correctly
+        foreach (var (written, mirrored) in new[] { ("<", ">"), (">", "<"), ("<=", ">="), (">=", "<="), ("==", "=="), ("!=", "!=") })
+        {
+            var a = LifeText.Compile($"if (7 {written} chapter()) {{ nop(); }}\n", 0, syms);
+            var b = LifeText.Compile($"if (chapter() {mirrored} 7) {{ nop(); }}\n", 0, syms);
+            Check(a.Bytes.AsSpan().SequenceEqual(b.Bytes), $"'7 {written} chapter()' is 'chapter() {mirrored} 7'");
+        }
+
+        // names print in the chosen case; both compile
+        var before = ScriptStyle.LowercaseNames;
+        try
+        {
+            var bytes = LifeText.Compile("void comportement_0()\n{\n    BODY(1);\n    if (3 < RND(5))\n    {\n        SET_VAR_GAME(60, 3);\n    }\n}\n", 0, syms).Bytes;
+            ScriptStyle.LowercaseNames = true;
+            var lower = LifeText.Decompile(bytes, 0, syms);
+            CheckText(lower, "void comportement_0()\n{\n    body(1);\n    if (3 < rnd(5))\n    {\n        set_var_game(60, 3);\n    }\n}\n", "lowercase names");
+            ScriptStyle.LowercaseNames = false;
+            var upper = LifeText.Decompile(bytes, 0, syms);
+            CheckText(upper, "void comportement_0()\n{\n    BODY(1);\n    if (3 < RND(5))\n    {\n        SET_VAR_GAME(60, 3);\n    }\n}\n", "uppercase names");
+            Check(LifeText.Compile(lower, 0, syms).Bytes.AsSpan().SequenceEqual(bytes) && LifeText.Compile(upper, 0, syms).Bytes.AsSpan().SequenceEqual(bytes), "both cases compile back to the same bytes");
+        }
+        finally { ScriptStyle.LowercaseNames = before; }
     }
 
     private static void Aligner()
@@ -187,6 +228,8 @@ internal static class CommentTests
         var lines = DecompiledScript.Split(canonical);
         var sb = new StringBuilder();
         var n = 0;
+        string? prevCode = null;
+        var prevIndent = 0;
         for (var li = 0; li < lines.Length; li++)
         {
             var line = lines[li];
@@ -198,14 +241,23 @@ internal static class CommentTests
 
             if (code.StartsWith('}'))
             {
-                sb.Append(' ', indent + 4).Append("// c").Append(++n).Append('\n').Append(line).Append('\n');
+                // A comment above a closing brace attaches to the block's last statement, so it is
+                // written at that statement's indent (the brace's indent + 4, except that a switch's
+                // last `break;` sits one level deeper still). Empty blocks and labels: brace + 4.
+                var prev = prevCode;
+                var at = indent + 4;
+                if (prev is not null && prev != "{" && !prev.EndsWith(':')) at = prevIndent;
+                sb.Append(' ', at).Append("// c").Append(++n).Append('\n').Append(line).Append('\n');
+                prevCode = code; prevIndent = indent;
                 continue;
             }
-            if (code == ";") { sb.Append(line).Append('\n'); continue; }    // empty statement: no instruction to attach to
+            var thisCode = code; var thisIndent = indent;
+            if (code == ";" || code == "{") { sb.Append(line).Append('\n'); prevCode = thisCode; prevIndent = thisIndent; continue; }    // no instruction to attach to
 
             sb.Append(' ', indent).Append("// c").Append(++n).Append('\n').Append(line);
             if (!LabelOnly.IsMatch(code)) sb.Append("  // t").Append(++n);
             sb.Append('\n');
+            prevCode = thisCode; prevIndent = thisIndent;
         }
         sb.Append('\n').Append("// end\n");
         return sb.ToString();
@@ -260,7 +312,7 @@ internal static class CommentTests
         for (var i = 0; i < Math.Max(e.Length, a.Length); i++)
         {
             var x = i < e.Length ? e[i] : "<none>"; var y = i < a.Length ? a[i] : "<none>";
-            if (x != y) return $"line {i + 1}: expected \"{x}\" but got \"{y}\"";
+            if (x != y) { var ctx = string.Join(" / ", Enumerable.Range(Math.Max(0, i - 3), 5).Where(k => k < e.Length).Select(k => e[k].Trim())); return $"line {i + 1}: expected \"{x}\" but got \"{y}\" (context: {ctx})"; }
         }
         return "?";
     }
@@ -306,7 +358,7 @@ internal static class CommentTests
 
             // 3. edit the code (keeping the comments) and save: the bytes change, the comments follow
             var headerLine = life.Split('\n').First(l => l.StartsWith("void comportement_0()"));
-            var edited = life.Replace(headerLine + "\n", headerLine + "\n    NOP();\n");
+            var edited = life.Replace(headerLine + "\n{\n", headerLine + "\n{\n    nop();\n");
             Check(edited != life, "e2e: test setup could not find the first function header");
             sb.SetText(lifeActor, ScriptKind.Life, edited);
             saved = b.SaveAll();
@@ -328,19 +380,19 @@ internal static class CommentTests
             var sd = d.GetScene(scene)!;
             var plain = sd.GetText(lifeActor, ScriptKind.Life);
             var plainHeader = plain.Split('\n').First(l => l.StartsWith("void comportement_0()"));
-            sd.SetText(lifeActor, ScriptKind.Life, plain.Replace(plainHeader + "\n", plainHeader + "\n    SET_VAR_CUBE(9, 9);\n"));
+            sd.SetText(lifeActor, ScriptKind.Life, plain.Replace(plainHeader + "\n{\n", plainHeader + "\n{\n    set_var_cube(9, 9);\n"));
             Check(d.SaveAll().Ok, "e2e: external edit failed to save");
             Check(!File.Exists(Path.Combine(dir, "other.json")), "e2e: a session without comments must not create a sidecar");
 
             var e = Session(sidecar);
             var se = e.GetScene(scene)!;
             var realigned = se.GetText(lifeActor, ScriptKind.Life);
-            CheckText(realigned, edited.Replace(headerLine + "\n", headerLine + "\n    SET_VAR_CUBE(9, 9);\n"), "e2e: comments must follow their statements after an external change");
+            CheckText(realigned, edited.Replace(headerLine + "\n{\n", headerLine + "\n{\n    set_var_cube(9, 9);\n"), "e2e: comments must follow their statements after an external change");
             Check(se.DetachedComments(lifeActor, ScriptKind.Life) == 0, "e2e: realigned comments are not detached");
 
             // 5. a commented statement disappears: its comments are kept, visibly, not dropped
-            var target = realigned.Split('\n').First(l => Regex.IsMatch(l, @"^\s+[A-Z_]+\(.*\);  // t\d+$") && !l.Contains("SET_VAR_CUBE(9, 9)"));
-            var targetCode = Regex.Match(target, @"^(\s+[A-Z_]+\(.*\);)  // t\d+$").Groups[1].Value;
+            var target = realigned.Split('\n').First(l => Regex.IsMatch(l, @"^\s+[a-z_]+\(.*\);  // t\d+$") && !l.Contains("set_var_cube(9, 9)"));
+            var targetCode = Regex.Match(target, @"^(\s+[a-z_]+\(.*\);)  // t\d+$").Groups[1].Value;
             var trailingWord = Regex.Match(target, @"// (t\d+)$").Groups[1].Value;
             var f = Session(Path.Combine(dir, "third.json"));
             var sf = f.GetScene(scene)!;

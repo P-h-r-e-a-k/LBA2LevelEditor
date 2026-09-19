@@ -204,19 +204,43 @@ internal static class CommentExtractor
         }
 
         // Brace structure: for a line that closes a statement, the line that statement started on.
+        // Handles both `if (c) {` and braces on their own line: a lone `{` belongs to the header line
+        // just above it, and `}` + `else` + `{` continue the same if statement.
         var endsStatement = new Dictionary<int, int>();
+        var openLineHeader = new Dictionary<int, int>();      // a line that is just "{" -> the header line above it
+        var codeLines = src.Where(l => l.Code.Length > 0).ToList();
         var stack = new Stack<int>();
-        foreach (var l in src)
+        var pendingBlockStart = -1;                           // start of an if whose block closed and whose `else` follows
+        var lastHeader = -1;                                  // last code line that is not just a brace
+        for (var ix = 0; ix < codeLines.Count; ix++)
         {
-            if (l.Code.Length == 0) continue;
+            var l = codeLines[ix];
+            var stripped = CommentScanner.StripStrings(l.Code);
+            var trimmed = stripped.Trim();
+            var braceOnly = trimmed == "{";
             var inherit = -1;
-            foreach (var ch in CommentScanner.StripStrings(l.Code))
+            foreach (var ch in stripped)
             {
                 if (ch == '}') { if (stack.Count > 0) inherit = stack.Pop(); }
-                else if (ch == '{') { stack.Push(inherit >= 0 ? inherit : l.Number); inherit = -1; }
+                else if (ch == '{')
+                {
+                    var start = inherit >= 0 ? inherit : pendingBlockStart >= 0 ? pendingBlockStart : braceOnly && lastHeader >= 0 ? lastHeader : l.Number;
+                    if (braceOnly && lastHeader >= 0) openLineHeader[l.Number] = lastHeader;
+                    stack.Push(start);
+                    inherit = -1;
+                    pendingBlockStart = -1;
+                }
             }
-            if (inherit >= 0) endsStatement[l.Number] = inherit;
+            if (inherit >= 0)
+            {
+                var nextIsElse = ix + 1 < codeLines.Count && StartsWithWord(codeLines[ix + 1].Code, "else");
+                if (nextIsElse) pendingBlockStart = inherit; else endsStatement[l.Number] = inherit;
+            }
+            if (trimmed != "{" && trimmed != "}") lastHeader = l.Number;
         }
+
+        static bool StartsWithWord(string code, string word) =>
+            code.StartsWith(word, StringComparison.Ordinal) && (code.Length == word.Length || !(char.IsLetterOrDigit(code[word.Length]) || code[word.Length] == '_'));
 
         void Add(int instr, CommentPlace place, params string[] lines)
         {
@@ -242,6 +266,8 @@ internal static class CommentExtractor
                 // A comment just before a closing brace belongs to the end of the block it closes.
                 var prev = byNumber[prevCode];
                 if (endsStatement.TryGetValue(prevCode, out var start) && firstInstr.TryGetValue(start, out var si)) { Add(si, CommentPlace.After, arr); return; }
+                // Right after a lone `{` (an empty body): the comment goes inside the block that header opens.
+                if (openLineHeader.TryGetValue(prevCode, out var hdrLine) && firstInstr.TryGetValue(hdrLine, out var hi)) { Add(hi, CommentPlace.Inside, arr); return; }
                 if (firstInstr.TryGetValue(prevCode, out var pi))
                 {
                     // Right after a line that opens a block (an empty body) the comment goes inside it.
@@ -431,7 +457,13 @@ internal static class CommentWeaver
                     Put(below, line, first, c.Lines, lines[first].TrimEnd().EndsWith(':') ? 4 : 0);
                     break;
                 }
-                case CommentPlace.Inside: Put(below, line, line, c.Lines, 4); break;
+                case CommentPlace.Inside:
+                {
+                    // The block's `{` is on its own line just below the header: file the comment under it.
+                    var open = line + 1 < lines.Length && lines[line + 1].Trim() == "{" ? line + 1 : line;
+                    Put(below, open, line, c.Lines, 4);
+                    break;
+                }
                 case CommentPlace.Trailing: case CommentPlace.BlockTrailing:
                     if (!trailing.TryGetValue(line, out var tl)) trailing[line] = tl = new List<string>();
                     tl.AddRange(c.Lines.Select(t => "//" + t));

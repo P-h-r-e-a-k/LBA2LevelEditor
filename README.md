@@ -31,7 +31,7 @@ Panning across a whole island (not just orbiting a single fixed cube) is done th
 
 ## Actor scripts as C
 
-Actor life and track scripts open as C-style source in the actor script window (Life (C) / Track (C) tabs) with
+Actor life and track scripts open as C-style source in the actor script window (Life (C) / Track (C) tabs, with the read-only native disassembly in a pane on the left) with
 live compile checking, and can be saved back into `SCENE.HQR` (first save keeps `SCENE.HQR.bak`). The translator is
 verified byte-exact against every script in the game; see [LbaScript/README.md](LbaScript/README.md) for the
 language, how it maps onto the engine's opcodes, and the test tooling.

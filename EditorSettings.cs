@@ -28,6 +28,10 @@ internal sealed class EditorSettings
 
     public string GameDirectory { get; set; } = @"E:\GOG Games\Little Big Adventure 2 - Level viewer";
 
+    // Script text prints function names in lowercase (set_track(...)) instead of the
+    // engine's uppercase (SET_TRACK(...)). The compiler accepts either.
+    public bool LowercaseScriptNames { get; set; } = true;
+
     private static EditorSettings? cached;
     public static EditorSettings Current => cached ??= Load();
 
@@ -38,7 +42,7 @@ internal sealed class EditorSettings
             if (File.Exists(SettingsPath))
             {
                 var loaded = JsonSerializer.Deserialize<EditorSettings>(File.ReadAllText(SettingsPath));
-                if (loaded is not null) return loaded;
+                if (loaded is not null) { LbaScript.ScriptStyle.LowercaseNames = loaded.LowercaseScriptNames; return loaded; }
             }
         }
         catch
@@ -54,5 +58,6 @@ internal sealed class EditorSettings
         Directory.CreateDirectory(SettingsDirectory);
         File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
         cached = this;
+        LbaScript.ScriptStyle.LowercaseNames = LowercaseScriptNames;
     }
 }

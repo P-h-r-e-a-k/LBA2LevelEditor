@@ -180,8 +180,8 @@ internal static class SceneTests
 
         var s = SceneScripts.Load(original, 2);
         var track8 = s.GetText(8, ScriptKind.Track);
-        Check(track8.Contains("LABEL(0);"), "negative: scene 2 actor 8 should have LABEL(0)");
-        s.SetText(8, ScriptKind.Track, track8.Replace("LABEL(0);", "LABEL(77);"));
+        Check(track8.Contains("label(0);"), "negative: scene 2 actor 8 should have LABEL(0)");
+        s.SetText(8, ScriptKind.Track, track8.Replace("label(0);", "label(77);"));
         var r = s.Build();
         Check(!r.Ok && r.Errors.Any(e => e.Actor == 0 && e.Kind == ScriptKind.Life && e.Message.Contains("label_0") && e.Message.Contains("actor 8")),
             $"negative: dangling SET_TRACK_OBJ not reported ({(r.Ok ? "build succeeded" : string.Join("; ", r.Errors))})");

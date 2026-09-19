@@ -51,6 +51,7 @@ internal static partial class LifeText
             var script = new CompiledScript { Kind = ScriptKind.Life, Bytes = bytes, Symbols = symbols, Asm = asm };
             script.Pending.AddRange(pending);
             script.Blocks.AddRange(blocks);
+            script.Warnings.AddRange(ts.Warnings);
             return script;
         }
 

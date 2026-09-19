@@ -359,9 +359,9 @@ internal static class Opcodes
     private static readonly TrackOpDef?[] trackById = Index(trackDefs, d => d.Id, 256);
     private static readonly CondDef?[] condById = Index(condDefs, d => d.Id, 256);
 
-    private static readonly Dictionary<string, LifeOpDef> lifeByName = lifeDefs.ToDictionary(d => d.Name, StringComparer.Ordinal);
-    private static readonly Dictionary<string, TrackOpDef> trackByName = trackDefs.ToDictionary(d => d.Name, StringComparer.Ordinal);
-    private static readonly Dictionary<string, CondDef> condByName = condDefs.ToDictionary(d => d.Name, StringComparer.Ordinal);
+    private static readonly Dictionary<string, LifeOpDef> lifeByName = lifeDefs.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, TrackOpDef> trackByName = trackDefs.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, CondDef> condByName = condDefs.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
 
     private static T?[] Index<T>(T[] defs, Func<T, byte> id, int size) where T : class
     {

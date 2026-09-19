@@ -14,6 +14,9 @@ public sealed class ScriptCompileException : Exception
     }
 }
 
+// A problem that does not stop the script compiling.
+public sealed record ScriptWarning(int Line, int Column, string Message);
+
 internal enum TokKind : byte { Ident, Number, String, Punct, End }
 
 internal readonly record struct Token(TokKind Kind, string Text, long Value, int Line, int Col)
@@ -145,6 +148,10 @@ internal sealed class TokenStream
     private int lastLine = 1;
 
     public TokenStream(List<Token> tokens) => this.tokens = tokens;
+
+    // Warnings raised while parsing (compilation still succeeds).
+    public List<ScriptWarning> Warnings { get; } = new();
+    public void Warn(Token at, string message) => Warnings.Add(new ScriptWarning(at.Line, at.Col, message));
 
     public Token Peek(int ahead = 0) => tokens[Math.Min(pos + ahead, tokens.Count - 1)];
     public Token Next() { var t = Peek(); if (t.Kind != TokKind.End) { pos++; lastLine = t.Line; } return t; }

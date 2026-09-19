@@ -35,16 +35,34 @@ SCENE.HQR record ──SceneRecord──▶ life/track bytes ──Bytecode─�
 ## Life language
 
 ```c
-void comportement_0() {
-    if (ZONE_OBJ(0) == 2) {
-        SET_DOOR_DOWN(1024);
-        SET_COMPORTEMENT(comportement_1);
-        SET_TRACK(label_100);
-    } else if (NB_LITTLE_KEYS() > 0 && (COL() == 8 || DISTANCE(0) < 300)) {
-        SET_TRACK_OBJ(8, label_0);
+void comportement_0()
+{
+    if (2 == zone_obj(0))
+    {
+        set_door_down(1024);
+        set_comportement(comportement_1);
+        set_track(label_100);
+    }
+    else if (0 < nb_little_keys() && (8 == col() || 300 > distance(0)))
+    {
+        set_track_obj(8, label_0);
     }
 }
 ```
+
+### Style
+
+The decompiler always writes this canonical style; the compiler accepts other layouts (and other cases).
+
+* **Braces** each on their own line; **`else`** / **`else if`** on their own line, aligned with the `if` they belong to.
+* **Literals on the left** of a comparison: `500 > distance(0)`, not `distance(0) < 500`. Writing the literal on the right
+  still compiles but raises a **compile-time warning** (shown in the script window's status line, with the suggested
+  rewrite); both spellings produce identical bytes. The operator mirrors (`<`↔`>`, `<=`↔`>=`).
+* **Function names lowercase** (`set_track`, `distance`): Settings ▸ *Lowercase function names in script text*, on by
+  default. The compiler is case-insensitive for function names. The flat low-level control-flow forms `IF(…)`, `ELSE(…)`,
+  `CASE(…)`, `SWITCH(…)` always stay uppercase, because their lowercase spellings are the structured keywords.
+  Constants (`MOVE_FOLLOW`, …) keep their uppercase names.
+
 
 | C | engine |
 |---|---|

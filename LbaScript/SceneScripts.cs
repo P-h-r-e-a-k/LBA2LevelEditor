@@ -152,17 +152,36 @@ public sealed class SceneScripts
     // change any stored state.
     public (int Size, ScriptDiagnostic? Error) CheckText(int actor, ScriptKind kind, string text)
     {
+        var r = CheckTextFull(actor, kind, text);
+        return (r.Size, r.Error);
+    }
+
+    // As CheckText, plus the compiler's warnings (which don't stop it compiling).
+    public (int Size, ScriptDiagnostic? Error, IReadOnlyList<ScriptDiagnostic> Warnings) CheckTextFull(int actor, ScriptKind kind, string text)
+    {
         try
         {
-            if (kind == ScriptKind.Track) return (TrackText.Compile(text).Bytes.Length, null);
-            var c = LifeText.Compile(text, actor, symbols);
-            c.ResolveExternals(r => LifeText.ResolveExternal(r, actor, symbols, c));
-            return (c.Bytes.Length, null);
+            CompiledScript c;
+            if (kind == ScriptKind.Track) c = TrackText.Compile(text);
+            else
+            {
+                c = LifeText.Compile(text, actor, symbols);
+                c.ResolveExternals(r => LifeText.ResolveExternal(r, actor, symbols, c));
+            }
+            var warnings = c.Warnings.Select(w => new ScriptDiagnostic(actor, kind, w.Line, w.Column, w.Message, sceneNumber)).ToList();
+            return (c.Bytes.Length, null, warnings);
         }
         catch (ScriptCompileException e)
         {
-            return (0, new ScriptDiagnostic(actor, kind, e.Line, e.Column, StripPosition(e.Message)));
+            return (0, new ScriptDiagnostic(actor, kind, e.Line, e.Column, StripPosition(e.Message)), Array.Empty<ScriptDiagnostic>());
         }
+    }
+
+    // Forgets the cached decompilations so they are printed again (after a
+    // ScriptStyle change). Edited text is the user's own and is left alone.
+    public void InvalidateTextCache()
+    {
+        foreach (var e in life.Concat(track)) e.OriginalText = null;
     }
 
     private static string StripPosition(string message)

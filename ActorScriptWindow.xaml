@@ -17,7 +17,7 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="7"/>
         </Style>
-        <!-- Flat segmented-control look for the Life / Track / Disassembly switch. -->
+        <!-- Flat segmented-control look for the Life / Track switch. -->
         <Style x:Key="ViewTab" TargetType="RadioButton">
             <Setter Property="Foreground" Value="#AEB7AB"/>
             <Setter Property="Background" Value="#151B18"/>
@@ -76,7 +76,9 @@
     </Window.Resources>
     <Grid Margin="22">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="320" MinWidth="160"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="*" MinWidth="300"/>
             <ColumnDefinition Width="16"/>
             <ColumnDefinition Width="260"/>
         </Grid.ColumnDefinitions>
@@ -92,23 +94,21 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3">
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5">
             <TextBlock Text="ACTOR SCRIPT" Style="{StaticResource Eyebrow}"/>
             <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,0"/>
         </StackPanel>
 
-        <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Background="#151B18" BorderBrush="#3A4740" BorderThickness="1" Padding="12,10">
+        <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5" Background="#151B18" BorderBrush="#3A4740" BorderThickness="1" Padding="12,10">
             <TextBlock x:Name="StatsLabel" Text="" FontFamily="Consolas" FontSize="11" Foreground="#AEB7AB" TextWrapping="Wrap"/>
         </Border>
 
-        <DockPanel Grid.Row="4" Grid.Column="0">
+        <DockPanel Grid.Row="4" Grid.Column="2">
             <TextBlock Text="SCRIPT" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
             <StackPanel Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
                 <RadioButton x:Name="ViewLifeButton" Content="Life (C)" GroupName="ScriptView" Tag="life"
                              Style="{StaticResource ViewTab}" Checked="View_Checked"/>
                 <RadioButton x:Name="ViewTrackButton" Content="Track (C)" GroupName="ScriptView" Tag="track"
-                             Style="{StaticResource ViewTab}" Checked="View_Checked"/>
-                <RadioButton x:Name="ViewDisasmButton" Content="Disassembly" GroupName="ScriptView" Tag="disasm"
                              Style="{StaticResource ViewTab}" Checked="View_Checked"/>
             </StackPanel>
             <TextBlock DockPanel.Dock="Right" Text="Ctrl+Space for suggestions"
@@ -117,9 +117,19 @@
                        Foreground="#89958B" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
         </DockPanel>
 
-        <TextBlock Grid.Row="4" Grid.Column="2" Text="KEYWORDS" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+        <TextBlock Grid.Row="4" Grid.Column="4" Text="KEYWORDS" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
 
-        <Grid Grid.Row="6" Grid.Column="0">
+        <!-- Read-only disassembly of the same actor's scripts (life, then track), always visible to the left of the C editor. -->
+        <TextBlock Grid.Row="4" Grid.Column="0" Text="DISASSEMBLY" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+        <TextBox x:Name="DisassemblyTextBox" Grid.Row="6" Grid.Column="0" Grid.RowSpan="3"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                 FontFamily="Consolas" FontSize="12" Foreground="#9AA69C" Background="#0D1210"
+                 BorderBrush="#3A4740" BorderThickness="1" Padding="10"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+        <GridSplitter Grid.Row="4" Grid.Column="1" Grid.RowSpan="5" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"/>
+
+        <Grid Grid.Row="6" Grid.Column="2">
             <TextBox x:Name="ScriptTextBox"
                      AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
                      FontFamily="Consolas" FontSize="13" Foreground="#DCE0C8" Background="#0D1210"
@@ -149,7 +159,7 @@
         </Grid>
 
         <!-- Compile status of the text in the editor, plus the actions that act on the scene's scripts. -->
-        <Grid Grid.Row="8" Grid.Column="0">
+        <Grid Grid.Row="8" Grid.Column="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -168,7 +178,7 @@
              in-editor autocomplete popup above: browsable/searchable on its
              own rather than only appearing while actively typing a matching
              prefix. Double-click or Enter inserts at the caret. -->
-        <Grid Grid.Row="6" Grid.Column="2">
+        <Grid Grid.Row="6" Grid.Column="4">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="8"/>

@@ -11,18 +11,24 @@ internal sealed record CompletionItem(string Signature, string Description, stri
 // older tables where a name matches; everything else gets a generated one.
 internal static partial class ScriptCompletions
 {
-    private static readonly Lazy<IReadOnlyList<CompletionItem>> life = new(BuildLife);
-    private static readonly Lazy<IReadOnlyList<CompletionItem>> track = new(BuildTrack);
+    // Built per name-case setting (ScriptStyle.LowercaseNames), so a settings change takes effect on the next call.
+    private static readonly Dictionary<(ScriptKind, bool), IReadOnlyList<CompletionItem>> cache = new();
 
-    public static IReadOnlyList<CompletionItem> For(ScriptKind kind) => kind == ScriptKind.Life ? life.Value : track.Value;
+    public static IReadOnlyList<CompletionItem> For(ScriptKind kind)
+    {
+        var key = (kind, ScriptStyle.LowercaseNames);
+        if (!cache.TryGetValue(key, out var list)) cache[key] = list = kind == ScriptKind.Life ? BuildLife() : BuildTrack();
+        return list;
+    }
 
     private static string Describe(Lba2ScriptOpcodes.OpcodeKind kind, string name, string fallback) =>
         Lba2ScriptOpcodes.All.FirstOrDefault(o => o.Kind == kind && o.Name == name)?.Description ?? fallback;
 
     private static string ArgList(ArgDef[] args) => string.Join(", ", args.Where(a => a.Role != ArgRole.Hidden).Select(a => a.Name));
 
-    private static CompletionItem Call(string name, ArgDef[] args, string category, string description)
+    private static CompletionItem Call(string canonicalName, ArgDef[] args, string category, string description, bool life = true)
     {
+        var name = ScriptStyle.Func(canonicalName, life);
         var visible = args.Where(a => a.Role != ArgRole.Hidden).ToArray();
         var sig = $"{name}({ArgList(args)});";
         return new CompletionItem(sig, description, visible.Length == 0 ? $"{name}();" : $"{name}(", category, name);
@@ -32,7 +38,7 @@ internal static partial class ScriptCompletions
     {
         var items = new List<CompletionItem>
         {
-            new("if (cond) { ... } else { ... }", "Branch. Conditions are comparisons joined with && and ||, e.g. DISTANCE(0) < 500 && ZONE() == 1.", "if (", "keyword", "if"),
+            new("if (cond) { ... } else { ... }", "Branch. Conditions are comparisons joined with && and ||, with the literal on the left: 500 > distance(0) && 1 == zone().", "if (", "keyword", "if"),
             new("swif (cond) { ... }", "Like if, but re-tested every time the line is reached (SWIF).", "swif (", "keyword", "swif"),
             new("oneif (cond) { ... }", "Like if, but only taken the first time (ONEIF).", "oneif (", "keyword", "oneif"),
             new("while (cond) { ... }", "Loop: an IF that skips the body, and an OFFSET jump back to the test.", "while (", "keyword", "while"),
@@ -62,9 +68,10 @@ internal static partial class ScriptCompletions
 
         foreach (var c in Opcodes.Conditions)
         {
-            var sig = c.OperandName is null ? $"{c.Name}() <op> value" : $"{c.Name}({c.OperandName}) <op> value";
-            items.Add(new CompletionItem(sig, Describe(Lba2ScriptOpcodes.OpcodeKind.LifeCondition, c.Name, $"Condition {c.Id} ({c.Value} comparison value)."),
-                c.OperandName is null ? $"{c.Name}() " : $"{c.Name}(", "condition", c.Name));
+            var n = ScriptStyle.Func(c.Name);
+            var sig = c.OperandName is null ? $"value <op> {n}()" : $"value <op> {n}({c.OperandName})";
+            items.Add(new CompletionItem(sig, Describe(Lba2ScriptOpcodes.OpcodeKind.LifeCondition, c.Name, $"Condition {c.Id} ({c.Value} comparison value).") + " Write the literal on the left, e.g. 500 > " + n + "(0).",
+                c.OperandName is null ? $"{n}() " : $"{n}(", "condition", n));
         }
 
         foreach (var m in Opcodes.MoveNames)
@@ -78,7 +85,7 @@ internal static partial class ScriptCompletions
         foreach (var d in Opcodes.TrackOps)
         {
             if (d.Id == 0) continue; // END is implicit
-            items.Add(Call(d.Name, d.Args, "track action", Describe(Lba2ScriptOpcodes.OpcodeKind.TrackAction, d.Name, $"Track-script opcode {d.Id}.")));
+            items.Add(Call(d.Name, d.Args, "track action", Describe(Lba2ScriptOpcodes.OpcodeKind.TrackAction, d.Name, $"Track-script opcode {d.Id}."), life: false));
         }
         return items;
     }
@@ -106,6 +113,6 @@ internal static partial class ScriptCompletions
     [GeneratedRegex(@"\bvoid\s+([A-Za-z_]\w*)\s*\(")]
     private static partial Regex FunctionRegex();
 
-    [GeneratedRegex(@"\bLABEL\(\s*(\d+)\s*\)")]
+    [GeneratedRegex(@"\bLABEL\(\s*(\d+)\s*\)", RegexOptions.IgnoreCase)]
     private static partial Regex LabelRegex();
 }

@@ -7,11 +7,13 @@ namespace LBA2LevelEditor;
 public partial class SettingsWindow : Window
 {
     public bool GameDirectoryChanged { get; private set; }
+    public bool ScriptNamesChanged { get; private set; }
 
     public SettingsWindow()
     {
         InitializeComponent();
         GameDirectoryBox.Text = EditorSettings.Current.GameDirectory;
+        LowercaseNamesCheck.IsChecked = EditorSettings.Current.LowercaseScriptNames;
     }
 
     private void Browse_Click(object sender, RoutedEventArgs e)
@@ -40,6 +42,8 @@ public partial class SettingsWindow : Window
         var settings = EditorSettings.Current;
         GameDirectoryChanged = !string.Equals(settings.GameDirectory, path, StringComparison.OrdinalIgnoreCase);
         settings.GameDirectory = path;
+        ScriptNamesChanged = settings.LowercaseScriptNames != (LowercaseNamesCheck.IsChecked == true);
+        settings.LowercaseScriptNames = LowercaseNamesCheck.IsChecked == true;
         settings.Save();
         DialogResult = true;
     }
