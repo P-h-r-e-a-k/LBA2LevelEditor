@@ -37,8 +37,20 @@ public partial class MainWindow : Window
     // snapshot, not a live loop like nativeViewActive's. Guards
     // RenderSoftwareTerrain (the one place every zoom/pan/resize handler's
     // "not native" branch funnels through) so none of them silently paints
-    // over the interior view with a re-rendered outdoor fallback.
+    // over the interior view with a re-rendered outdoor fallback, and gates
+    // TerrainViewport_MouseDown so the free-orbit drag never applies to a
+    // scene that's only ever meant to be viewed from one fixed angle.
     private bool interiorSceneActive;
+    // The interior camera's own current world position -- there's no
+    // "orbit/zoom" for interior scenes (see interiorSceneActive's own
+    // comment), only pan, so this is the entire state the pan scrollbars
+    // need to track for one. Seeded from RenderInteriorSceneDirect's own
+    // hero-position readout when a scene is first shown; Y never changes
+    // (no vertical scrollbar exists to drive it -- panning between a
+    // building's floors isn't wired up yet).
+    private double interiorCameraX;
+    private double interiorCameraY;
+    private double interiorCameraZ;
     private CancellationTokenSource? nativeRenderCancellation;
     private readonly object nativeRenderGate = new();
     private bool nativeRenderInFlight;
@@ -389,6 +401,14 @@ public partial class MainWindow : Window
     // Island/CubeMode -- not modelled here yet) since it's already on hand
     // and close enough to be readable; a scene that actually needs a
     // different one will just look off-colour rather than fail to render.
+    // COMMON.H's SIZE_CUBE_X/Z (64) * SIZE_BRICK_XZ (512): every interior
+    // scene's own brick grid spans exactly this many world units on X/Z,
+    // regardless of how much of it any given room's own geometry actually
+    // fills -- the pan scrollbars below just cover the whole grid rather
+    // than trying to detect each scene's own occupied bounds (there's no
+    // per-scene equivalent of the outdoor island's PresentCubeBounds here).
+    private const double InteriorGridSpan = 64 * 512;
+
     private void ShowInteriorScene(int numscene)
     {
         if (!nativeRenderer.DirectRendererReady)
@@ -397,7 +417,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var bitmap = nativeRenderer.RenderInteriorSceneDirect(numscene, palette);
+        var bitmap = nativeRenderer.RenderInteriorSceneDirect(numscene, palette, out var cameraX, out var cameraY, out var cameraZ);
         if (bitmap is null)
         {
             DocumentSummary.Text = "Couldn't render this interior scene.";
@@ -406,12 +426,46 @@ public partial class MainWindow : Window
 
         nativeViewActive = false;
         interiorSceneActive = true;
+        // Clamped defensively: cameraX/Y/Z is wherever the native side's own
+        // CameraCenter(1) actually snapped to, which this editor doesn't
+        // control -- InteriorGridSpan is this scene's own nominal grid size,
+        // not a hard guarantee every scene's own camera start point falls
+        // inside it.
+        interiorCameraX = Math.Clamp(cameraX, 0, InteriorGridSpan - 1);
+        interiorCameraY = cameraY;
+        interiorCameraZ = Math.Clamp(cameraZ, 0, InteriorGridSpan - 1);
+        // Interior scenes use a completely different coordinate space
+        // (0..InteriorGridSpan on this one scene's own brick grid) from the
+        // outdoor pan scrollbars' usual per-island present-cube-bounds range
+        // -- re-ranged here every time, the same way LoadIsland() already
+        // re-ranges them back for the outdoor case when the user picks an
+        // island again.
+        PanHorizontalScrollBar.Minimum = 0;
+        PanHorizontalScrollBar.Maximum = InteriorGridSpan - 1;
+        PanVerticalScrollBar.Minimum = 0;
+        PanVerticalScrollBar.Maximum = InteriorGridSpan - 1;
+        PanHorizontalScrollBar.Value = interiorCameraX;
+        PanVerticalScrollBar.Value = interiorCameraZ;
         TerrainViewport.Source = bitmap;
         selectedActorIndex = null;
         ActorMarkerCanvas.Children.Clear();
         lastNativeActorScreens = null;
         lastNativeActorRoutes = null;
         DocumentSummary.Text = $"Native interior scene {numscene} / fixed isometric view";
+    }
+
+    // The pan scrollbars' own interior-mode counterpart to TryPan/
+    // RenderNativeCamera: re-renders from a new camera position without
+    // reloading the scene (which would snap the camera straight back to the
+    // hero). No bounds/validity check against the scene's own occupied
+    // area -- unlike IsWorldPositionOnIsland outdoors, there's no cheap way
+    // to know which part of the 64x64 brick grid a given interior scene
+    // actually uses, so scrolling past the edge of a room just shows empty
+    // black space rather than being clamped.
+    private void RenderInteriorPan()
+    {
+        var bitmap = nativeRenderer.RenderInteriorPanDirect((int)interiorCameraX, (int)interiorCameraY, (int)interiorCameraZ, palette);
+        if (bitmap is not null) TerrainViewport.Source = bitmap;
     }
 
     // Simple-marker actor overlay for the main 3D view: projects each actor's
@@ -751,6 +805,7 @@ public partial class MainWindow : Window
 
     private void PanHorizontalScrollBar_Scroll(object sender, ScrollEventArgs e)
     {
+        if (interiorSceneActive) { interiorCameraX = Math.Clamp(e.NewValue, 0, InteriorGridSpan - 1); RenderInteriorPan(); return; }
         if (currentIsland is null) return;
         if (IsWorldPositionOnIsland(e.NewValue, targetZ)) targetX = e.NewValue;
         else PanHorizontalScrollBar.Value = targetX;
@@ -760,6 +815,7 @@ public partial class MainWindow : Window
 
     private void PanVerticalScrollBar_Scroll(object sender, ScrollEventArgs e)
     {
+        if (interiorSceneActive) { interiorCameraZ = Math.Clamp(e.NewValue, 0, InteriorGridSpan - 1); RenderInteriorPan(); return; }
         if (currentIsland is null) return;
         if (IsWorldPositionOnIsland(targetX, e.NewValue)) targetZ = e.NewValue;
         else PanVerticalScrollBar.Value = targetZ;
@@ -906,7 +962,13 @@ public partial class MainWindow : Window
 
     private void Minimap_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (currentIsland is null || MinimapImage.Source is null) return;
+        // Same outdoor-coordinate-space assumption as MainWindow_KeyDown's
+        // own guard above -- the minimap always shows the current outdoor
+        // island regardless of whether an interior scene is on screen, and
+        // clicking it while one is would otherwise silently overwrite the
+        // pan scrollbars' interior-mode range/value with stale outdoor
+        // coordinates without actually switching the view back.
+        if (interiorSceneActive || currentIsland is null || MinimapImage.Source is null) return;
         var grid = (Grid)sender;
         var point = e.GetPosition(grid);
         var worldX = (minimapCropOffsetXPixels + point.X) * MinimapWorldUnitsPerPixel;
@@ -972,7 +1034,11 @@ public partial class MainWindow : Window
     // spinning the camera underneath whatever else is being clicked.
     private void TerrainViewport_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        orbiting = e.ChangedButton == MouseButton.Left && RotateViewCheckBox.IsChecked == true;
+        // Interior scenes are only ever meant to be viewed from the one
+        // fixed isometric angle Init3DView/CameraCenter set up natively --
+        // rotate/tilt-with-mouse only ever makes sense for the outdoor 3D
+        // view's own free-orbiting camera.
+        orbiting = e.ChangedButton == MouseButton.Left && RotateViewCheckBox.IsChecked == true && !interiorSceneActive;
         if (!orbiting) return;
         lastMousePosition = e.GetPosition(TerrainViewport);
         TerrainViewport.CaptureMouse();
@@ -1267,6 +1333,13 @@ public partial class MainWindow : Window
     }
     private void MainWindow_KeyDown(object sender, KeyEventArgs e)
     {
+        // TryPan below assumes the outdoor island's own coordinate space
+        // (IsWorldPositionOnIsland, SyncPanScrollBars writing targetX/Z) --
+        // arrow-key panning isn't wired up for interior scenes (only the
+        // scrollbars are, via RenderInteriorPan), and letting this run
+        // anyway would silently overwrite the pan scrollbars' interior-mode
+        // range/value with stale outdoor coordinates.
+        if (interiorSceneActive) return;
         var step = (nativeViewActive ? nativeDistance : cameraDistance) * .04;
         double dx = 0, dz = 0;
         if (e.Key == Key.Left) dx = -step;

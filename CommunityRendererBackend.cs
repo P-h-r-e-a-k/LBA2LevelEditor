@@ -129,8 +129,23 @@ internal sealed class CommunityRendererBackend
     // to an exterior island afterwards still needs its own LoadIsland() call
     // regardless of what directIsland was left at, so this deliberately
     // leaves that field alone rather than invalidating or guessing at it.
-    public BitmapSource? RenderInteriorSceneDirect(int numscene, byte[] paletteBytes)
+    // cameraX/Y/Z come back as wherever CameraCenter(1) actually snapped the
+    // camera to -- NOT the hero's own raw GetActor position (confirmed live
+    // to be a completely different, unrelated coordinate: one real scene
+    // had the hero's own stored position at world (229376, 0, 262144), an
+    // address on the outdoor island's own much larger coordinate scheme,
+    // while CameraCenter(1) actually snapped the camera to (0, 0, 2048),
+    // local to this scene's own 64x512-unit brick grid -- seeding the pan
+    // scrollbars from the former sent them to a six-figure coordinate
+    // hundreds of bricks outside the scene's own grid, which is what was
+    // actually behind interior panning corrupting into brick noise on the
+    // very first scroll, not a rendering bug). Callers use these as the
+    // starting point for RenderInteriorPanDirect once the user starts
+    // scrolling, since there's otherwise no way to know where this fixed
+    // camera actually ended up.
+    public BitmapSource? RenderInteriorSceneDirect(int numscene, byte[] paletteBytes, out int cameraX, out int cameraY, out int cameraZ)
     {
+        cameraX = cameraY = cameraZ = 0;
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
         {
@@ -141,6 +156,29 @@ internal sealed class CommunityRendererBackend
                 directSession = true;
             }
             if (!RendererLibrary.LoadInteriorScene(numscene)) { directFailure = $"load interior scene failed: {numscene}"; return null; }
+            RendererLibrary.GetInteriorCameraPosition(out cameraX, out cameraY, out cameraZ);
+            if (!RendererLibrary.RenderInteriorFrame()) { directFailure = "native interior render returned failure"; return null; }
+            var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
+            if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }
+            var pixels = new byte[width * height];
+            for (var row = 0; row < height; row++) Marshal.Copy(pointer + row * pitch, pixels, row * width, width);
+            var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, CreatePalette(paletteBytes), pixels, width);
+            bitmap.Freeze();
+            return bitmap;
+        }
+    }
+
+    // Re-renders the scene RenderInteriorSceneDirect last loaded from a
+    // different camera position, keeping its fixed isometric angle -- for
+    // the pan scrollbars to scroll around a room bigger than one screen's
+    // worth, without reloading the scene (which would reset the camera back
+    // to the hero's own position every time).
+    public BitmapSource? RenderInteriorPanDirect(int worldX, int worldY, int worldZ, byte[] paletteBytes)
+    {
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
+        lock (directRenderLock)
+        {
+            if (!RendererLibrary.SetInteriorCameraPosition(worldX, worldY, worldZ)) { directFailure = "set interior camera position failed"; return null; }
             if (!RendererLibrary.RenderInteriorFrame()) { directFailure = "native interior render returned failure"; return null; }
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
             if (pointer == IntPtr.Zero || width <= 0 || height <= 0) { directFailure = $"framebuffer invalid: {width}x{height}, {pitch}"; return null; }

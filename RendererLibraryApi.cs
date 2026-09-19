@@ -30,6 +30,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int IsActorPlaceholderFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RemoveActorFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int LoadInteriorSceneFn(int numscene);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetInteriorCameraPositionFn(int x, int y, int z);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetInteriorCameraPositionFn(out int x, out int y, out int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderInteriorFrameFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
@@ -63,6 +65,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private IsActorPlaceholderFn? isActorPlaceholder;
     private RemoveActorFn? removeActor;
     private LoadInteriorSceneFn? loadInteriorScene;
+    private SetInteriorCameraPositionFn? setInteriorCameraPosition;
+    private GetInteriorCameraPositionFn? getInteriorCameraPosition;
     private RenderInteriorFrameFn? renderInteriorFrame;
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
@@ -124,6 +128,8 @@ internal sealed class RendererLibraryApi : IDisposable
         isActorPlaceholder = Get<IsActorPlaceholderFn>("lba2_renderer_is_actor_placeholder");
         removeActor = Get<RemoveActorFn>("lba2_renderer_remove_actor");
         loadInteriorScene = Get<LoadInteriorSceneFn>("lba2_renderer_load_interior_scene");
+        setInteriorCameraPosition = Get<SetInteriorCameraPositionFn>("lba2_renderer_set_interior_camera_position");
+        getInteriorCameraPosition = Get<GetInteriorCameraPositionFn>("lba2_renderer_get_interior_camera_position");
         renderInteriorFrame = Get<RenderInteriorFrameFn>("lba2_renderer_render_interior_frame");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
@@ -266,6 +272,19 @@ internal sealed class RendererLibraryApi : IDisposable
     // genuine load failure; see lba2_renderer_load_interior_scene's own
     // doc comment (RENDERER_API.H).
     public bool LoadInteriorScene(int numscene) => loadInteriorScene?.Invoke(numscene) == 1;
+    // Pans the interior camera to an arbitrary position without touching its
+    // fixed isometric angle -- see lba2_renderer_set_interior_camera_position's
+    // own doc comment (RENDERER_API.H). Only meaningful after LoadInteriorScene.
+    public bool SetInteriorCameraPosition(int x, int y, int z) => setInteriorCameraPosition?.Invoke(x, y, z) == 1;
+    // NOT the same coordinate space as GetActor's own position -- see
+    // lba2_renderer_get_interior_camera_position's own doc comment
+    // (RENDERER_API.H) for why the two are unrelated. Use this, not the
+    // hero's own actor position, to seed where panning should start from.
+    public bool GetInteriorCameraPosition(out int x, out int y, out int z)
+    {
+        if (getInteriorCameraPosition is null) { x = y = z = 0; return false; }
+        return getInteriorCameraPosition(out x, out y, out z) == 1;
+    }
     public bool RenderInteriorFrame() => renderInteriorFrame?.Invoke() == 1;
     public bool GetActorFlags(int index, out uint flags)
     {

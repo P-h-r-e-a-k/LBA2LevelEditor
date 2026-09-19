@@ -162,9 +162,35 @@ LBA2_RENDERER_API int lba2_renderer_remove_actor(int index);
    lba2_renderer_set_camera call is needed or meaningful here). */
 LBA2_RENDERER_API int lba2_renderer_load_interior_scene(int numscene);
 
-/* Renders the scene lba2_renderer_load_interior_scene last loaded into the
+/* Moves the interior camera lba2_renderer_load_interior_scene set up to an
+   arbitrary world position, keeping its fixed isometric angle -- for
+   panning around the loaded scene's own brick grid (up to 64*512 world
+   units on X/Z, 25*256 on Y -- COMMON.H's SIZE_CUBE_X/Y/Z * SIZE_BRICK_XZ/Y)
+   from outside the single point CameraCenter(1) initially snapped it to.
+   Unlike the exterior view, there is no separate "set angle" call: interior
+   scenes are never rotated, by design (see lba2_renderer_load_interior_scene's
+   own doc comment). Always returns 1. */
+LBA2_RENDERER_API int lba2_renderer_set_interior_camera_position(int x, int y, int z);
+
+/* Reads back wherever CameraCenter(1) actually snapped the interior camera
+   to (or the last position lba2_renderer_set_interior_camera_position set),
+   in the same local, this-scene's-own-brick-grid coordinate space
+   lba2_renderer_set_interior_camera_position itself expects -- NOT the same
+   space an actor's own lba2_renderer_get_actor position is in (confirmed
+   live to differ arbitrarily; there is no relationship between the two).
+   Callers need this to know where to start panning from, since there is no
+   other way to find out where this fixed camera actually ended up. Always
+   returns 1. */
+LBA2_RENDERER_API int lba2_renderer_get_interior_camera_position(int *x, int *y, int *z);
+
+/* Renders the scene lba2_renderer_load_interior_scene last loaded (at
+   whichever position lba2_renderer_set_interior_camera_position last set,
+   or the initial hero-centered one if that was never called) into the
    same framebuffer lba2_renderer_framebuffer() already exposes for the
-   exterior path. Always returns 1. */
+   exterior path. Also draws this scene's actors on top -- see
+   RendererRenderInteriorFrame's own doc comment (RENDERER_ACTORS.CPP) for
+   the one known limitation (no occlusion behind interior walls yet).
+   Always returns 1. */
 LBA2_RENDERER_API int lba2_renderer_render_interior_frame(void);
 
 /* Full designer-authored T_OBJET.Flags word (collision/gravity/visibility/

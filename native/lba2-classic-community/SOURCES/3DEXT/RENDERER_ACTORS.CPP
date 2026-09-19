@@ -12,6 +12,10 @@
 #include "COMMON.H"
 
 #include <SYSTEM/HQRLOAD.H>
+#include <3D/LPROJ.H>
+#include <3D/LROT3D.H>
+#include <OBJECT/AFF_OBJ.H>
+#include <ANIM/INTFRAME.H>
 #include <vector>
 #include <map>
 #include <string>
@@ -1010,6 +1014,95 @@ extern void InitGrille(U32 numcube);
 extern void Init3DView(void);
 extern void CameraCenter(S32 flagbeta);
 extern U8 NumObjFollow;
+extern void SetPosCamera(S32 x, S32 y, S32 z);
+extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
+
+// AffichageActorsZBuf's own per-object draw sequence (EXTFUNC.CPP), plus one
+// addition explained below -- reusing it as-is (simplest option) silently
+// corrupted actor bodies after the first render of a given interior scene,
+// confirmed live: panning (RenderInteriorSceneAtDirect re-rendering the same
+// already-loaded scene from a new camera position) turned a previously
+// clean-looking actor into scattered garbage-colored speckling on the very
+// next frame -- and reproduces identically even panning back to the exact
+// same camera position, so it's not a camera-position issue.
+//
+// ObjectSetInterDep/ObjectSetInterFrame (added below, matching what
+// AffichageBodyPreview's own scratch object already does and its own
+// comment explains: real actors get ObjectSetInterDep() every tick from the
+// main per-object update loop, OBJECT.CPP, which this headless renderer
+// never runs) were the first suspect, since they're the one thing this
+// draws that a plain single render of AffichageActorsZBuf doesn't
+// exercise repeatedly elsewhere in this project -- ruled out by direct
+// test: removing both and keeping only ObjectDisplay() still corrupted the
+// second render identically. The corruption is coming from ObjectDisplay()
+// itself being called more than once for this actor in this scene, for a
+// reason not yet root-caused (a plausible next place to look, not yet
+// checked: whether ObjectDisplay's own polygon work buffer -- shared with
+// every other ObjectDisplay call in the process, including terrain/exterior
+// actors -- assumes something about being freshly reset between calls that
+// AffGrilleExt's own per-frame Switch_Fillers/ClsTerrainZBuf sequence
+// happens to provide and this interior path doesn't).
+//
+// Also tested and ruled out as a mitigation: drawing actors only on a
+// scene's first render and skipping them on later ones. The first render
+// looks clean, but the *next* AffGrille() call (any later render, even
+// with actors skipped) is already corrupted -- so the damage is done by
+// ObjectDisplay() during the very first call and only becomes visible when
+// AffGrille() re-reads the affected memory. Confirmed by isolation:
+// rendering with this function fully disabled pans cleanly, with no
+// corruption, at any camera position.
+//
+// CURRENTLY UNUSED (see RendererRenderInteriorFrame): interior actors are
+// not drawn until this is root-caused. Kept, rather than deleted, so the
+// work isn't lost. It also does not occlude actors behind walls (the
+// per-pixel test is Z-buffer based, and AffGrille never populates one --
+// interior bricks use their own screen-column ordering, ListBrickColon) --
+// retail's own DrawRecover (INTEXT.CPP) shows a materially different
+// interior path (DrawOverBrick) would be needed for that.
+__attribute__((unused))
+static void RendererDrawInteriorActors(void)
+{
+
+    for (S32 n = 1; n < NbObjets; n++) {
+        T_OBJET *ptrobj = &ListObjet[n];
+
+        if (ptrobj->Flags & SPRITE_3D) continue;
+        if (ptrobj->Obj.Body.Num < 0) continue;
+
+        if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
+            S32 savedX = ptrobj->Obj.X, savedY = ptrobj->Obj.Y, savedZ = ptrobj->Obj.Z;
+            ObjectSetInterDep(&ptrobj->Obj);
+            ptrobj->Obj.X = savedX;
+            ptrobj->Obj.Y = savedY;
+            ptrobj->Obj.Z = savedZ;
+        }
+
+        LongWorldRotatePoint(ptrobj->Obj.X, ptrobj->Obj.Y, ptrobj->Obj.Z);
+        if (!LongProjectPoint(X0, Y0, Z0)) continue;
+
+        S32 zr = CameraZr - Z0;
+        if (zr > ClipZFar) continue;
+
+        SetCLUT(PalLevel + 16 * BoundRegleTrois(0, 15, ClipZFar - StartZFog, zr - StartZFog));
+        Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
+
+        if (!(ptrobj->WorkFlags & MANUAL_INTER_FRAME)) {
+            ObjectSetInterFrame(&ptrobj->Obj);
+        }
+
+        UnsetClip();
+        // No placeholder-black-silhouette handling here (unlike
+        // AffichageActorsZBuf's own g_placeholderBodySlot check): there is
+        // currently no way to reach RendererAddActor for an interior scene
+        // (the "Add Actor Here" context menu is exterior-view-only --
+        // MainWindow.xaml.cs's own TerrainViewport_MouseRightButtonDown
+        // gates on nativeViewActive), so no interior actor is ever actually
+        // a placeholder to begin with. g_placeholderBodySlot/
+        // ObjectDisplayForcedBlack are also static to EXTFUNC.CPP (internal
+        // linkage), not reachable from here regardless.
+        ObjectDisplay(&ptrobj->Obj);
+    }
+}
 
 // True only when numscene's own on-disk header says CUBE_INTERIEUR --
 // callers (the C# side) use this to decide which Load*/Render* pair to call
@@ -1045,16 +1138,93 @@ int RendererLoadInteriorScene(int numscene)
     return 1;
 }
 
+// Repositions the interior camera set up by RendererLoadInteriorScene
+// without touching its angle (still whatever Init3DView's own
+// SetAngleCamera(0,0,0) left it at -- see that function's own comment on
+// why the fixed isometric angle only ever needs setting once). Lets the C#
+// side pan freely around the loaded scene's own brick grid (SIZE_CUBE_X/Y/Z
+// * SIZE_BRICK_XZ/Y, COMMON.H -- up to 64*512 world units on X/Z) via its
+// existing pan scrollbars, mirroring CameraCenter(1)/(0) (INTEXT.CPP)
+// without that call's own hero-lookup (there is no "the hero moved" here,
+// just "the user scrolled").
+//
+// Calling SetPosCamera() alone (an earlier version of this function) had no
+// visible effect on the brick grid at all -- confirmed live: bricks stayed
+// exactly where they were before the "pan", while actors (which do use
+// SetPosCamera's own CameraXr/Yr/Zr, via LongWorldRotatePoint/
+// LongProjectPoint) rendered as garbage. Root cause: AffGrille()'s own
+// brick positions are computed relative to StartXCube/Y/Z (GRILLE.CPP's
+// AffBrickBlockColon: "Map2Screen(x - StartXCube, ...)"), a *different*
+// pair of globals CameraCenter(1) derives from the same source position but
+// SetPosCamera itself never touches -- so a real pan needs both, kept in
+// sync exactly like CameraCenter(1)'s own StartXCube=VueOffsetX/
+// SIZE_BRICK_XZ; SetPosCamera(StartXCube*SIZE_BRICK_XZ, ...) does (case 0
+// there, "VueOffsetX = StartXCube*SIZE_BRICK_XZ", is the same "reapply an
+// already-brick-aligned position with no new source object" shape this
+// wants). The integer division also means the actual camera position this
+// resolves to is always brick-aligned (a multiple of 512 on X/Z, 256 on Y),
+// same as CameraCenter(1)'s own hero-centered snap.
+extern S32 VueOffsetX, VueOffsetY, VueOffsetZ;
+int RendererSetInteriorCameraPosition(int x, int y, int z)
+{
+    StartXCube = x / SIZE_BRICK_XZ;
+    StartYCube = y / SIZE_BRICK_Y;
+    StartZCube = z / SIZE_BRICK_XZ;
+    VueOffsetX = StartXCube * SIZE_BRICK_XZ;
+    VueOffsetY = StartYCube * SIZE_BRICK_Y;
+    VueOffsetZ = StartZCube * SIZE_BRICK_XZ;
+    SetPosCamera(VueOffsetX, VueOffsetY, VueOffsetZ);
+    return 1;
+}
+
+// Reads back wherever the interior camera actually is right now --
+// CameraCenter(1)'s own StartXCube/Y/Z-derived snap position immediately
+// after RendererLoadInteriorScene, or the last position
+// RendererSetInteriorCameraPosition set otherwise. The C# side needs this
+// because there is no other way to know where CameraCenter(1) actually put
+// the camera: confirmed live to be nothing like the hero object's own raw
+// GetActor(0, ...) position (e.g. one real scene: hero at world (229376, 0,
+// 262144) -- an address on the outdoor island's own much larger coordinate
+// scheme -- while CameraCenter(1) actually snapped the camera to (0, 0,
+// 2048), local to this scene's own 64x512-unit brick grid). Seeding the pan
+// scrollbars' initial value from the hero's own position instead of this
+// getter was the real bug behind interior panning going to visibly
+// corrupted brick noise on the very first scroll: the scrollbar's Value
+// ended up set to a six-figure coordinate hundreds of bricks outside this
+// scene's own grid, and even one page-sized scroll from there fed AffGrille()
+// a camera position its own screen-projection math was never exercised
+// against.
+extern S32 CameraXr, CameraYr;
+int RendererGetInteriorCameraPosition(int *x, int *y, int *z)
+{
+    if (x) *x = (int)CameraXr;
+    if (y) *y = (int)CameraYr;
+    if (z) *z = (int)CameraZr;
+    return 1;
+}
+
 // Draws the currently-loaded interior scene's brick grid into the same Log
 // framebuffer lba2_renderer_framebuffer() already exposes for the exterior
 // path (AffGrille ultimately calls AffGraph(), the same primitive the
-// exterior path's own terrain/actor drawing uses). Cls() first: unlike a
-// full 3D exterior view (sky+terrain always covers every pixel), individual
-// bricks can leave gaps (see their own RLE transparent-run format), so a
-// stale previous frame would otherwise show through.
+// exterior path's own terrain drawing uses). Clears the whole framebuffer
+// directly first, rather than through the generic Cls() macro (BoxCls over
+// BoxClipXMin/Min/Max): that macro only clears whatever region the
+// dirty-box system (BoxMovingAdd/BoxUpdate) has been told is dirty, which
+// this headless single-shot renderer never maintains. (This was added
+// defensively and not tested in isolation against Cls().) A real 3D
+// exterior frame never needed any explicit clear (sky+terrain always
+// covers every pixel); interior bricks can leave gaps.
+//
+// Actors are deliberately NOT drawn here: RendererDrawInteriorActors above
+// works for a single frame, but calling ObjectDisplay() for interior actors
+// corrupts memory that AffGrille() reads on the *next* call -- see that
+// function's own comment for what was ruled out. Re-enable by calling it
+// here once that's root-caused.
+extern void *Log;
+extern U32 ModeDesiredX, ModeDesiredY;
 int RendererRenderInteriorFrame(void)
 {
-    Cls();
+    memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
     AffGrille();
     return 1;
 }

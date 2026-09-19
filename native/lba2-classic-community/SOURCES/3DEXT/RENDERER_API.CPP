@@ -44,6 +44,8 @@ extern int RendererAddActor(int worldX, int worldY, int worldZ, int beta, int bo
 extern int RendererIsActorPlaceholder(int index);
 extern int RendererRemoveActor(int index);
 extern int RendererLoadInteriorScene(int numscene);
+extern int RendererSetInteriorCameraPosition(int x, int y, int z);
+extern int RendererGetInteriorCameraPosition(int *x, int *y, int *z);
 extern int RendererRenderInteriorFrame(void);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
@@ -472,6 +474,16 @@ int lba2_renderer_load_interior_scene(int numscene)
 int lba2_renderer_render_interior_frame(void)
 {
     return RendererRenderInteriorFrame();
+}
+
+int lba2_renderer_set_interior_camera_position(int x, int y, int z)
+{
+    return RendererSetInteriorCameraPosition(x, y, z);
+}
+
+int lba2_renderer_get_interior_camera_position(int *x, int *y, int *z)
+{
+    return RendererGetInteriorCameraPosition(x, y, z);
 }
 
 int lba2_renderer_get_actor_flags(int index, unsigned int *flags)
