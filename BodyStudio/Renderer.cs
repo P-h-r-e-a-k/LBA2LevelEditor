@@ -8,16 +8,47 @@ using System.Windows.Forms;
 
 namespace LbaBodyStudio;
 
+// How LBA1 lights a body (LIB_3D P_OB_ISO.ASM ComputeAnimNormal): every normal is turned by its bone's matrix and by the
+// actor's facing, dotted with the light direction, and the result (0 .. 15) is added to the polygon's palette index. Flat
+// polygons use one normal, Gouraud polygons one per corner, blended across the face.
+public sealed class Lba1Shading
+{
+    public required double[][] BoneMatrices { get; init; }   // 3 x 3, row-major, one per bone (without the actor's own turn)
+    public double ActorBeta { get; init; }                   // the actor's facing, 1024ths of a turn
+    public double AlphaLight { get; init; }                  // the scene's light angles, 1024ths of a turn
+    public double BetaLight { get; init; }
+
+    public float[] Intensities(Body model)
+    {
+        static double Rad(double a) => a * Math.PI * 2 / 1024;
+        // the light: (0, 0, 1) through the same matrix the bones use (turns about x, z, y composed as M = Rx * Rz * Ry)
+        double sa = Math.Sin(Rad(AlphaLight)), ca = Math.Cos(Rad(AlphaLight)), sb = Math.Sin(Rad(BetaLight)), cb = Math.Cos(Rad(BetaLight));
+        double lx = sb, ly = -sa * cb, lz = ca * cb;
+        double sy = Math.Sin(Rad(ActorBeta)), cy = Math.Cos(Rad(ActorBeta));
+        var result = new float[model.Normals.Count];
+        for (int i = 0; i < result.Length; i++)
+        {
+            var n = model.Normals[i];
+            var m = BoneMatrices[Math.Clamp(i < model.NormalBone.Length ? model.NormalBone[i] : 0, 0, BoneMatrices.Length - 1)];
+            double x = m[0]*n.X + m[1]*n.Y + m[2]*n.Z, y = m[3]*n.X + m[4]*n.Y + m[5]*n.Z, z = m[6]*n.X + m[7]*n.Y + m[8]*n.Z;
+            double wx = cy*x + sy*z, wz = -sy*x + cy*z;      // then the actor's own turn
+            double dot = wx*lx + y*ly + wz*lz;
+            result[i] = dot <= 0 || n.Range == 0 ? 0 : (float)Math.Floor(dot * 59 / n.Range);   // the light vector is (0, 0, NORMAL_UNIT - 5) = 59 long
+        }
+        return result;
+    }
+}
+
 public static class Renderer
 {
-    public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false)
+    public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);
         var bitmap=new Bitmap(Math.Max(1,width),Math.Max(1,height));using var g=Graphics.FromImage(bitmap);
         g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Color.FromArgb(25,30,39));
-        var world=model.World();float h=Math.Max(1,world.Max(v=>v.Y)-world.Min(v=>v.Y));float minY=world.Min(v=>v.Y);
+        var neutral=model.World();var world=pose??neutral;float h=Math.Max(1,neutral.Max(v=>v.Y)-neutral.Min(v=>v.Y));float minY=neutral.Min(v=>v.Y);
         if(headOnly){minY+=h*.82f;h*=.18f;}
-        float visibleWidth=headOnly?h*.85f:world.Max(v=>v.X)-world.Min(v=>v.X);
+        float visibleWidth=headOnly?h*.85f:neutral.Max(v=>v.X)-neutral.Min(v=>v.X);
         float scale=Math.Min(height*0.80f/h,width*0.80f/Math.Max(h*0.65f,visibleWidth));
         var focus=headOnly&&model.Bones.Count>14?new Vector3(world[model.Bones[14].Pivot].X,0,0):Vector3.Zero;
         var rotated=world.Select(v=>new Vector3((v.X-focus.X)*MathF.Cos(yaw)+(v.Z-focus.Z)*MathF.Sin(yaw),v.Y-minY,-(v.X-focus.X)*MathF.Sin(yaw)+(v.Z-focus.Z)*MathF.Cos(yaw))).ToArray();
@@ -30,9 +61,22 @@ public static class Renderer
         var depth=Enumerable.Repeat(float.PositiveInfinity,width*height).ToArray();
         var pixels=new int[width*height];
         float Edge(PointF a,PointF b,float x,float y)=>(x-a.X)*(b.Y-a.Y)-(y-a.Y)*(b.X-a.X);
+        var lit=shading!=null&&model.Game==1&&model.Normals.Count>0?shading.Intensities(model):null;
         foreach(var f in model.Faces)
         {
             int colour=palette[Math.Clamp(f.Colour,0,255)].ToArgb();
+            // the game's lighting: flat faces take one intensity, Gouraud faces one per corner (blended below)
+            float[]? corner=null;
+            if(lit!=null&&f.Material>=7)
+            {
+                corner=new float[f.Points.Length];
+                for(int k=0;k<corner.Length;k++)
+                {
+                    int normal=f.PointNormals!=null?f.PointNormals[k]:f.FaceNormal;
+                    corner[k]=normal>=0&&normal<lit.Length?lit[normal]:0;
+                }
+                if(f.Material<9)colour=palette[Math.Clamp(f.Colour+(int)corner[0],0,255)].ToArgb();
+            }
             for(int t=1;t<f.Points.Length-1;t++)
             {
                 var a=rotated[f.Points[0]];var b=rotated[f.Points[t]];var c=rotated[f.Points[t+1]];
@@ -45,8 +89,35 @@ public static class Renderer
                     float wa=Edge(pb,pc,x+.5f,y+.5f)/area,wb=Edge(pc,pa,x+.5f,y+.5f)/area,wc=1-wa-wb;
                     if(wa<-.0001f||wb<-.0001f||wc<-.0001f)continue;
                     float z=wa*a.Z+wb*b.Z+wc*c.Z;int index=y*width+x;
-                    if(z<=depth[index]){depth[index]=z;pixels[index]=colour;}
+                    if(z<=depth[index])
+                    {
+                        depth[index]=z;
+                        if(corner!=null&&f.Material>=9){float shade=wa*corner[0]+wb*corner[t]+wc*corner[t+1];pixels[index]=palette[Math.Clamp(f.Colour+(int)Math.Round(shade),0,255)].ToArgb();}
+                        else pixels[index]=colour;
+                    }
                 }
+            }
+        }
+        // Lines and spheres (hair buns, hands, necklaces) go through the same depth buffer as the polygons, so a
+        // bun behind the head stays behind it instead of being painted over the face.
+        void Plot(int x,int y,float z,int colour){if(x<0||y<0||x>=width||y>=height)return;int i=y*width+x;if(z<=depth[i]){depth[i]=z;pixels[i]=colour;}}
+        foreach(var l in model.Lines)
+        {
+            var a=rotated[l.A];var b=rotated[l.B];var pa=Screen(a);var pb=Screen(b);int colour=palette[Math.Clamp(l.Colour,0,255)].ToArgb();
+            int steps=Math.Max(1,(int)MathF.Ceiling(Math.Max(Math.Abs(pb.X-pa.X),Math.Abs(pb.Y-pa.Y))));
+            for(int k=0;k<=steps;k++)
+            {
+                float t=k/(float)steps;int x=(int)MathF.Round(pa.X+(pb.X-pa.X)*t),y=(int)MathF.Round(pa.Y+(pb.Y-pa.Y)*t);float z=a.Z+(b.Z-a.Z)*t-2f;
+                Plot(x,y,z,colour);Plot(x+1,y,z,colour);
+            }
+        }
+        foreach(var s in model.Spheres)
+        {
+            var c=rotated[s.Point];var p=Screen(c);float r=Math.Max(1f,s.Radius*scale);int colour=palette[Math.Clamp(s.Colour,0,255)].ToArgb();
+            for(int y=(int)MathF.Floor(p.Y-r);y<=(int)MathF.Ceiling(p.Y+r);y++)for(int x=(int)MathF.Floor(p.X-r);x<=(int)MathF.Ceiling(p.X+r);x++)
+            {
+                float dx=x+.5f-p.X,dy=y+.5f-p.Y,d2=dx*dx+dy*dy;if(d2>r*r)continue;
+                Plot(x,y,c.Z-MathF.Sqrt(r*r-d2)/scale,colour);
             }
         }
         using(var layer=new Bitmap(width,height,PixelFormat.Format32bppArgb))
@@ -56,8 +127,6 @@ public static class Renderer
             g.DrawImageUnscaled(layer,0,0);
         }
         if(wire){using var pen=new Pen(Color.FromArgb(130,110,185,210),0.8f);foreach(var f in model.Faces)g.DrawPolygon(pen,f.Points.Select(i=>Screen(rotated[i])).ToArray());}
-        foreach(var l in model.Lines){using var pen=new Pen(palette[l.Colour],1.4f);g.DrawLine(pen,Screen(rotated[l.A]),Screen(rotated[l.B]));}
-        foreach(var s in model.Spheres){var p=Screen(rotated[s.Point]);float r=s.Radius*scale;using var brush=new SolidBrush(palette[s.Colour]);g.FillEllipse(brush,p.X-r,p.Y-r,r*2,r*2);}
         if(bones)
         {
             using var pen=new Pen(Color.FromArgb(255,195,74),2);using var brush=new SolidBrush(Color.FromArgb(255,195,74));

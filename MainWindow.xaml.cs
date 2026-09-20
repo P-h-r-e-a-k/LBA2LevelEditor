@@ -9,6 +9,8 @@ using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using System.Threading;
 using System.Threading.Tasks;
+using LBA2LevelEditor.Lba1;
+using LBA2LevelEditor.LbaScript;
 
 namespace LBA2LevelEditor;
 
@@ -19,7 +21,6 @@ public partial class MainWindow : Window
     private readonly TerrainType[] fallbackTiles = new TerrainType[16 * 16];
     private IslandDocument? currentIsland;
     private string activeFile = "DESERT.ILE";
-    private TerrainType selectedTerrain = TerrainType.Grass;
     private double cameraYaw = 45;
     private double cameraDistance = 30000;
     private int nativeAlpha = 240;
@@ -82,6 +83,7 @@ public partial class MainWindow : Window
     // Scripts edited in the actor script windows live here (as C text, per
     // scene) until saved back to SCENE.HQR; shared by every script window.
     private readonly ScriptSession scriptSession;
+    private readonly ScriptSession lba1Session = new(() => EditorSettings.Current.Lba1Directory, lba1: true);
 
     public MainWindow()
     {
@@ -89,14 +91,17 @@ public partial class MainWindow : Window
         nativeRenderer = new CommunityRendererBackend(gameRoot);
         InitializeComponent();
         Focusable = true;
+        JoinAreasCheck.IsChecked = lba1JoinAreas;
+        HighlightCheck.IsChecked = highlightSelection;
         KeyDown += MainWindow_KeyDown;
         SeedFallbackMap();
-        BuildPalette();
+        BuildZoneList();
 
         islandFilter = new FilterableComboBox(IslandCombo, () => islandOptions);
         islandFilter.Committed += () =>
         {
             if (IslandCombo.SelectedItem is not FilterableComboBox.Option o) return;
+            if (currentGame == GameKind.Lba1) { RefreshLba1SceneOptions(o.Index); return; }
             // "Other" is a synthetic entry for scenes whose own data doesn't
             // resolve to any real island (see ResolveSceneIsland) -- there's
             // no actual .ILE file to load for it, just a different filter
@@ -108,6 +113,7 @@ public partial class MainWindow : Window
         sceneFilter.Committed += () =>
         {
             if (SceneCombo.SelectedItem is not FilterableComboBox.Option o) return;
+            if (currentGame == GameKind.Lba1) { ShowLba1Scene(o.Index); return; }
             FileLabel.Text = $"●  {o.Display} / SCENE.HQR";
             DocumentTitle.Text = o.Display;
             DocumentSummary.Text = "Native SCENE.HQR record / object and zone data";
@@ -122,30 +128,26 @@ public partial class MainWindow : Window
             if (entry is { IsInterior: true }) ShowInteriorScene(o.Index);
         };
 
-        if (Directory.Exists(gameRoot))
-        {
-            PopulateAssetLists();
-            // PopulateAssetLists() already selects activeFile in the list,
-            // which fires the combo's own Committed -> LoadIsland() -- if
-            // that succeeded (activeFile was actually in the list), calling
-            // LoadIsland() again here would load the same island a second
-            // time back to back. That redundant second load isn't just
-            // wasted work: its own RegenerateMinimap() call raced behind the
-            // first load's main-view render (once it turned into the very
-            // first wideRadius>=1 wide render of the session) and came back
-            // with land/sea tiles corrupted, then *won* over the first
-            // load's correct minimap via RegenerateMinimap's own
-            // stale-request check, since "more recent" isn't the same as
-            // "correct" here. Only fall back to an explicit call if the
-            // selection didn't already cover it (e.g. activeFile no longer
-            // exists in gameRoot).
-            if (IslandCombo.SelectedItem is null) LoadIsland(Path.Combine(gameRoot, activeFile));
-        }
-        else
-        {
-            DocumentSummary.Text = "Game folder not found — set it under Settings.";
-            Settings_Click(this, new RoutedEventArgs());
-        }
+        gameComboReady = true;
+        // Start in whichever game has a folder set (LBA2 first); with neither, open empty.
+        SwitchGame(Lba2Configured ? GameKind.Lba2 : Lba1Configured ? GameKind.Lba1 : GameKind.Lba2);
+    }
+
+    // A game counts as configured when its folder holds the data the editor reads.
+    private bool Lba2Configured => Lba2Folder.IsValid(gameRoot);
+    private bool Lba1Configured => Lba1Game.IsInstalled(EditorSettings.Current.Lba1Directory);
+
+    private void ShowEmptyState(string message)
+    {
+        islandOptions = Array.Empty<FilterableComboBox.Option>();
+        sceneOptions = Array.Empty<FilterableComboBox.Option>();
+        IslandCombo.Text = "";
+        SceneCombo.Text = "";
+        islandFilter?.Refresh();
+        sceneFilter?.Refresh();
+        DocumentTitle.Text = "";
+        DocumentSummary.Text = message;
+        FileLabel.Text = "";
     }
 
     private void PopulateAssetLists()
@@ -168,6 +170,12 @@ public partial class MainWindow : Window
         islandOptions = islands;
         islandFilter?.Refresh();
         var activeOption = islands.FirstOrDefault(o => o.Display == activeFile);
+        // An install without DESERT.ILE (or a different set of islands) opens on its first island.
+        if (activeOption is null && islands.Count > 0 && islands[0].Display != OtherIslandLabel)
+        {
+            activeOption = islands[0];
+            activeFile = activeOption.Display;
+        }
         if (activeOption is not null) IslandCombo.SelectedItem = activeOption; else IslandCombo.Text = "";
 
         RefreshSceneOptionsForSelectedIsland();
@@ -282,6 +290,7 @@ public partial class MainWindow : Window
 
     private void LoadIsland(string path)
     {
+        DebugLog.Log($"MainWindow: LoadIsland {Path.GetFileName(path)}");
         try
         {
             LoadIslandPalette(path);
@@ -316,6 +325,7 @@ public partial class MainWindow : Window
             var preview = currentIsland.CreatePreview();
             TerrainViewport.Source = preview;
             selectedActorIndex = null;
+            SelectZone(null, showTab: false);
             ActorMarkerCanvas.Children.Clear();
             lastNativeActorScreens = null;
             lastNativeActorRoutes = null;
@@ -373,16 +383,6 @@ public partial class MainWindow : Window
             var row = index / 16;
             var column = index % 16;
             fallbackTiles[index] = row < 2 || row > 13 || column < 2 || column > 13 ? TerrainType.Water : TerrainType.Grass;
-        }
-    }
-
-    private void BuildPalette()
-    {
-        foreach (var terrain in Enum.GetValues<TerrainType>())
-        {
-            var button = new Button { Content = terrain.ToString(), Tag = terrain, HorizontalContentAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 5), Padding = new Thickness(10, 7, 10, 7), Background = new SolidColorBrush(Color.FromRgb(28, 37, 33)), Foreground = Brushes.LightGray, BorderBrush = new SolidColorBrush(Color.FromRgb(58, 71, 64)) };
-            button.Click += Palette_Click;
-            Palette.Items.Add(button);
         }
     }
 
@@ -489,17 +489,21 @@ public partial class MainWindow : Window
             interiorZoom = 0; // clamped up to the fit zoom by ApplyInteriorView
             interiorCenter = new Point(interiorContent.X + interiorContent.Width / 2, interiorContent.Y + interiorContent.Height / 2);
             selectedActorIndex = null;
+            SelectZone(null, showTab: false);
         }
         lastNativeActorScreens = null;
         lastNativeActorRoutes = null;
         DocumentSummary.Text = $"Native interior scene {numscene} / fixed isometric view";
+        BuildSceneMinimap(canvas, interiorContent);
         ApplyInteriorView();
+        RefreshZoneListIfVisible();
     }
 
     private void ExitInteriorView()
     {
         interiorSceneActive = false;
         interiorSceneNumber = -1;
+        RestoreIslandMinimap();
         InteriorHost.Visibility = Visibility.Collapsed;
         TerrainViewport.Visibility = Visibility.Visible;
         PanHorizontalScrollBar.ViewportSize = 0;
@@ -551,6 +555,7 @@ public partial class MainWindow : Window
 
         DrawInteriorActorOverlay();
         UpdateZoomLabel();
+        UpdateSceneMinimapViewport();
     }
 
     // Paints the dummy body centred at (cx, cy), `height` px tall, on the
@@ -568,62 +573,600 @@ public partial class MainWindow : Window
         ActorMarkerCanvas.Children.Add(image);
     }
 
+    // A pre-rendered body (Lba1ActorImages.Marker: the body fills 80% of the square image's
+    // height, feet 90% of the way down) drawn so it is 2 * halfHeight tall and stands on the
+    // point halfHeight below (cx, cy).
+    private void AddBodyMarker(BitmapSource image, double cx, double cy, double halfHeight)
+    {
+        var size = Math.Max(2 * halfHeight / 0.8, 8);
+        var marker = new Image { Source = image, Width = size, Height = size, Stretch = Stretch.Uniform, IsHitTestVisible = false };
+        Canvas.SetLeft(marker, cx - size / 2);
+        Canvas.SetTop(marker, cy + halfHeight - size * 0.9);
+        ActorMarkerCanvas.Children.Add(marker);
+    }
+
+    // ---- LBA1 ----------------------------------------------------------------
+    // LBA1 scenes are shown in the same viewport as LBA2's interiors: one isometric bitmap
+    // (Lba1GridRenderer) with actor markers, routes and zones drawn over it. None of it goes
+    // through the native LBA2 engine.
+    private enum GameKind { Lba1, Lba2 }
+    private GameKind currentGame = GameKind.Lba2;
+    private bool gameComboReady;
+    private bool switchingGame;
+    private Lba1Game? lba1Game;
+    private Lba1ActorImages? lba1Images;
+    // The scenes on screen (one, or the tiles of a joined area), and where each sits in the view.
+    // Actor keys are sceneIndex * 1000 + actorIndex.
+    private readonly Dictionary<int, Lba1Scene> lba1ViewScenes = new();
+    private readonly Dictionary<int, (Lba1ActorImages.Marker Marker, double HalfHeight)> lba1ActorMarkers = new();
+    private readonly Dictionary<int, Lba1ActorAttributesWindow> openLba1ActorWindows = new();
+    private bool lba1JoinAreas = EditorSettings.Current.Lba1JoinAreas;
+
+    // While an interior / LBA1 scene is on screen the minimap shows that scene instead of the
+    // outdoor island: a thumbnail of the scene's content with a box for the part in view.
+    private bool sceneMinimapActive;
+    private ImageSource? savedIslandMinimap;
+    private double sceneMinimapScale = 1;
+    private Point sceneMinimapOrigin;
+
+    private void GameCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!gameComboReady) return;
+        var wanted = GameCombo.SelectedItem is ComboBoxItem { Tag: "1" } ? GameKind.Lba1 : GameKind.Lba2;
+        if (wanted != currentGame) SwitchGame(wanted);
+        // A combo that keeps keyboard focus flips games on a stray arrow key.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => Keyboard.Focus(this)));
+    }
+
+    private void SetGameSelection(GameKind game)
+    {
+        gameComboReady = false;
+        GameCombo.SelectedIndex = game == GameKind.Lba1 ? 0 : 1;
+        gameComboReady = true;
+    }
+
+    private void SwitchGame(GameKind game)
+    {
+        // A game whose folder isn't set (or can't be read) just opens empty, with a note saying why.
+        string? unavailable = null;
+        if (game == GameKind.Lba1)
+        {
+            var directory = EditorSettings.Current.Lba1Directory;
+            if (!Lba1Game.IsInstalled(directory)) unavailable = "The LBA1 game folder isn't set. Choose it under File > Settings.";
+            else
+            {
+                try
+                {
+                    lba1Game ??= new Lba1Game(directory);
+                    lba1Images ??= new Lba1ActorImages(lba1Game);
+                }
+                catch (Exception error)
+                {
+                    DebugLog.Log($"MainWindow: LBA1 load failed: {error}");
+                    lba1Game = null;
+                    lba1Images = null;
+                    unavailable = $"Couldn't read the LBA1 data: {error.Message}";
+                }
+            }
+        }
+        else if (!Lba2Configured) unavailable = "The LBA2 game folder isn't set. Choose it under File > Settings.";
+
+        switchingGame = true;
+        try { CloseActorWindows(); }
+        finally { switchingGame = false; }
+
+        // Stop anything the other game's view was still doing, and blank what it left behind.
+        nativeRenderCancellation?.Cancel();
+        nativeRenderCancellation = null;
+        nativeViewActive = false;
+        ExitInteriorView();
+        TerrainViewport.Source = null;
+        InteriorViewImage.Source = null;
+        Interlocked.Increment(ref minimapRequest);
+        MinimapImage.Source = null;
+        MinimapActorCanvas.Children.Clear();
+        MinimapMarkerCanvas.Children.Clear();
+        ActorMarkerCanvas.Children.Clear();
+        selectedActorIndex = null;
+        SelectZone(null, showTab: false);
+        lastNativeActorScreens = null;
+        lastNativeActorRoutes = null;
+        lastNativeZones = null;
+        lastNativeInvisibleActors = null;
+        interiorActors = new();
+        interiorOverlay = InteriorOverlay.Empty;
+        lba1ActorMarkers.Clear();
+        lba1ViewScenes.Clear();
+        actorMarkersIsland = null;
+        currentGame = game;
+        SetGameSelection(game);
+        JoinAreasCheck.Visibility = game == GameKind.Lba1 ? Visibility.Visible : Visibility.Collapsed;
+
+        if (unavailable is not null)
+        {
+            var other = game == GameKind.Lba1 ? Lba2Configured : Lba1Configured;
+            ShowEmptyState(other ? unavailable : "No game folders are set yet. Choose your LBA1 and/or LBA2 folder under File > Settings.");
+            return;
+        }
+        if (game == GameKind.Lba1)
+        {
+            PopulateLba1Lists();
+            return;
+        }
+
+        PopulateAssetLists();
+        // PopulateAssetLists() selects the island, which loads it; only load here if that didn't happen
+        // (a second load races the first one's minimap).
+        if (IslandCombo.SelectedItem is null && File.Exists(Path.Combine(gameRoot, activeFile))) LoadIsland(Path.Combine(gameRoot, activeFile));
+    }
+
+    private void CloseActorWindows()
+    {
+        foreach (var window in openAttributesWindows.Values.ToList()) window.Close();
+        foreach (var window in openScriptWindows.Values.ToList()) window.Close();
+        CloseLba1ActorWindows();
+    }
+
+    private void CloseLba1ActorWindows()
+    {
+        foreach (var window in openLba1ActorWindows.Values.ToList()) window.Close();
+        openLba1ActorWindows.Clear();
+    }
+
+    private void PopulateLba1Lists()
+    {
+        var game = lba1Game!;
+        islandOptions = game.Scenes.Select(s => s.Island).Distinct().Order()
+            .Select(id => new FilterableComboBox.Option(id, Lba1Game.IslandNames.ElementAtOrDefault(id) ?? $"Island {id}"))
+            .ToList();
+        sceneOptions = Array.Empty<FilterableComboBox.Option>();
+        IslandCombo.Text = "";
+        SceneCombo.Text = "";
+        islandFilter?.Refresh();
+        sceneFilter?.Refresh();
+        DocumentTitle.Text = "Little Big Adventure";
+        DocumentSummary.Text = $"{game.Scenes.Count} scenes on {islandOptions.Count} islands";
+        FileLabel.Text = "LBA1";
+        // Picking the first island lists its scenes and opens the first one.
+        if (islandOptions.Count > 0) IslandCombo.SelectedItem = islandOptions[0];
+    }
+
+    // Scene-list entries for a joined map carry the area's number as -(area + 1).
+    private static int AreaOption(int area) => -(area + 1);
+
+    private void RefreshLba1SceneOptions(int island)
+    {
+        if (lba1Game is null) return;
+        var options = new List<FilterableComboBox.Option>();
+        var joined = new HashSet<int>();
+        if (lba1JoinAreas)
+        {
+            for (var a = 0; a < lba1Game.Areas.Count; a++)
+            {
+                var area = lba1Game.Areas[a];
+                if (area.Island != island) continue;
+                foreach (var tile in area.Tiles) joined.Add(tile.Scene);
+                options.Add(new FilterableComboBox.Option(AreaOption(a), area.Label));
+            }
+        }
+        foreach (var s in lba1Game.Scenes.Where(s => s.Island == island && !joined.Contains(s.Index)))
+        {
+            var description = lba1Game.Description(s.Index);
+            options.Add(new FilterableComboBox.Option(s.Index, description is null
+                ? $"{s.Index}: {s.ActorCount} actors" + (s.Exits.Count > 0 ? $", exits to {string.Join(", ", s.Exits)}" : "")
+                : $"{s.Index}: {description}"));
+        }
+        sceneOptions = options;
+        sceneFilter?.Refresh();
+        SceneCombo.Text = "";
+        if (sceneOptions.Count > 0) SceneCombo.SelectedItem = sceneOptions[0];
+    }
+
+    private void JoinAreas_Click(object sender, RoutedEventArgs e)
+    {
+        lba1JoinAreas = JoinAreasCheck.IsChecked == true;
+        EditorSettings.Current.Lba1JoinAreas = lba1JoinAreas;
+        try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
+        if (currentGame == GameKind.Lba1 && IslandCombo.SelectedItem is FilterableComboBox.Option island) RefreshLba1SceneOptions(island.Index);
+    }
+
+    // `option` is a scene number, or AreaOption(area) for a joined map.
+    private void ShowLba1Scene(int option)
+    {
+        if (lba1Game is null) return;
+        IReadOnlyList<Lba1AreaTile> tiles;
+        if (option < 0)
+        {
+            var areaIndex = -option - 1;
+            if (areaIndex >= lba1Game.Areas.Count) return;
+            tiles = lba1Game.Areas[areaIndex].Tiles;
+        }
+        else tiles = new[] { new Lba1AreaTile(option, 0, 0, 0) };
+        ShowLba1Tiles(tiles);
+    }
+
+    private IReadOnlyList<Lba1AreaTile>? lba1CurrentTiles;
+
+    private void ShowLba1Tiles(IReadOnlyList<Lba1AreaTile> tiles, bool keepView = false)
+    {
+        if (lba1Game is null || lba1Images is null) return;
+        var single = tiles.Count == 1;
+        Lba1SceneImage image;
+        var scenes = new Dictionary<int, Lba1Scene>();
+        try
+        {
+            foreach (var t in tiles) scenes[t.Scene] = lba1Game.LoadScene(t.Scene);
+            image = single ? lba1Game.RenderScene(tiles[0].Scene) : lba1Game.RenderArea(new Lba1Area(scenes[tiles[0].Scene].Island, tiles));
+        }
+        catch (Exception error)
+        {
+            DebugLog.Log($"MainWindow: LBA1 scene(s) {string.Join(",", tiles.Select(t => t.Scene))} failed: {error}");
+            DocumentSummary.Text = $"Couldn't draw the map: {error.Message}";
+            return;
+        }
+
+        if (!keepView) CloseLba1ActorWindows();
+        var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, image.Bgra, image.Width * 4);
+        bitmap.Freeze();
+
+        // Actors: a rendered body where the entity has one, else the dummy marker. In a joined
+        // map the per-scene hero start positions are left out.
+        lba1ViewScenes.Clear();
+        lba1ActorMarkers.Clear();
+        var actors = new List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)>();
+        var zones = new List<ProjectedZone>();
+        var routes = new List<(int ActorIndex, List<Point> Points)>();
+        var zoneNumber = 0;
+        foreach (var tile in tiles)
+        {
+            var scene = scenes[tile.Scene];
+            lba1ViewScenes[tile.Scene] = scene;
+            Point At(double x, double y, double z) => image.Project(x + tile.OffsetX, y + tile.OffsetY, z + tile.OffsetZ);
+
+            foreach (var actor in scene.Actors)
+            {
+                if (!single && actor.Index == 0) continue;
+                var key = tile.Scene * 1000 + actor.Index;
+                var feet = At(actor.X, actor.Y, actor.Z);
+                int? bodyIndex = actor.Index == 0 ? lba1Game.BodyIndex(0, 0) : actor.HasEntity ? lba1Game.BodyIndex(actor.Entity, actor.Body) : null;
+                var marker = bodyIndex is { } b ? lba1Images.GetMarker(b) : null;
+                if (marker is not null)
+                {
+                    var height = Math.Clamp(marker.HeightUnits * 15 / 256, 14, 260);
+                    lba1ActorMarkers[key] = (marker, height / 2);
+                    actors.Add((key, (int)feet.X, (int)(feet.Y - height / 2), (int)Math.Max(10, height * .3), (int)(height / 2), false));
+                }
+                else
+                {
+                    const int half = 16;
+                    actors.Add((key, (int)feet.X, (int)feet.Y - half, 10, half, true));
+                }
+
+                var track = Lba1TrackScript.Points(actor.TrackScript).Where(p => p < scene.Tracks.Count).ToList();
+                if (track.Count == 0) continue;
+                var points = new List<Point> { feet };
+                points.AddRange(track.Select(p => At(scene.Tracks[p].X, scene.Tracks[p].Y, scene.Tracks[p].Z)));
+                routes.Add((key, points));
+            }
+
+            foreach (var z in scene.Zones)
+                zones.Add(new ProjectedZone(z.Type, single ? z.Num : zoneNumber++,
+                    ZoneStyle.Corners(z.X0, z.Y0, z.Z0, z.X1, z.Y1, z.Z1).Select(c => At(c.X, c.Y, c.Z)).ToArray(),
+                    new ZoneRef(1, tile.Scene, z.Num)));
+        }
+        // Hit targets are stacked in list order: body-less markers underneath, then big before small.
+        interiorActors = actors.OrderBy(a => a.Marker ? 0 : 1).ThenByDescending(a => a.HalfWidth * a.HalfHeight).ToList();
+        interiorOverlay = new InteriorOverlay(routes, zones);
+
+        interiorContent = new Rect(0, 0, image.Width, image.Height);
+        nativeViewActive = false;
+        interiorSceneActive = true;
+        interiorSceneNumber = tiles[0].Scene;
+        InteriorViewImage.Source = bitmap;
+        InteriorHost.Visibility = Visibility.Visible;
+        TerrainViewport.Visibility = Visibility.Collapsed;
+        lba1CurrentTiles = tiles;
+        if (!keepView)
+        {
+            interiorZoom = 0;
+            interiorCenter = new Point(image.Width / 2.0, image.Height / 2.0);
+            selectedActorIndex = null;
+            SelectZone(null, showTab: false);
+        }
+
+        var first = scenes[tiles[0].Scene];
+        var island = Lba1Game.IslandNames.ElementAtOrDefault(first.Island) ?? $"Island {first.Island}";
+        var actorCount = scenes.Values.Sum(s => s.Actors.Count - 1);
+        var zoneCount = scenes.Values.Sum(s => s.Zones.Count);
+        if (single)
+        {
+            DocumentTitle.Text = $"Scene {tiles[0].Scene}";
+            DocumentSummary.Text = $"{lba1Game.Description(tiles[0].Scene) ?? island} / {actorCount} actors / {zoneCount} zones";
+            FileLabel.Text = $"LBA1  ·  SCENE.HQR #{tiles[0].Scene}  ·  grid {tiles[0].Scene}";
+        }
+        else
+        {
+            var areaName = lba1Game.Areas.FirstOrDefault(a => a.Tiles.Any(t => t.Scene == tiles[0].Scene))?.Name ?? "Joined map";
+            DocumentTitle.Text = $"{island} — {areaName}";
+            DocumentSummary.Text = $"{tiles.Count} scenes ({string.Join(", ", tiles.Select(t => t.Scene))}) / {actorCount} actors / {zoneCount} zones";
+            FileLabel.Text = $"LBA1  ·  joined scenes {string.Join(", ", tiles.Select(t => t.Scene))}";
+        }
+        BuildSceneMinimap(bitmap, interiorContent);
+        ApplyInteriorView();
+        RefreshZoneListIfVisible();
+    }
+
+    // The scene minimap: a thumbnail of `content` (canvas pixels), a dot per actor, and a box
+    // for the part in view (see UpdateSceneMinimapViewport). Clicking it recentres the view.
+    private void BuildSceneMinimap(BitmapSource canvas, Rect content)
+    {
+        Interlocked.Increment(ref minimapRequest);
+        if (!sceneMinimapActive)
+        {
+            savedIslandMinimap = MinimapImage.Source;
+            sceneMinimapActive = true;
+        }
+        sceneMinimapOrigin = content.TopLeft;
+        sceneMinimapScale = Math.Min(1.0, 214.0 / Math.Max(content.Width, content.Height));
+        BitmapSource cropped = new CroppedBitmap(canvas, new Int32Rect((int)content.X, (int)content.Y, (int)content.Width, (int)content.Height));
+        var thumbnail = new TransformedBitmap(cropped, new ScaleTransform(sceneMinimapScale, sceneMinimapScale));
+        thumbnail.Freeze();
+        MinimapImage.Source = thumbnail;
+        MinimapActorCanvas.Children.Clear();
+        foreach (var (_, x, y, _, _, _) in interiorActors)
+        {
+            var dot = new System.Windows.Shapes.Ellipse { Width = 4, Height = 4, Fill = Brushes.Yellow, Stroke = Brushes.Black, StrokeThickness = 0.5 };
+            Canvas.SetLeft(dot, (x - sceneMinimapOrigin.X) * sceneMinimapScale - 2);
+            Canvas.SetTop(dot, (y - sceneMinimapOrigin.Y) * sceneMinimapScale - 2);
+            MinimapActorCanvas.Children.Add(dot);
+        }
+        MinimapScrollViewer.ScrollToHorizontalOffset(0);
+        MinimapScrollViewer.ScrollToVerticalOffset(0);
+    }
+
+    private void UpdateSceneMinimapViewport()
+    {
+        MinimapMarkerCanvas.Children.Clear();
+        if (!sceneMinimapActive || MinimapImage.Source is null || interiorZoom <= 0) return;
+        var w = ViewportHost.ActualWidth / interiorZoom;
+        var h = ViewportHost.ActualHeight / interiorZoom;
+        var scale = sceneMinimapScale;
+        var view = new Rect((interiorCenter.X - w / 2 - sceneMinimapOrigin.X) * scale, (interiorCenter.Y - h / 2 - sceneMinimapOrigin.Y) * scale, w * scale, h * scale);
+        view.Intersect(new Rect(1, 1, interiorContent.Width * scale - 2, interiorContent.Height * scale - 2));
+        if (view.IsEmpty) return;
+        var box = new System.Windows.Shapes.Rectangle { Width = Math.Max(4, view.Width), Height = Math.Max(4, view.Height), Stroke = Brushes.Yellow, StrokeThickness = 1.5 };
+        Canvas.SetLeft(box, view.X);
+        Canvas.SetTop(box, view.Y);
+        MinimapMarkerCanvas.Children.Add(box);
+    }
+
+    // Puts the outdoor island's minimap back when leaving a scene view.
+    private void RestoreIslandMinimap()
+    {
+        if (!sceneMinimapActive) return;
+        sceneMinimapActive = false;
+        MinimapImage.Source = savedIslandMinimap;
+        savedIslandMinimap = null;
+        MinimapActorCanvas.Children.Clear();
+        MinimapMarkerCanvas.Children.Clear();
+        // The island's actor dots are redrawn by the next native render.
+        actorMarkersIsland = null;
+    }
+
+    // `key` is sceneIndex * 1000 + actorIndex.
+    private void OpenLba1ActorWindow(int key)
+    {
+        if (lba1Game is null || lba1Images is null) return;
+        if (!lba1ViewScenes.TryGetValue(key / 1000, out var scene)) return;
+        var actor = scene.Actors.FirstOrDefault(a => a.Index == key % 1000);
+        if (actor is null) return;
+        if (openLba1ActorWindows.TryGetValue(key, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+        var sceneNumber = key / 1000;
+        var title = $"scene {sceneNumber}, {lba1Game.Description(sceneNumber) ?? Lba1Game.IslandNames.ElementAtOrDefault(scene.Island) ?? $"island {scene.Island}"}";
+        Lba1ActorAttributesWindow window;
+        try
+        {
+            window = new Lba1ActorAttributesWindow(lba1Game, lba1Images, sceneNumber, actor.Index, title,
+                edited => SaveLba1Actor(sceneNumber, edited), () => OpenLba1ScriptWindow(key)) { Owner = this };
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Couldn't read scene {sceneNumber}: {error.Message}", "LBA1 actor", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        window.Closed += (_, _) => openLba1ActorWindows.Remove(key);
+        openLba1ActorWindows[key] = window;
+        window.Show();
+    }
+
+    // Writes an actor's edited attributes into the scene record, then redraws the scene from the new file.
+    private string? SaveLba1Actor(int scene, Lba1ActorData edited)
+    {
+        if (lba1Session.EditedScenes.Contains(scene))
+            return "This scene has unsaved script edits. Save or discard them first, so the attribute change isn't overwritten.";
+        try
+        {
+            SceneZones.SaveRecord(1, scene, record => Lba1ActorRecord.Patch(record, edited), $"Edit actor {edited.Index} of scene {scene}");
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            return $"Not saved: {error.Message}";
+        }
+        zoneCache.Clear();
+        lba1Session.ForgetScene(scene);
+        ReloadLba1AfterEdit();
+        return null;
+    }
+
+    private static ActorSource? ResolveLba1Source(int key) => new(key / 1000, key % 1000);
+
+    private (string Stats, string Disassembly)? DescribeLba1Actor(int key)
+    {
+        if (lba1Game is null) return null;
+        try
+        {
+            var scene = lba1Game.LoadScene(key / 1000);
+            var actor = scene.Actors.FirstOrDefault(a => a.Index == key % 1000);
+            if (actor is null) return null;
+            var stats = actor.Index == 0
+                ? $"start pos ({actor.X}, {actor.Y}, {actor.Z})"
+                : $"pos ({actor.X}, {actor.Y}, {actor.Z})   angle={actor.Angle} entity={actor.Entity} body={actor.Body} anim={actor.Anim}   life={actor.LifePoints} armor={actor.Armor} move={actor.ControlMode}   waypoints={Lba1TrackScript.Points(actor.TrackScript).Count}";
+            return (stats, Disassembly.Text(actor.LifeScript, actor.TrackScript, Opcodes.Lba1));
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or IndexOutOfRangeException)
+        {
+            DebugLog.Log($"MainWindow: LBA1 actor {key} not described: {error.Message}");
+            return null;
+        }
+    }
+
+    private void OpenLba1ScriptWindow(int key)
+    {
+        if (openScriptWindows.TryGetValue(key, out var existing))
+        {
+            existing.ShowActor(key);
+            existing.Activate();
+            return;
+        }
+        var window = new ActorScriptWindow(null, lba1Session, ResolveLba1Source, DescribeLba1Actor, () => { zoneCache.Clear(); ReloadLba1AfterEdit(); }) { Owner = this };
+        window.Closed += (_, _) => openScriptWindows.Remove(key);
+        openScriptWindows[key] = window;
+        window.ShowActor(key);
+    }
+
     // ---- zones ---------------------------------------------------------------
     // Scene trigger boxes drawn as coloured wireframes, in both the outdoor and the
-    // indoor view. View > Zones toggles them (all, or per type).
+    // indoor view. The Zones tab toggles them (all, or per type).
     private bool zonesVisible = true;
     // Cube-change and camera zones are large and numerous (whole cube edges, whole rooms) and bury
-    // the view, so they start hidden; View > Zones turns them on.
+    // the view, so they start hidden; the Zones tab turns them on.
     private readonly bool[] zoneTypeVisible = Enumerable.Range(0, ZoneStyle.TypeCount).Select(t => t > 1).ToArray();
     private InteriorOverlay interiorOverlay = InteriorOverlay.Empty;
     private List<ProjectedZone>? lastNativeZones;
 
     private bool ZoneShown(int type) => zonesVisible && (uint)type < zoneTypeVisible.Length && zoneTypeVisible[type];
 
-    private void ZoneOptions_Changed(object sender, RoutedEventArgs e)
+    // The Zones tab: one checkbox per zone type, tinted with that type's colour.
+    private void BuildZoneList()
     {
-        if (sender is MenuItem { Tag: string tag } item)
+        for (var type = 0; type < ZoneStyle.TypeCount; type++)
         {
-            if (tag == "all") zonesVisible = item.IsChecked;
-            else if (int.TryParse(tag, out var type) && (uint)type < zoneTypeVisible.Length) zoneTypeVisible[type] = item.IsChecked;
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(new System.Windows.Shapes.Rectangle
+            {
+                Width = 10, Height = 10, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
+                Fill = new SolidColorBrush(ZoneStyle.ColorOf(type)),
+            });
+            row.Children.Add(new TextBlock { Text = ZoneStyle.NameOf(type), Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA)) });
+            var check = new CheckBox { Content = row, Tag = type, IsChecked = zoneTypeVisible[type], Margin = new Thickness(0, 0, 0, 8) };
+            check.Click += ZoneType_Click;
+            ZoneTypeList.Children.Add(check);
         }
+    }
+
+    // Actor patrol routes (dashed lines with a flag per waypoint) in the main views and on the minimap.
+    private bool pathsVisible = true;
+
+    private void Paths_Click(object sender, RoutedEventArgs e)
+    {
+        pathsVisible = PathsCheck.IsChecked == true;
+        RefreshActorOverlayForSelection();
+        if (!sceneMinimapActive && nativeViewActive) DrawActorMarkers();
+    }
+
+    // The selected actor's yellow ring and the selected zone's thick white outline, in every view.
+    private bool highlightSelection = EditorSettings.Current.HighlightSelection;
+
+    private void Highlight_Click(object sender, RoutedEventArgs e)
+    {
+        highlightSelection = HighlightCheck.IsChecked == true;
+        EditorSettings.Current.HighlightSelection = highlightSelection;
+        try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
         RefreshActorOverlayForSelection();
     }
 
+    private void AddSelectionRing(double centerX, double centerY, double width, double height)
+    {
+        var ring = new System.Windows.Shapes.Ellipse
+        {
+            Width = width + 6,
+            Height = height + 6,
+            Stroke = Brushes.Yellow,
+            StrokeThickness = 2,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(ring, centerX - ring.Width / 2);
+        Canvas.SetTop(ring, centerY - ring.Height / 2);
+        ActorMarkerCanvas.Children.Add(ring);
+    }
+
+    private void ZoneMaster_Click(object sender, RoutedEventArgs e)
+    {
+        zonesVisible = ZoneMasterCheck.IsChecked == true;
+        RefreshActorOverlayForSelection();
+        RefreshZoneListIfVisible();
+    }
+
+    private void ZoneType_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { Tag: int type } check && (uint)type < zoneTypeVisible.Length) zoneTypeVisible[type] = check.IsChecked == true;
+        RefreshActorOverlayForSelection();
+        RefreshZoneListIfVisible();
+    }
+
+    private bool minimapCollapsed;
+
+    private void MinimapToggle_Click(object sender, RoutedEventArgs e)
+    {
+        minimapCollapsed = !minimapCollapsed;
+        MinimapBody.Visibility = minimapCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        MinimapToggle.Content = minimapCollapsed ? "▴" : "▾";
+        MinimapToggle.ToolTip = minimapCollapsed ? "Expand minimap" : "Collapse minimap";
+    }
+
     // Draws `zones` (corners run through `map` into overlay coordinates; the view is
-    // width x height). Not hit-testable: they sit under the actors' click targets.
+    // width x height). Zones sit under the actors' click targets; clicking a zone's outline
+    // selects it for the DETAILS tab, and the selected zone is drawn thick and white.
     private void AddZoneShapes(IEnumerable<ProjectedZone> zones, Func<Point, Point> map, double width, double height)
     {
         foreach (var zone in zones)
         {
-            if (!ZoneShown(zone.Type)) continue;
+            var selected = highlightSelection && zone.Ref is not null && zone.Ref == selectedZoneRef;
+            if (!ZoneShown(zone.Type) && !selected) continue;
             var pts = zone.Corners.Select(map).ToArray();
             double minX = pts.Min(p => p.X), maxX = pts.Max(p => p.X), minY = pts.Min(p => p.Y), maxY = pts.Max(p => p.Y);
             if (maxX < -20 || minX > width + 20 || maxY < -20 || minY > height + 20) continue;
             if (maxX - minX > width * 6 || maxY - minY > height * 6) continue;   // camera-plane blow-up: not worth drawing
 
             var color = ZoneStyle.ColorOf(zone.Type);
-            var brush = new SolidColorBrush(color);
-            var path = new System.Windows.Shapes.Path
+            Brush brush = selected ? Brushes.White : new SolidColorBrush(color);
+            var geometry = ZoneStyle.Wireframe(new ProjectedZone(zone.Type, zone.Num, pts), p => p);
+            ActorMarkerCanvas.Children.Add(new System.Windows.Shapes.Path
             {
-                Data = ZoneStyle.Wireframe(new ProjectedZone(zone.Type, zone.Num, pts), p => p),
+                Data = geometry,
                 Stroke = brush,
-                StrokeThickness = 1.3,
-                Opacity = 0.9,
+                StrokeThickness = selected ? 2.8 : 1.3,
+                Opacity = selected ? 1 : 0.9,
                 IsHitTestVisible = false,
-            };
-            ActorMarkerCanvas.Children.Add(path);
+            });
 
-            // A tinted floor so the box reads as a volume (skipped for huge boxes, which would tint the whole view).
-            if (maxX - minX < 500)
+            // A fat invisible stroke over the same edges is the click target (the inside stays free for panning).
+            if (zone.Ref is not null)
             {
-                var floor = new System.Windows.Shapes.Polygon
+                var hit = new System.Windows.Shapes.Path
                 {
-                    Points = new PointCollection { pts[0], pts[1], pts[3], pts[2] },
-                    Fill = new SolidColorBrush(Color.FromArgb(38, color.R, color.G, color.B)),
-                    IsHitTestVisible = false,
+                    Data = geometry,
+                    Stroke = Brushes.Transparent,
+                    StrokeThickness = 9,
+                    Cursor = Cursors.Hand,
+                    Tag = zone.Ref,
                 };
-                ActorMarkerCanvas.Children.Insert(ActorMarkerCanvas.Children.Count - 1, floor);
+                hit.MouseLeftButtonDown += ZoneShape_MouseLeftButtonDown;
+                ActorMarkerCanvas.Children.Add(hit);
             }
 
             if (maxX - minX >= 46)
@@ -643,6 +1186,238 @@ public partial class MainWindow : Window
         }
     }
 
+    // ---- Edit > Undo / Redo: the application-wide log of changes saved to the game files (Scenes.SceneHistory) ----
+
+    private void EditMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        var undo = Scenes.SceneHistory.UndoDescription;
+        var redo = Scenes.SceneHistory.RedoDescription;
+        UndoMenuItem.Header = undo is null ? "_Undo" : $"_Undo {undo}";
+        UndoMenuItem.IsEnabled = undo is not null;
+        RedoMenuItem.Header = redo is null ? "_Redo" : $"_Redo {redo}";
+        RedoMenuItem.IsEnabled = redo is not null;
+    }
+
+    private void Undo_Click(object sender, RoutedEventArgs e) => RunHistoryStep(undo: true);
+
+    private void Redo_Click(object sender, RoutedEventArgs e) => RunHistoryStep(undo: false);
+
+    private void RunHistoryStep(bool undo)
+    {
+        var next = undo ? Scenes.SceneHistory.NextUndo : Scenes.SceneHistory.NextRedo;
+        if (next is null) return;
+        var scenes = next.After.Select(s => s.Scene).ToList();
+
+        // Same guards as saving a zone: an unsaved script edit or an open LBA2 actor window would be overwritten.
+        var pendingScripts = next.Game == Scenes.SceneGame.Lba1 ? lba1Session.EditedScenes : scriptSession.EditedScenes;
+        if (scenes.Any(pendingScripts.Contains))
+        {
+            MessageBox.Show(this, "That scene has unsaved script edits. Save or discard them first, so they aren't overwritten.", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (next.Game == Scenes.SceneGame.Lba2 && !interiorSceneActive && openAttributesWindows.Count > 0)
+        {
+            MessageBox.Show(this, "Close the actor windows first: this reloads the island, which drops unsaved actor edits.", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            if ((undo ? Scenes.SceneHistory.Undo() : Scenes.SceneHistory.Redo()) is null) return;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Nothing was changed: {error.Message}", undo ? "Undo" : "Redo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        zoneCache.Clear();
+        if (next.Game == Scenes.SceneGame.Lba1)
+        {
+            foreach (var scene in scenes) lba1Session.ForgetScene(scene);
+            if (currentGame == GameKind.Lba1 && lba1CurrentTiles is not null) ReloadLba1AfterEdit();
+            else { lba1Game = null; lba1Images = null; }
+        }
+        else
+        {
+            foreach (var scene in scenes) scriptSession.ForgetScene(scene);
+            if (currentGame == GameKind.Lba2)
+            {
+                if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
+                else
+                {
+                    nativeRenderer.InvalidateLoadedIsland();
+                    if (nativeViewActive) RenderNativeCamera();
+                }
+            }
+        }
+        RefreshZoneListIfVisible();
+        FileLabel.Text = $"{(undo ? "Undid" : "Redid")}: {next.Description}";
+    }
+
+    // Tools > LBA1: opens the bricked-up arch in Lupin Burg and connects scene 61 to it (see Lba1RoomDoorMod).
+    private void Lba1RoomDoor_Click(object sender, RoutedEventArgs e)
+    {
+        var directory = EditorSettings.Current.Lba1Directory;
+        if (!Lba1Game.IsInstalled(directory))
+        {
+            MessageBox.Show(this, "The LBA1 game folder isn't set. Choose it under File > Settings.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (lba1Session.EditedScenes.Any(s => s is 13 or 61))
+        {
+            MessageBox.Show(this, "Scenes 13 or 61 have unsaved script edits. Save or discard them first.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        var confirm = MessageBox.Show(this,
+            Lba1RoomDoorMod.Describe + $"\n\nFolder: {directory}\n\nContinue?", "Connect the bedroom to Lupin Burg", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.OK) return;
+
+        try
+        {
+            var result = Lba1RoomDoorMod.Apply(directory);
+            MessageBox.Show(this, result.Message, "Connect the bedroom to Lupin Burg", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, $"Nothing was changed: {error.Message}", "Connect the bedroom to Lupin Burg", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        zoneCache.Clear();
+        lba1Session.ForgetScene(13);
+        lba1Session.ForgetScene(61);
+        if (currentGame == GameKind.Lba1 && lba1CurrentTiles is not null) ReloadLba1AfterEdit();
+        else { lba1Game = null; lba1Images = null; }
+    }
+
+    // Tools > LBA2: play a scene in the full LBA2 engine (native/lba2-classic-community's lba2cc.exe), on the game folder
+    // as it is saved on disk.
+    private void Lba2Play_Click(object sender, RoutedEventArgs e)
+    {
+        if (!Lba2Engine.IsGameFolder(gameRoot))
+        {
+            MessageBox.Show(this, "The LBA2 game folder isn't set. Choose it under File > Settings.", "LBA2", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var scenes = Lba2SceneList.Load(gameRoot);
+        var dialog = new Lba2PlayWindow(scenes, currentGame == GameKind.Lba2 && interiorSceneActive ? interiorSceneNumber : Lba2Play.LastOptions?.Scene ?? 0) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Options is not { } options) return;
+        if (Lba2Play.Launch(gameRoot, options, out var problem) is null)
+            MessageBox.Show(this, problem ?? "The game didn't start.", "LBA2: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+        else
+            FileLabel.Text = $"Started LBA2 in scene {options.Scene}. It plays what is saved on disk (unsaved edits in this window aren't in it).";
+    }
+
+    // Tools > LBA2: edit a scene as data on a plan of it (Lba2SceneEditorWindow).
+    private void Lba2Editor_Click(object sender, RoutedEventArgs e)
+    {
+        if (!Lba2Engine.IsGameFolder(gameRoot))
+        {
+            MessageBox.Show(this, "The LBA2 game folder isn't set. Choose it under File > Settings.", "LBA2", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var start = currentGame == GameKind.Lba2 && interiorSceneActive && interiorSceneNumber >= 0 ? interiorSceneNumber : 0;
+        try { new Lba2SceneEditorWindow(gameRoot, start, EditLba2ScriptFromEditor) { Owner = this }.Show(); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: LBA2 scene editor failed: {error}");
+            MessageBox.Show(this, $"Couldn't open the scene editor: {error.Message}", "LBA2: scene editor", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // The scene editor hands an actor's scripts to the script editor (which saves through the scene store).
+    private void EditLba2ScriptFromEditor(int scene, int actor)
+    {
+        var key = 1_000_000 + scene * 1000 + actor;        // its own key range: the LBA2 editor windows don't collide with the LBA1 ones
+        if (openScriptWindows.TryGetValue(key, out var existing)) { existing.ShowActor(key); existing.Activate(); return; }
+        var window = new ActorScriptWindow(null, scriptSession, k => new ActorSource((k - 1_000_000) / 1000, (k - 1_000_000) % 1000)) { Owner = this };
+        window.Closed += (_, _) => openScriptWindows.Remove(key);
+        openScriptWindows[key] = window;
+        window.ShowActor(key);
+    }
+
+    // Tools > LBA1: edit a scene as data (Lba1SceneEditorWindow): actors, zones and track points on its map.
+    private void Lba1Editor_Click(object sender, RoutedEventArgs e)
+    {
+        var directory = EditorSettings.Current.Lba1Directory;
+        if (!Lba1Game.IsInstalled(directory))
+        {
+            MessageBox.Show(this, "The LBA1 game folder isn't set. Choose it under File > Settings.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var start = currentGame == GameKind.Lba1 && lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0;
+        try
+        {
+            new Lba1SceneEditorWindow(directory, start, EditLba1ActorFromEditor) { Owner = this }.Show();
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: LBA1 scene editor failed: {error}");
+            MessageBox.Show(this, $"Couldn't open the scene editor: {error.Message}", "LBA1: scene editor", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // The scene editor hands an actor over to the full attribute dialog or the script editor, which work on the scene shown here.
+    private void EditLba1ActorFromEditor(int scene, int actor, bool script)
+    {
+        if (currentGame != GameKind.Lba1 || lba1Game is null)
+        {
+            MessageBox.Show(this, "Switch the main window to LBA1 (the Game selector) to use the full editors.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        zoneCache.Clear();
+        lba1Session.ForgetScene(scene);
+        ReloadLba1AfterEdit();
+        var result = GoToLba1Scene(scene);
+        DebugLog.Log($"MainWindow: editor asked for scene {scene} actor {actor}: {result}");
+        if (script) OpenLba1ScriptWindow(scene * 1000 + actor);
+        else OpenLba1ActorWindow(scene * 1000 + actor);
+    }
+
+    // Tools > LBA1: play the scene on screen (Lba1PlayWindow). The simulation reads the files on disk, so it always plays what was saved.
+    private void Lba1Play_Click(object sender, RoutedEventArgs e)
+    {
+        var directory = EditorSettings.Current.Lba1Directory;
+        if (!Lba1Game.IsInstalled(directory))
+        {
+            MessageBox.Show(this, "The LBA1 game folder isn't set. Choose it under File > Settings.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var start = currentGame == GameKind.Lba1 && lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0;
+        if (lba1Session.EditedScenes.Any())
+            FileLabel.Text = "Playing what is saved on disk; scripts you haven't saved yet aren't included.";
+        try
+        {
+            var game = new Lba1Game(directory);
+            var window = new Lba1PlayWindow(game, new Lba1ActorImages(game), directory, start) { Owner = this };
+            window.Show();
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: LBA1 play window failed: {error}");
+            MessageBox.Show(this, $"Couldn't start the scene: {error.Message}", "LBA1: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // After a zone edit was saved: read the LBA1 files again and redraw the same scene(s).
+    private void ReloadLba1AfterEdit()
+    {
+        var tiles = lba1CurrentTiles;
+        if (tiles is null) return;
+        try
+        {
+            lba1Game = new Lba1Game(EditorSettings.Current.Lba1Directory);
+            lba1Images = new Lba1ActorImages(lba1Game);
+        }
+        catch (Exception error)
+        {
+            DebugLog.Log($"MainWindow: LBA1 reload failed: {error}");
+            return;
+        }
+        ShowLba1Tiles(tiles, keepView: true);
+    }
+
     private void DrawInteriorActorOverlay()
     {
         ActorMarkerCanvas.Children.Clear();
@@ -655,7 +1430,7 @@ public partial class MainWindow : Window
 
         // Patrol routes, drawn the same way as outdoors: a dashed line through the
         // actor's track waypoints with a flag on each.
-        foreach (var (actorIndex, canvasPoints) in interiorOverlay.Routes)
+        foreach (var (actorIndex, canvasPoints) in pathsVisible ? interiorOverlay.Routes : new())
         {
             var brush = new SolidColorBrush(ActorRouteColors[actorIndex % ActorRouteColors.Length]);
             var points = new PointCollection(canvasPoints.Select(ToView));
@@ -678,17 +1453,16 @@ public partial class MainWindow : Window
             var sy = (y - interiorCenter.Y) * interiorZoom + vh / 2;
             if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
             if (isMarker) AddDummyMarker(sx, sy, halfHeight * 2 * interiorZoom);
-            var selected = selectedActorIndex == index;
+            else if (lba1ActorMarkers.TryGetValue(index, out var body)) AddBodyMarker(body.Marker.Image, sx, sy, halfHeight * interiorZoom);
             var hit = new System.Windows.Shapes.Ellipse
             {
                 Width = Math.Max(halfWidth * 2 * interiorZoom, 20),
                 Height = Math.Max(halfHeight * 2 * interiorZoom, 20),
                 Fill = Brushes.Transparent,
-                Stroke = selected ? Brushes.Yellow : null,
-                StrokeThickness = selected ? 2 : 0,
                 Cursor = Cursors.Hand,
                 Tag = index,
             };
+            if (highlightSelection && selectedActorIndex == index) AddSelectionRing(sx, sy, hit.Width, hit.Height);
             hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
             hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
             Canvas.SetLeft(hit, sx - hit.Width / 2);
@@ -745,7 +1519,7 @@ public partial class MainWindow : Window
             var world = new System.Windows.Media.Media3D.Point3D(x, y, z);
             if (!SoftwareTerrainRenderer.TryProjectWorldPoint(width, height, cameraYaw, 38, cameraDistance, targetX, targetZ, world, out var screenX, out var screenY)) continue;
 
-            if (waypointCount > 0)
+            if (pathsVisible && waypointCount > 0)
             {
                 var brush = new SolidColorBrush(ActorRouteColors[i % ActorRouteColors.Length]);
                 var points = new PointCollection { new Point(screenX, screenY) };
@@ -775,7 +1549,7 @@ public partial class MainWindow : Window
 
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
 
-            var selected = selectedActorIndex == i;
+            var selected = highlightSelection && selectedActorIndex == i;
             var dot = new System.Windows.Shapes.Ellipse
             {
                 Width = selected ? 14 : 10,
@@ -831,7 +1605,7 @@ public partial class MainWindow : Window
         if (lastNativeZones is not null)
             AddZoneShapes(lastNativeZones, p => new Point(p.X * scaleX, p.Y * scaleY), width, height);
 
-        if (lastNativeActorRoutes is not null)
+        if (pathsVisible && lastNativeActorRoutes is not null)
         {
             foreach (var (actorIndex, screenPoints) in lastNativeActorRoutes)
             {
@@ -867,6 +1641,7 @@ public partial class MainWindow : Window
             var hitWidth = Math.Max(hitHalfWidth * 2 * scaleX, 20);
             var hitHeight = Math.Max(hitHalfHeight * 2 * scaleY, 20);
             if (lastNativeInvisibleActors?.Contains(index) == true) AddDummyMarker(screenX, screenY, hitHeight);
+            if (highlightSelection && selectedActorIndex == index) AddSelectionRing(screenX, screenY, hitWidth, hitHeight);
             var hit = new System.Windows.Shapes.Ellipse
             {
                 Width = hitWidth,
@@ -935,7 +1710,11 @@ public partial class MainWindow : Window
         // now selected, but don't pop one open on every click -- only
         // explicit actions (double-click, context menu) do that.
         if (openScriptWindows.TryGetValue(index, out var openScript)) openScript.ShowActor(index);
-        if (e.ClickCount >= 2) OpenActorAttributesWindow(index);
+        if (e.ClickCount >= 2)
+        {
+            if (currentGame == GameKind.Lba1) OpenLba1ActorWindow(index);
+            else OpenActorAttributesWindow(index);
+        }
     }
 
     // One independent, non-modal window per actor per kind (script/
@@ -962,6 +1741,7 @@ public partial class MainWindow : Window
 
     private void OpenActorScriptWindow(int index)
     {
+        if (currentGame == GameKind.Lba1) { OpenLba1ScriptWindow(index); return; }
         if (openScriptWindows.TryGetValue(index, out var existing))
         {
             existing.ShowActor(index);
@@ -991,6 +1771,7 @@ public partial class MainWindow : Window
         window.Closed += (_, _) =>
         {
             openAttributesWindows.Remove(index);
+            if (switchingGame) return;
             if (selectedActorIndex == index) selectedActorIndex = null;
             if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
             else RenderNativeCamera();
@@ -1007,6 +1788,18 @@ public partial class MainWindow : Window
         RefreshActorOverlayForSelection();
 
         var menu = new ContextMenu();
+        if (currentGame == GameKind.Lba1)
+        {
+            var editAttributes1 = new MenuItem { Header = "Edit Attributes…" };
+            editAttributes1.Click += (_, _) => OpenLba1ActorWindow(index);
+            var editScript1 = new MenuItem { Header = "Edit Script…" };
+            editScript1.Click += (_, _) => OpenLba1ScriptWindow(index);
+            menu.Items.Add(editAttributes1);
+            menu.Items.Add(editScript1);
+            ((FrameworkElement)sender).ContextMenu = menu;
+            menu.IsOpen = true;
+            return;
+        }
         var editAttributes = new MenuItem { Header = "Edit Attributes…" };
         editAttributes.Click += (_, _) => OpenActorAttributesWindow(index);
         var editScript = new MenuItem { Header = "Edit Script…" };
@@ -1097,6 +1890,7 @@ public partial class MainWindow : Window
 
     private void UpdateMinimapMarker()
     {
+        if (sceneMinimapActive) return;
         MinimapMarkerCanvas.Children.Clear();
         if (currentIsland is null || MinimapImage.Source is null) return;
         var px = targetX / MinimapWorldUnitsPerPixel - minimapCropOffsetXPixels;
@@ -1171,6 +1965,7 @@ public partial class MainWindow : Window
                             presentCubes.Add((cx, cy));
                     var native = nativeRenderer.RenderIslandTopDown(islandName, palette, presentCubes, minX, minY, maxX - minX + 1, maxY - minY + 1);
                     if (native is not null) return native;
+                    DebugLog.Log($"MainWindow: native minimap for {islandName} returned null ({nativeRenderer.DirectFailure})");
                 }
                 catch
                 {
@@ -1202,6 +1997,8 @@ public partial class MainWindow : Window
                 if (request != minimapRequest) return;
                 minimapCropOffsetXPixels = offsetX;
                 minimapCropOffsetYPixels = offsetY;
+                // A scene is on screen: keep the island's minimap for when it is left.
+                if (sceneMinimapActive) { savedIslandMinimap = task.Result; return; }
                 MinimapImage.Source = task.Result;
                 UpdateMinimapMarker();
                 CenterMinimapOnMarker();
@@ -1215,8 +2012,7 @@ public partial class MainWindow : Window
 
     private void SkyCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        var enabled = SkyCheckBox.IsChecked == true;
-        nativeRenderer.RendererLibrary?.SetDrawSky(enabled);
+        // RenderNativeCamera reads the checkbox and applies it inside the render lock.
         if (nativeViewActive) RenderNativeCamera();
     }
 
@@ -1228,6 +2024,14 @@ public partial class MainWindow : Window
         // clicking it while one is would otherwise silently overwrite the
         // pan scrollbars' interior-mode range/value with stale outdoor
         // coordinates without actually switching the view back.
+        if (sceneMinimapActive)
+        {
+            if (MinimapImage.Source is null || !interiorSceneActive) return;
+            var spot = e.GetPosition((Grid)sender);
+            interiorCenter = new Point(spot.X / sceneMinimapScale + sceneMinimapOrigin.X, spot.Y / sceneMinimapScale + sceneMinimapOrigin.Y);
+            ApplyInteriorView();
+            return;
+        }
         if (interiorSceneActive || currentIsland is null || MinimapImage.Source is null) return;
         var grid = (Grid)sender;
         var point = e.GetPosition(grid);
@@ -1293,17 +2097,24 @@ public partial class MainWindow : Window
         UpdateZoomLabel();
     }
 
-    private void Reset_Click(object sender, RoutedEventArgs e) => LoadIsland(Path.Combine(gameRoot, activeFile));
+    private void Reset_Click(object sender, RoutedEventArgs e)
+    {
+        if (currentGame == GameKind.Lba1) { FitInteriorView(); return; }
+        if (!Lba2Configured) return;
+        LoadIsland(Path.Combine(gameRoot, activeFile));
+    }
+
+    private void FitInteriorView()
+    {
+        interiorZoom = 0; // clamped up to the fit zoom
+        interiorCenter = new Point(interiorContent.X + interiorContent.Width / 2, interiorContent.Y + interiorContent.Height / 2);
+        ApplyInteriorView();
+    }
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
     private void BodyStudio_Click(object sender, RoutedEventArgs e) => BodyStudioLauncher.Show(this);
     private void ViewFit_Click(object sender, RoutedEventArgs e)
     {
-        if (interiorSceneActive)
-        {
-            interiorZoom = 0; // clamped up to the fit zoom
-            interiorCenter = new Point(interiorContent.X + interiorContent.Width / 2, interiorContent.Y + interiorContent.Height / 2);
-            ApplyInteriorView();
-        }
+        if (interiorSceneActive) FitInteriorView();
         else Reset_Click(sender, e);
     }
     private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
@@ -1411,13 +2222,9 @@ public partial class MainWindow : Window
 
             var islandName = Path.GetFileNameWithoutExtension(activeFile);
             var library = nativeRenderer.RendererLibrary;
-            library?.SetDrawSky(desiredSkyEnabled);
-            // Same reasoning as SetDrawSky just above: the minimap turns sea
-            // off for its own top-down snapshots and never turns it back on,
-            // since it has no reason to know the main view wants it --
-            // reassert on every render so a minimap regeneration can't leave
-            // the main view's sea silently disabled.
-            library?.SetDrawSea(true);
+            // Sky and sea are reasserted inside RenderIslandDirect's render lock (drawSky here):
+            // the minimap turns them off for its own top-down snapshots and never turns them
+            // back on, and setting them out here could land mid-minimap-render.
             // Always radius 2 (5x5 cubes): AffGrilleExtWide loads and draws
             // neighboring cubes into the same frame. Radius 1 used to be
             // chosen below 35000 camera distance (86%+ zoom), but the terrain
@@ -1441,6 +2248,7 @@ public partial class MainWindow : Window
 
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, (int)targetX, (int)targetY, (int)targetZ, nativeAlpha, nativeBeta, nativeGamma, nativeDistance,
                 wideRadiusCubes: wideRadius,
+                drawSky: desiredSkyEnabled,
                 afterRenderBeforeUnlock: () =>
                 {
                     if (library is null) return;
@@ -1520,8 +2328,13 @@ public partial class MainWindow : Window
                     // camera as the frame (like the actors above).
                     var zoneList = new List<ProjectedZone>();
                     var zoneCount = library.GetZoneCount();
+                    var zoneOrdinals = new Dictionary<int, int>();
                     for (var zi = 0; zi < zoneCount; zi++)
                     {
+                        // Position inside its scene's zone list, counted before any zone is skipped.
+                        var zoneScene = library.GetZoneScene(zi);
+                        var zoneIndex = zoneOrdinals.GetValueOrDefault(zoneScene);
+                        zoneOrdinals[zoneScene] = zoneIndex + 1;
                         if (!library.GetZone(zi, out var zx0, out var zy0, out var zz0, out var zx1, out var zy1, out var zz1, out var ztype, out var znum)) continue;
                         var zcubeX = (int)Math.Floor((zx0 + zx1) / 2 / 32768.0);
                         var zcubeZ = (int)Math.Floor((zz0 + zz1) / 2 / 32768.0);
@@ -1534,7 +2347,7 @@ public partial class MainWindow : Window
                             visible = library.ProjectPoint(world[c].X, world[c].Y, world[c].Z, out var cpx, out var cpy);
                             corners[c] = new Point(cpx, cpy);
                         }
-                        if (visible) zoneList.Add(new ProjectedZone(ztype, znum, corners));
+                        if (visible) zoneList.Add(new ProjectedZone(ztype, znum, corners, zoneScene >= 0 ? new ZoneRef(2, zoneScene, zoneIndex) : null));
                     }
                     projectedZones = zoneList;
                 });
@@ -1619,7 +2432,7 @@ public partial class MainWindow : Window
             var pz = z / MinimapWorldUnitsPerPixel - minimapCropOffsetYPixels;
             var brush = new SolidColorBrush(ActorRouteColors[i % ActorRouteColors.Length]);
 
-            if (waypointCount > 0)
+            if (pathsVisible && waypointCount > 0)
             {
                 var points = new PointCollection { new Point(px, pz) };
                 for (var w = 0; w < waypointCount; w++)
@@ -1682,6 +2495,13 @@ public partial class MainWindow : Window
     }
     private void MainWindow_KeyDown(object sender, KeyEventArgs e)
     {
+        // Ctrl+Z / Ctrl+Y undo and redo saved scene changes; text boxes keep their own undo.
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.Z or Key.Y && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase)
+        {
+            RunHistoryStep(undo: e.Key == Key.Z);
+            e.Handled = true;
+            return;
+        }
         // TryPan below assumes the outdoor island's own coordinate space
         // (IsWorldPositionOnIsland, SyncPanScrollBars writing targetX/Z) --
         // arrow-key panning isn't wired up for interior scenes (only the
@@ -1700,21 +2520,33 @@ public partial class MainWindow : Window
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
         e.Handled = true;
     }
-    private void Palette_Click(object sender, RoutedEventArgs e) { selectedTerrain = (TerrainType)((Button)sender).Tag; SelectedLabel.Text = $"{selectedTerrain} / selected brush"; }
-    private void Open_Click(object sender, RoutedEventArgs e) { var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
+    private void Open_Click(object sender, RoutedEventArgs e) { if (currentGame == GameKind.Lba1) return; var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow { Owner = this };
         if (dialog.ShowDialog() != true) return;
         if (dialog.ScriptNamesChanged) RefreshScriptStyle();
-        if (!dialog.GameDirectoryChanged) return;
+        if (dialog.Lba1DirectoryChanged)
+        {
+            lba1Game = null;
+            lba1Images = null;
+        }
+        if (dialog.GameDirectoryChanged)
+        {
+            gameRoot = EditorSettings.Current.GameDirectory;
+            nativeRenderer.SetGameDirectory(gameRoot);
+            actorMarkersIsland = null;
+        }
+        if (dialog.GameDirectoryChanged || dialog.Lba1DirectoryChanged) DummyBodyPreview.Reset();
 
-        gameRoot = EditorSettings.Current.GameDirectory;
-        nativeRenderer.SetGameDirectory(gameRoot);
-        actorMarkersIsland = null;
-        PopulateAssetLists();
-        if (Directory.Exists(gameRoot)) LoadIsland(Path.Combine(gameRoot, activeFile));
+        // Reload the game on screen if its folder changed, and move to the other game when the
+        // current one no longer has a folder (or nothing was open and only the other one is set now).
+        var next = currentGame;
+        if (currentGame == GameKind.Lba2 && !Lba2Configured && Lba1Configured) next = GameKind.Lba1;
+        else if (currentGame == GameKind.Lba1 && !Lba1Configured && Lba2Configured) next = GameKind.Lba2;
+        var changed = currentGame == GameKind.Lba2 ? dialog.GameDirectoryChanged : dialog.Lba1DirectoryChanged;
+        if (next != currentGame || changed) SwitchGame(next);
     }
     // The function-name case setting changed: reprint every open script window's untouched scripts.
     private void RefreshScriptStyle()
@@ -1722,6 +2554,7 @@ public partial class MainWindow : Window
         var windows = openScriptWindows.Values.ToList();
         foreach (var w in windows) w.CommitForRestyle();
         scriptSession.RefreshStyle();
+        lba1Session.RefreshStyle();
         foreach (var w in windows) w.ReloadForRestyle();
     }
 

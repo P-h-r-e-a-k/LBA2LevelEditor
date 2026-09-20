@@ -48,22 +48,22 @@ internal enum ValueKind : byte { S8, U8, S16 }
 
 internal sealed record CondDef(byte Id, string Name, string? OperandName, ValueKind Value);
 
-internal static class Opcodes
+internal static class Lba2Tables
 {
-    private static ArgDef U8(string n, ArgRole r = ArgRole.Plain) => new(n, ArgType.U8, r);
-    private static ArgDef S8(string n) => new(n, ArgType.S8);
-    private static ArgDef U16(string n) => new(n, ArgType.U16);
-    private static ArgDef S16(string n, ArgRole r = ArgRole.Plain) => new(n, ArgType.S16, r);
-    private static ArgDef Obj(string n = "obj") => new(n, ArgType.U8, ArgRole.Obj);
-    private static ArgDef Pt(string n = "point") => new(n, ArgType.U8, ArgRole.Point);
-    private static ArgDef Jmp(string n = "target") => new(n, ArgType.Jump);
+    internal static ArgDef U8(string n, ArgRole r = ArgRole.Plain) => new(n, ArgType.U8, r);
+    internal static ArgDef S8(string n) => new(n, ArgType.S8);
+    internal static ArgDef U16(string n) => new(n, ArgType.U16);
+    internal static ArgDef S16(string n, ArgRole r = ArgRole.Plain) => new(n, ArgType.S16, r);
+    internal static ArgDef Obj(string n = "obj") => new(n, ArgType.U8, ArgRole.Obj);
+    internal static ArgDef Pt(string n = "point") => new(n, ArgType.U8, ArgRole.Point);
+    internal static ArgDef Jmp(string n = "target") => new(n, ArgType.Jump);
 
-    private static readonly ArgDef[] None = Array.Empty<ArgDef>();
+    internal static readonly ArgDef[] None = Array.Empty<ArgDef>();
 
     // ---------------------------------------------------------------------
     // Life actions (LM_*), COMMON.H lines ~1100-1250.
     // ---------------------------------------------------------------------
-    private static readonly LifeOpDef[] lifeDefs =
+    internal static readonly LifeOpDef[] LifeDefs =
     {
         new(0, "END", LifeForm.Plain, None),
         new(1, "NOP", LifeForm.Plain, None),
@@ -221,7 +221,7 @@ internal static class Opcodes
     // non-null when the case reads one byte after the opcode (`*PtrPrg++`).
     // Value is the TypeAnswer the case leaves set (default RET_S8).
     // ---------------------------------------------------------------------
-    private static readonly CondDef[] condDefs =
+    internal static readonly CondDef[] CondDefs =
     {
         new(0, "COL", null, ValueKind.S8),
         new(1, "COL_OBJ", "obj", ValueKind.S8),
@@ -294,11 +294,11 @@ internal static class Opcodes
     // sentinels); they have to be present in the byte stream but carry no
     // authored meaning.
     // ---------------------------------------------------------------------
-    private static ArgDef Hid8(string n) => new(n, ArgType.U8, ArgRole.Hidden);
-    private static ArgDef Hid16(string n) => new(n, ArgType.S16, ArgRole.Hidden);
-    private static ArgDef Hid32(string n) => new(n, ArgType.U32, ArgRole.Hidden);
+    internal static ArgDef Hid8(string n) => new(n, ArgType.U8, ArgRole.Hidden);
+    internal static ArgDef Hid16(string n) => new(n, ArgType.S16, ArgRole.Hidden);
+    internal static ArgDef Hid32(string n) => new(n, ArgType.U32, ArgRole.Hidden);
 
-    private static readonly TrackOpDef[] trackDefs =
+    internal static readonly TrackOpDef[] TrackDefs =
     {
         new(0, "END", None),
         new(1, "NOP", None),
@@ -354,31 +354,4 @@ internal static class Opcodes
         new(51, "FREQUENCE", new[] { S16("frequency") }),
         new(52, "VOLUME", new[] { U8("volume") }),
     };
-
-    private static readonly LifeOpDef?[] lifeById = Index(lifeDefs, d => d.Id, 256);
-    private static readonly TrackOpDef?[] trackById = Index(trackDefs, d => d.Id, 256);
-    private static readonly CondDef?[] condById = Index(condDefs, d => d.Id, 256);
-
-    private static readonly Dictionary<string, LifeOpDef> lifeByName = lifeDefs.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, TrackOpDef> trackByName = trackDefs.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, CondDef> condByName = condDefs.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
-
-    private static T?[] Index<T>(T[] defs, Func<T, byte> id, int size) where T : class
-    {
-        var table = new T?[size];
-        foreach (var d in defs) table[id(d)] = d;
-        return table;
-    }
-
-    public static IReadOnlyList<LifeOpDef> LifeOps => lifeDefs;
-    public static IReadOnlyList<TrackOpDef> TrackOps => trackDefs;
-    public static IReadOnlyList<CondDef> Conditions => condDefs;
-
-    public static LifeOpDef? Life(byte id) => lifeById[id];
-    public static TrackOpDef? Track(byte id) => trackById[id];
-    public static CondDef? Cond(byte id) => condById[id];
-
-    public static LifeOpDef? Life(string name) => lifeByName.GetValueOrDefault(name);
-    public static TrackOpDef? Track(string name) => trackByName.GetValueOrDefault(name);
-    public static CondDef? Cond(string name) => condByName.GetValueOrDefault(name);
 }

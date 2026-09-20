@@ -1,0 +1,83 @@
+;*──────────────────────────────────────────────────────────────────────────*
+;                              MIXER_I.ASM 386
+;                             (c) Adeline 1993
+;*──────────────────────────────────────────────────────────────────────────*
+
+;*--------------------------------------------------------------------------*
+
+		.386
+
+
+		.model  SMALL, SYSCALL
+
+		.DATA
+
+		public	Mixer_listfcts
+		public	Mixer_Driver_Enable
+
+Mixer_listfcts		dd	0
+Mixer_Driver_Enable	dd	0
+
+		.CODE
+
+		public	MixerAskVars
+		public	MixerChangeVolume
+		public	MixerGetVolume
+
+;----------------------------------------------------------------------------
+;----------------------------------------------------------------------------
+
+MixerCallFuncs	PROC
+
+		cmp	byte ptr[Mixer_Driver_Enable], 0
+		je	return
+
+		shl	eax, 2
+		add	eax, dword ptr[Mixer_listfcts]
+		jmp	dword ptr[eax]
+return:
+		ret
+
+MixerCallFuncs	ENDP
+
+;----------------------------------------------------------------------------
+;----------------------------------------------------------------------------
+
+
+MixerAskVars	PROC
+
+		mov	eax, 0
+		jmp	MixerCallFuncs
+
+MixerAskVars	ENDP
+
+;----------------------------------------------------------------------------
+
+MixerChangeVolume PROC
+
+		mov	eax, 1
+		jmp	MixerCallFuncs
+
+MixerChangeVolume ENDP
+
+;----------------------------------------------------------------------------
+
+MixerGetVolume	PROC
+
+		mov	eax, 2
+		jmp	MixerCallFuncs
+
+MixerGetVolume	ENDP
+
+;----------------------------------------------------------------------------
+
+MixerGetInfo	PROC
+
+		mov	eax, 3
+		jmp	MixerCallFuncs
+
+MixerGetInfo	ENDP
+
+;----------------------------------------------------------------------------
+
+		END

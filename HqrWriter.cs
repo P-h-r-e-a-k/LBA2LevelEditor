@@ -26,6 +26,21 @@ internal static class HqrWriter
         return entry;
     }
 
+    // A compressed entry (LZ method 1 or 2) when that is smaller AND the engine can decompress it in place;
+    // otherwise a stored entry. Game files written by the editor use stored entries (the engine loads both), so
+    // this is for callers that want the file kept small.
+    public static byte[] CompressedEntry(byte[] data, int method = 1)
+    {
+        var packed = HqrLz.Compress(data, method);
+        if (packed.Length >= data.Length || !HqrLz.IsInPlaceSafe(packed, data.Length, method)) return StoredEntry(data);
+        var entry = new byte[10 + packed.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(entry, (uint)data.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(entry.AsSpan(4), (uint)packed.Length);
+        BinaryPrimitives.WriteUInt16LittleEndian(entry.AsSpan(8), (ushort)method);
+        packed.CopyTo(entry.AsSpan(10));
+        return entry;
+    }
+
     // Returns a copy of `hqr` with entry `index` replaced by `newEntry` (a
     // complete entry including its 10-byte header, e.g. from StoredEntry).
     public static byte[] ReplaceEntry(byte[] hqr, int index, byte[] newEntry)

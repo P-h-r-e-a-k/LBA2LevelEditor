@@ -217,6 +217,7 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_sprite(int index);
    9 rail. */
 LBA2_RENDERER_API int lba2_renderer_get_zone_count(void);
 LBA2_RENDERER_API int lba2_renderer_get_zone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num);
+LBA2_RENDERER_API int lba2_renderer_get_zone_scene(int index);
 
 /* Canvas position (same space as lba2_renderer_render_interior_full's canvas)
    of a scene-local point of the loaded interior scene. */

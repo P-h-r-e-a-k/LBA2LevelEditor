@@ -19,13 +19,27 @@ namespace LBA2LevelEditor;
 // show what the UI and the engine were each doing, interleaved by time.
 internal static class DebugLog
 {
-    private static readonly string LogPath = @"E:\dump\LBA2LevelEditor\debug.log";
+    // Where the log goes: the LBA2_EDITOR_DEBUG_LOG environment variable if set, else (debug builds
+    // only) the project folder. A release build writes nothing unless the variable is set. The
+    // native engine reads the same variable; App.OnStartup publishes this path to it.
+    public static readonly string? LogFile = ResolvePath();
+
+    private static string? ResolvePath()
+    {
+        if (Environment.GetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG") is { Length: > 0 } configured) return configured;
+#if DEBUG
+        return @"E:\dump\LBA2LevelEditor\debug.log";
+#else
+        return null;
+#endif
+    }
 
     public static void Log(string message)
     {
+        if (LogFile is null) return;
         try
         {
-            File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss.fff}] [managed] {message}{Environment.NewLine}");
+            File.AppendAllText(LogFile, $"[{DateTime.Now:HH:mm:ss.fff}] [managed] {message}{Environment.NewLine}");
         }
         catch
         {

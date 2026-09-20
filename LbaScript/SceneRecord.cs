@@ -113,6 +113,57 @@ internal sealed class SceneRecord
         return new SceneRecord(raw, actors, p);
     }
 
+    // LBA1's record (see Lba1Scene.Parse): island, game-over scene, 4 unused bytes, light angles, 4 ambient
+    // samples, 2 delays, music, hero start (3 words), then for the hero and each further actor the
+    // track script and the life script (each a U16 length + bytes), the latter actors preceded by a
+    // 35-byte attribute header. Only the script blobs matter here.
+    public static SceneRecord ParseLba1(byte[] raw)
+    {
+        var p = 0;
+        int Need(int n)
+        {
+            if (p + n > raw.Length) throw new ScriptFormatException("Scene record is truncated", p);
+            var at = p; p += n; return at;
+        }
+        short S16At(int at) => BinaryPrimitives.ReadInt16LittleEndian(raw.AsSpan(at));
+        ushort U16At(int at) => BinaryPrimitives.ReadUInt16LittleEndian(raw.AsSpan(at));
+
+        Need(2);        // island, game-over scene
+        Need(4);        // unused
+        Need(4);        // light angles
+        Need(24);       // ambient samples
+        Need(4);        // delays
+        Need(1);        // music
+        var heroPos = Need(6);
+
+        SceneActor ReadScripts(int index)
+        {
+            var a = new SceneActor { Index = index };
+            a.TrackSizePos = Need(2);
+            a.TrackLen = U16At(a.TrackSizePos);
+            a.TrackPos = Need(a.TrackLen);
+            a.LifeSizePos = Need(2);
+            a.LifeLen = U16At(a.LifeSizePos);
+            a.LifePos = Need(a.LifeLen);
+            return a;
+        }
+
+        var actors = new List<SceneActor>();
+        var hero = ReadScripts(0);
+        hero.X = S16At(heroPos); hero.Y = S16At(heroPos + 2); hero.Z = S16At(heroPos + 4);
+        actors.Add(hero);
+
+        var count = U16At(Need(2));
+        for (var n = 1; n < count; n++)
+        {
+            var header = Need(35);
+            var obj = ReadScripts(n);
+            obj.Flags = U16At(header);
+            obj.X = S16At(header + 8); obj.Y = S16At(header + 10); obj.Z = S16At(header + 12);
+            actors.Add(obj);
+        }
+        return new SceneRecord(raw, actors, p);
+    }
     // Serializes the record with the given scripts substituted. Anything not
     // in the map keeps its original bytes; the S16 length prefixes are
     // recomputed. Scripts must fit an S16 length.

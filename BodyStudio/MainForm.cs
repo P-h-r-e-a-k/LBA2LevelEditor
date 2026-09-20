@@ -58,7 +58,7 @@ public sealed class MainForm : Form
         generate.Click+=async(_,_)=>await Generate();export.Click+=async(_,_)=>await Export();
         save.Click+=(_,_)=>{using var d=new SaveFileDialog(){Filter="Body Studio project|*.json",FileName="body-project.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>File.WriteAllText(d.FileName,JsonSerializer.Serialize(ReadSettings(),new JsonSerializerOptions{WriteIndented=true})));};
         load.Click+=(_,_)=>{using var d=new OpenFileDialog(){Filter="Body Studio project|*.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>{Apply(JsonSerializer.Deserialize<Settings>(File.ReadAllText(d.FileName))??throw new InvalidDataException("Empty project."));LoadImage();});};
-        Apply(new Settings(){OutputFolder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"LBA Body Exports")});
+        Apply(new Settings(){OutputFolder=Path.Combine(AppContext.BaseDirectory,"Body Exports"),Lba1Folder=LBA2LevelEditor.EditorSettings.Current.Lba1Directory,Lba2Folder=LBA2LevelEditor.EditorSettings.Current.GameDirectory});
         // Any setting change invalidates the export snapshot until regenerated.
         foreach(Control c in Descendants(fields))
         {

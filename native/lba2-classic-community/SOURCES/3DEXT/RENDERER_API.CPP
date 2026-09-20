@@ -52,6 +52,7 @@ extern int RendererGetInteriorActorCanvas(int index, int *x, int *y, int *halfW,
 extern int RendererGetActorSprite(int index);
 extern int RendererGetZoneCount(void);
 extern int RendererGetZone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num);
+extern int RendererGetZoneScene(int index);
 extern int RendererProjectInteriorPoint(int x, int y, int z, int *cx, int *cy);
 extern int RendererRenderSpritePreview(int sprite, int *x, int *y, int *w, int *h);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
@@ -525,6 +526,11 @@ int lba2_renderer_get_zone_count(void)
 int lba2_renderer_get_zone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num)
 {
     return RendererGetZone(index, x0, y0, z0, x1, y1, z1, type, num);
+}
+
+int lba2_renderer_get_zone_scene(int index)
+{
+    return RendererGetZoneScene(index);
 }
 
 int lba2_renderer_project_interior_point(int x, int y, int z, int *cx, int *cy)

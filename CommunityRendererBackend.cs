@@ -19,6 +19,7 @@ internal sealed class CommunityRendererBackend
     private string? directIsland;
     private bool directSession;
     private string directFailure = "none";
+    public string DirectFailure => directFailure;
     public RendererLibraryApi? RendererLibrary { get; }
 
     public CommunityRendererBackend(string gameDirectory)
@@ -62,6 +63,12 @@ internal sealed class CommunityRendererBackend
         gameDirectory = path;
     }
 
+    // Forces the next exterior render to load its island again (and so re-read SCENE.HQR), e.g. after a zone edit was saved.
+    public void InvalidateLoadedIsland()
+    {
+        lock (directRenderLock) directIsland = null;
+    }
+
     public bool IsAvailable => File.Exists(enginePath) && Directory.Exists(gameDirectory);
     public bool RendererLibraryAvailable => File.Exists(rendererLibraryPath);
     public string RendererLibraryPath => rendererLibraryPath;
@@ -79,11 +86,16 @@ internal sealed class CommunityRendererBackend
     // (from rapid dragging) could have already changed that shared state --
     // the visible symptom of that race was actor markers "swimming" a few
     // pixels out of sync with the terrain while panning.
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0)
+    // drawSky asserts the sky flag for this frame, and the sea flag is always turned back on: the
+    // minimap render (RenderIslandTopDown) leaves sea off, and setting either flag from outside
+    // this lock could land in the middle of a minimap render and put sea back over its land.
+    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
         {
+            RendererLibrary.SetDrawSky(drawSky);
+            RendererLibrary.SetDrawSea(true);
             var baseName = islandName.ToLowerInvariant();
             if (!directSession)
             {
@@ -156,6 +168,9 @@ internal sealed class CommunityRendererBackend
                 directSession = true;
             }
             if (!RendererLibrary.LoadInteriorScene(numscene)) { directFailure = $"load interior scene failed: {numscene}"; return null; }
+            // The interior replaced the native actor/zone lists, so whichever island was loaded is
+            // gone: the next exterior render must load its island again even if it is the same name.
+            directIsland = null;
             RendererLibrary.GetInteriorCameraPosition(out cameraX, out cameraY, out cameraZ);
             if (!RendererLibrary.RenderInteriorFrame()) { directFailure = "native interior render returned failure"; return null; }
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
@@ -209,8 +224,13 @@ internal sealed class CommunityRendererBackend
 
             var zones = new List<ProjectedZone>();
             var zoneCount = RendererLibrary.GetZoneCount();
+            var zoneOrdinals = new Dictionary<int, int>();
             for (var z = 0; z < zoneCount; z++)
             {
+                // Position of this zone inside its scene's zone list (zones of one scene are listed together).
+                var zoneScene = RendererLibrary.GetZoneScene(z);
+                var zoneIndex = zoneOrdinals.GetValueOrDefault(zoneScene);
+                zoneOrdinals[zoneScene] = zoneIndex + 1;
                 if (!RendererLibrary.GetZone(z, out var x0, out var y0, out var z0, out var x1, out var y1, out var z1, out var type, out var num)) continue;
                 var world = ZoneStyle.Corners(x0, y0, z0, x1, y1, z1);
                 var corners = new Point[8];
@@ -220,7 +240,7 @@ internal sealed class CommunityRendererBackend
                     ok = RendererLibrary.ProjectInteriorPoint(world[c].X, world[c].Y, world[c].Z, out var cx, out var cy);
                     corners[c] = new Point(cx, cy);
                 }
-                if (ok) zones.Add(new ProjectedZone(type, num, corners));
+                if (ok) zones.Add(new ProjectedZone(type, num, corners, zoneScene >= 0 ? new ZoneRef(2, zoneScene, zoneIndex) : null));
             }
             overlay = new InteriorOverlay(routes, zones);
 
@@ -316,18 +336,31 @@ internal sealed class CommunityRendererBackend
     public BodyPreviewCalibration? CalibrateBodyPreviewDistance(int genBody, int genAnim, byte[] paletteBytes, double targetFraction = 0.8, double targetAspect = 1.0)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) return null;
-        const int probeDistance = 5000;
+        const int minDistance = 200, maxDistance = 40000;
         lock (directRenderLock)
         {
-            if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, 0, probeDistance)) return null;
-            var probeBounds = MeasureNonBackgroundBounds();
-            if (probeBounds is not { } probe) return null;
+            // A silhouette that touches the frame edge has been clipped, so its
+            // measured size is too small and a fit computed from it would still
+            // clip. Back the probe off until the whole body is inside the frame.
+            var probeDistance = 5000;
+            FrameBounds probe = default;
+            for (var attempt = 0; ; attempt++)
+            {
+                if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, 0, probeDistance)) return null;
+                if (MeasureNonBackgroundBounds() is not { } measured) return null;
+                probe = measured;
+                if (!TouchesFrameEdge(probe) || attempt >= 6 || probeDistance >= maxDistance) break;
+                probeDistance = Math.Min(probeDistance * 2, maxDistance);
+            }
 
-            var silhouetteSize = Math.Max(probe.MaxX - probe.MinX, probe.MaxY - probe.MinY);
-            if (silhouetteSize < 4) return null; // degenerate -- avoid dividing into an absurd distance
-            var targetSize = Math.Min(probe.Width, probe.Height) * targetFraction;
-            var idealDistance = (int)(probeDistance * silhouetteSize / targetSize);
-            var distance = Math.Clamp(idealDistance, 200, 40000);
+            // How far the silhouette reaches from the frame centre (the camera
+            // aims at the body's centre, but an animation can shift it).
+            var reach = Math.Max(
+                Math.Max(probe.Width / 2 - probe.MinX, probe.MaxX - probe.Width / 2),
+                Math.Max(probe.Height / 2 - probe.MinY, probe.MaxY - probe.Height / 2));
+            if (reach < 2) return null; // degenerate -- avoid dividing into an absurd distance
+            var targetHalf = Math.Min(probe.Width, probe.Height) * targetFraction / 2;
+            var distance = Math.Clamp((int)(probeDistance * reach / targetHalf), minDistance, maxDistance);
 
             // The live preview orbits the camera around the object (see
             // AffichageBodyPreview), so the rendered frame's silhouette size
@@ -336,23 +369,32 @@ internal sealed class CommunityRendererBackend
             // head-on. Sampling several angles across the full turn at the
             // real render distance and unioning their bounds keeps the crop
             // correct for the whole rotation instead of just whichever
-            // single angle it was measured at.
+            // single angle it was measured at. If any angle is still clipped
+            // by the frame, pull the camera back and measure again.
             const int angleSamples = 8;
-            int? unionMinX = null, unionMaxX = null, unionMinY = null, unionMaxY = null;
+            int minX = 0, maxX = 0, minY = 0, maxY = 0;
             var width = probe.Width;
             var height = probe.Height;
-            for (var i = 0; i < angleSamples; i++)
+            for (var pass = 0; ; pass++)
             {
-                var angle = i * 4096 / angleSamples;
-                if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, angle, distance)) continue;
-                if (MeasureNonBackgroundBounds() is not { } sample) continue;
-                unionMinX = unionMinX is { } a ? Math.Min(a, sample.MinX) : sample.MinX;
-                unionMaxX = unionMaxX is { } b ? Math.Max(b, sample.MaxX) : sample.MaxX;
-                unionMinY = unionMinY is { } c ? Math.Min(c, sample.MinY) : sample.MinY;
-                unionMaxY = unionMaxY is { } d ? Math.Max(d, sample.MaxY) : sample.MaxY;
+                int? unionMinX = null, unionMaxX = null, unionMinY = null, unionMaxY = null;
+                for (var i = 0; i < angleSamples; i++)
+                {
+                    var angle = i * 4096 / angleSamples;
+                    if (!RendererLibrary.RenderBodyPreview(genBody, genAnim, angle, distance)) continue;
+                    if (MeasureNonBackgroundBounds() is not { } sample) continue;
+                    unionMinX = unionMinX is { } a ? Math.Min(a, sample.MinX) : sample.MinX;
+                    unionMaxX = unionMaxX is { } b ? Math.Max(b, sample.MaxX) : sample.MaxX;
+                    unionMinY = unionMinY is { } c ? Math.Min(c, sample.MinY) : sample.MinY;
+                    unionMaxY = unionMaxY is { } d ? Math.Max(d, sample.MaxY) : sample.MaxY;
+                }
+                if (unionMinX is not int uMinX || unionMaxX is not int uMaxX || unionMinY is not int uMinY || unionMaxY is not int uMaxY)
+                    return null; // every sampled angle failed to render
+                minX = uMinX; maxX = uMaxX; minY = uMinY; maxY = uMaxY;
+                var clipped = minX <= 0 || minY <= 0 || maxX >= width - 1 || maxY >= height - 1;
+                if (!clipped || pass >= 5 || distance >= maxDistance) break;
+                distance = Math.Min((int)(distance * 1.25), maxDistance);
             }
-            if (unionMinX is not int minX || unionMaxX is not int maxX || unionMinY is not int minY || unionMaxY is not int maxY)
-                return null; // every sampled angle failed to render
 
             var centerX = (minX + maxX) / 2;
             var centerY = (minY + maxY) / 2;
@@ -376,6 +418,9 @@ internal sealed class CommunityRendererBackend
     }
 
     private readonly record struct FrameBounds(int Width, int Height, int MinX, int MaxX, int MinY, int MaxY);
+
+    private static bool TouchesFrameEdge(FrameBounds b)
+        => b.MinX <= 0 || b.MinY <= 0 || b.MaxX >= b.Width - 1 || b.MaxY >= b.Height - 1;
 
     // Scans the current framebuffer for the bounding box of every pixel that
     // isn't the background colour -- valid for this isolated, otherwise-

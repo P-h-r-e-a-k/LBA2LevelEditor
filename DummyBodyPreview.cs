@@ -20,22 +20,39 @@ internal static class DummyBodyPreview
     private static System.Drawing.Color[]? cachedPalette;
     private static bool loadFailed;
 
+    // Forget any cached result (the game folders changed, so the palette source may have too).
+    public static void Reset()
+    {
+        cachedBody = null;
+        cachedPalette = null;
+        cachedMarker = null;
+        loadFailed = false;
+    }
+
     private static bool TryLoad()
     {
         if (cachedBody is not null && cachedPalette is not null) return true;
         if (loadFailed) return false;
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "Assets", "DummyBody.lm2");
-            cachedBody = LbaBodyStudio.Body.Read(File.ReadAllBytes(path), 2);
-            cachedPalette = LbaBodyStudio.Generator.Palette(EditorSettings.Current.GameDirectory);
+            // The body ships inside the exe. Its colours come from a game palette (RESS.HQR entry 0
+            // is the same layout in both games), from whichever game folder is set.
+            var folder = new[] { EditorSettings.Current.GameDirectory, EditorSettings.Current.Lba1Directory }
+                .FirstOrDefault(f => !string.IsNullOrWhiteSpace(f) && File.Exists(Path.Combine(f, "RESS.HQR")));
+            if (folder is null) return false; // no game folder yet: try again once one is set
+            using var stream = typeof(DummyBodyPreview).Assembly.GetManifestResourceStream("DummyBody.lm2")
+                ?? throw new FileNotFoundException("DummyBody.lm2 is not embedded.");
+            using var bytes = new MemoryStream();
+            stream.CopyTo(bytes);
+            cachedBody = LbaBodyStudio.Body.Read(bytes.ToArray(), 2);
+            cachedPalette = LbaBodyStudio.Generator.Palette(folder);
             return true;
         }
         catch
         {
-            // No installed game folder yet, or the palette/body couldn't be
-            // read -- ActorAttributesWindow falls back to its usual "no body
-            // to preview" message rather than showing a broken image.
+            // The palette/body couldn't be read -- ActorAttributesWindow
+            // falls back to its usual "no body to preview" message rather
+            // than showing a broken image.
             loadFailed = true;
             return false;
         }

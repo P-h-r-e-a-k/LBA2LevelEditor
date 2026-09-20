@@ -33,9 +33,35 @@
 // (E:\dump\LBA2LevelEditor\debug.log, RendererLibraryApi.cs/App.xaml.cs),
 // interleaved by wall-clock time, so a crash's last few lines show both
 // what the UI was doing and what the native engine was doing at once.
+// The file is named by the LBA2_EDITOR_DEBUG_LOG environment variable (the editor's
+// debug builds set it to the shared log); with it unset nothing is written.
+#ifdef _WIN32
+extern "C" __declspec(dllimport) unsigned long __stdcall GetEnvironmentVariableA(const char *name, char *buffer, unsigned long size);
+#endif
+
+static const char *NativeDebugLogPath()
+{
+    static char path[512];
+    static bool resolved = false;
+    if (!resolved) {
+        path[0] = 0;
+#ifdef _WIN32
+        unsigned long n = GetEnvironmentVariableA("LBA2_EDITOR_DEBUG_LOG", path, sizeof(path));
+        if (n == 0 || n >= sizeof(path)) path[0] = 0;
+#else
+        const char *env = getenv("LBA2_EDITOR_DEBUG_LOG");
+        if (env && strlen(env) < sizeof(path)) strcpy(path, env);
+#endif
+        resolved = true;
+    }
+    return path[0] ? path : NULL;
+}
+
 void NativeDebugLog(const char *fmt, ...)
 {
-    FILE *f = fopen("E:\\dump\\LBA2LevelEditor\\debug.log", "a");
+    const char *logPath = NativeDebugLogPath();
+    if (!logPath) return;
+    FILE *f = fopen(logPath, "a");
     if (!f) return;
     time_t now = time(NULL);
     struct tm *lt = localtime(&now);
@@ -554,6 +580,11 @@ static bool g_previewInitialized = false;
 // still independently needed for genuine backface visibility).
 static S32 g_previewBodyRadius = 0;
 
+// Model-space Y of the body's bounding-box centre. The preview camera looks
+// here rather than at the object's origin (usually its feet), so a tall
+// body is centred in the frame instead of filling only the half above it.
+static S32 g_previewBodyCenterY = 0;
+
 // Set via lba2_renderer_set_body_preview_animation_paused (RENDERER_API.CPP)
 // for the actor-attributes editor's own "pause animation" toggle -- lets the
 // turntable keep rotating (cameraBeta is entirely the C# caller's own doing,
@@ -620,6 +651,10 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         ptrobj->Obj.Anim.Num = -1; // see ObjectInitAnim's own Anim.Ptr==anim check
         ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)anim);
         g_previewBodyRadius = ComputeBodyBoundingRadius(bodyPtr);
+        {
+            const T_BODY_HEADER *bh = (const T_BODY_HEADER *)bodyPtr;
+            g_previewBodyCenterY = ((S32)bh->YMin + (S32)bh->YMax) / 2;
+        }
         g_previewInitBody = body;
         g_previewInitAnim = anim;
         g_previewInitialized = true;
@@ -718,8 +753,11 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     ClearAniPoly();
     ClsTerrainZBuf();
     Switch_Fillers(FILL_POLY_FOG_ZBUFFER);
+    // Interior scenes leave the fixed iso projection installed (Init3DView);
+    // the preview needs the exterior perspective one.
+    Init3DExtView();
     SetLightVector(600, -600, 0);
-    SetFollowCamera(0, 0, 0, 200, cameraBeta, 0, camDistance);
+    SetFollowCamera(0, g_previewBodyCenterY, 0, 200, cameraBeta, 0, camDistance);
 
     ManageSystem();
 

@@ -293,10 +293,10 @@ public partial class ActorAttributesWindow : Window
         // BodyCombo/AnimCombo's dropdown to just whatever matches the
         // current numeric value before the user has ever opened it.
         suppressBodyTextChanged = true;
-        BodyCombo.Text = body.ToString();
+        BodyCombo.Text = cachedBodyOptions!.FirstOrDefault(o => o.Index == body)?.Display ?? body.ToString();
         suppressBodyTextChanged = false;
         suppressAnimTextChanged = true;
-        AnimCombo.Text = anim.ToString();
+        AnimCombo.Text = animOptionsForActor.FirstOrDefault(o => o.Index == anim)?.Display ?? anim.ToString();
         suppressAnimTextChanged = false;
         LifePointBox.Text = lifePoint.ToString();
         ArmourBox.Text = armor.ToString();

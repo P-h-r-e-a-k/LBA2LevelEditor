@@ -15,3 +15,6 @@ obj
 *.user
 *.suo
 debug.log
+release/*
+!release/LBA2LevelEditor.exe
+settings.json

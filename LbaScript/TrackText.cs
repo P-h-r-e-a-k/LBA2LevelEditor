@@ -67,12 +67,7 @@ internal static class TrackText
 
     // Hidden (runtime scratch) operand values a freshly authored script has.
     // GERETRAK.CPP / GERELIFE.CPP's CleanTrack() resets exactly these.
-    private static long HiddenDefault(byte op, long[] a, int argIndex) => op switch
-    {
-        6 => a[0],      // LOOP: counter starts at the loop count
-        34 => -1,       // ANGLE_RND: state
-        _ => 0,         // WAIT_NB_ANIM counter, WAIT_NB_* timers
-    };
+    private static long HiddenDefault(byte op, long[] a, int argIndex) => Opcodes.Active.TrackHiddenDefault(op, a, argIndex);
 
     // ---- decompile --------------------------------------------------------
 
@@ -88,7 +83,7 @@ internal static class TrackText
         // Jump targets that are not LABEL instructions get a C label.
         var extraLabels = new Dictionary<int, string>();
         foreach (var i in code)
-            if (Bytecode.TryGetTarget(ScriptKind.Track, i, out var t) && !labelNames.ContainsKey(t) && t < length && !extraLabels.ContainsKey(t))
+            if (Bytecode.TryGetTarget(ScriptKind.Track, i, out var t) && !labelNames.ContainsKey(t) && t >= 0 && t < length && !extraLabels.ContainsKey(t))
                 extraLabels[t] = $"L{extraLabels.Count + 1}";
 
         string? Target(int t) =>

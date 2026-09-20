@@ -46,6 +46,10 @@ internal sealed class HqrArchive
         return new HqrArchive(data, offsets);
     }
 
+    // The decompressed size an entry's header announces (no decoding), or -1 for an empty or invalid slot.
+    public int DecodedSize(int index)
+        => IsValid(index) ? checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan((int)offsets[index]))) : -1;
+
     public bool IsValid(int index)
     {
         if ((uint)index >= offsets.Length || offsets[index] == 0 || offsets[index] > data.Length - 10) return false;
@@ -75,6 +79,20 @@ internal sealed class HqrArchive
         // fine but desynced method-2 ones a nibble at a time, eventually
         // producing a distance bigger than what had been decoded so far.
         return DecodeLz(source, size, method + 1);
+    }
+
+    // Decodes one complete entry ([u32 size][u32 stored size][u16 method][payload], padding after it is ignored).
+    internal static byte[] DecodeEntry(ReadOnlySpan<byte> entry)
+    {
+        if (entry.Length < 10) throw new InvalidDataException("An HQR entry needs its 10-byte header.");
+        var size = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(entry));
+        var storedSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(entry[4..]));
+        var method = BinaryPrimitives.ReadInt16LittleEndian(entry[8..]);
+        if (storedSize < 0 || storedSize > entry.Length - 10) throw new InvalidDataException("The HQR entry has an invalid payload size.");
+        var payload = entry.Slice(10, storedSize);
+        if (method == 0) return payload.ToArray();
+        if (method is not (1 or 2)) throw new InvalidDataException($"Unsupported HQR compression method {method}.");
+        return DecodeLz(payload, size, method + 1);
     }
 
     private static byte[] DecodeLz(ReadOnlySpan<byte> source, int expectedSize, int minBlockLength)

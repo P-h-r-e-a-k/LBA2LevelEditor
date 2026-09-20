@@ -47,6 +47,8 @@ public partial class ActorScriptWindow : Window
     private readonly RendererLibraryApi? library;
     private readonly ScriptSession? session;
     private readonly Func<int, ActorSource?>? resolveActor;
+    private readonly Func<int, (string Stats, string Disassembly)?>? describeActor;
+    private readonly Action? afterSave;
     private readonly DispatcherTimer checkTimer;
     private readonly Dictionary<ScriptKind, IReadOnlyList<KeywordItem>> keywordCache = new();
 
@@ -63,12 +65,17 @@ public partial class ActorScriptWindow : Window
     private ScriptView view = ScriptView.Life;
     private int lastErrorLine;
 
-    internal ActorScriptWindow(RendererLibraryApi? library, ScriptSession? session = null, Func<int, ActorSource?>? resolveActor = null)
+    // describeActor: the stats line and disassembly for games without the native renderer (LBA1);
+    // afterSave: called once the session has written SCENE.HQR (the caller reloads what it shows).
+    internal ActorScriptWindow(RendererLibraryApi? library, ScriptSession? session = null, Func<int, ActorSource?>? resolveActor = null,
+        Func<int, (string Stats, string Disassembly)?>? describeActor = null, Action? afterSave = null)
     {
         InitializeComponent();
         this.library = library;
         this.session = session;
         this.resolveActor = resolveActor;
+        this.describeActor = describeActor;
+        this.afterSave = afterSave;
 
         checkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
         checkTimer.Tick += (_, _) => { checkTimer.Stop(); RunCheck(); };
@@ -107,6 +114,11 @@ public partial class ActorScriptWindow : Window
             StatsLabel.Text = $"pos ({x}, {y}, {z})   beta={beta} body={body} anim={anim}   " +
                                $"life={lifePoint} armor={armor} hit={hitForce} move={move}   waypoints={waypointCount}";
             nativeScript = library.GetActorScript(actorIndex);
+        }
+        else if (describeActor?.Invoke(actorIndex) is { } described)
+        {
+            StatsLabel.Text = described.Stats;
+            nativeScript = described.Disassembly;
         }
 
         sceneScripts = null;
@@ -299,6 +311,7 @@ public partial class ActorScriptWindow : Window
 
         StatusText.Text = "✓ " + result.Message;
         StatusText.Foreground = OkBrush;
+        afterSave?.Invoke();
         // The session dropped the saved scenes so they reload from disk: point this window at the fresh copy.
         var keep = StatusText.Text;
         ShowActor(actorIndex);
@@ -365,7 +378,7 @@ public partial class ActorScriptWindow : Window
 
         var life = view == ScriptView.Life ? EditorText : sceneScripts!.GetText(source.Slot, ScriptKind.Life);
         var trk = view == ScriptView.Track ? EditorText : sceneScripts!.GetText(source.Slot, ScriptKind.Track);
-        suggestionPool = ScriptCompletions.For(CurrentKind)
+        suggestionPool = ScriptCompletions.For(CurrentKind, sceneScripts!.Dialect)
             .Concat(ScriptCompletions.Symbols(life, trk))
             .Select(c => new SuggestionItem(c.Signature, c.Description, c.InsertText))
             .ToList();
@@ -450,7 +463,7 @@ public partial class ActorScriptWindow : Window
         var kind = CurrentKind;
         if (!keywordCache.TryGetValue(kind, out var list))
         {
-            list = ScriptCompletions.For(kind)
+            list = ScriptCompletions.For(kind, sceneScripts?.Dialect)
                 .Select(c => new KeywordItem(c.Name, c.Category, c.Description, c.InsertText))
                 .OrderBy(k => k.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();

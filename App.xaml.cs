@@ -23,6 +23,8 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Point the native engine's own log at the same file (it stays silent without this).
+        if (DebugLog.LogFile is not null) Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
         DebugLog.Log("App: startup");
         DispatcherUnhandledException += (_, args) =>
         {

@@ -21,8 +21,10 @@ internal static class HqdDescriptions
 
     public static LoadResult Load(string hqdFileName, int hqrEntryCount)
     {
+        // A LBAPackageManager install, when there is one, wins; otherwise the copy shipped inside the exe.
         var path = Path.Combine(FileDescDirectory, hqdFileName);
-        if (!File.Exists(path)) return new LoadResult(Array.Empty<string?>(), $"{hqdFileName} not found at {FileDescDirectory}.");
+        var embedded = typeof(HqdDescriptions).Assembly.GetManifestResourceStream("FileDesc." + hqdFileName);
+        if (!File.Exists(path) && embedded is null) return new LoadResult(Array.Empty<string?>(), $"{hqdFileName} not found at {FileDescDirectory}.");
 
         string[] lines;
         // Windows-1252/Latin-1, not UTF-8: these files predate UTF-8 tooling
@@ -33,8 +35,18 @@ internal static class HqdDescriptions
         // differ in 0x80-0x9F, which neither file uses. Reading as UTF-8
         // (File.ReadAllLines' default) mangled every accented name into a
         // replacement character instead.
-        try { lines = File.ReadAllLines(path, System.Text.Encoding.Latin1); }
+        try
+        {
+            if (File.Exists(path)) lines = File.ReadAllLines(path, System.Text.Encoding.Latin1);
+            else
+            {
+                using var reader = new StreamReader(embedded!, System.Text.Encoding.Latin1);
+                lines = reader.ReadToEnd().Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
+                if (lines.Length > 0 && lines[^1].Length == 0) lines = lines[..^1];
+            }
+        }
         catch (Exception ex) { return new LoadResult(Array.Empty<string?>(), $"Couldn't read {hqdFileName}: {ex.Message}"); }
+        finally { embedded?.Dispose(); }
 
         // Line 0 is the file's own header line ("This file contains..."),
         // not a description -- skip it. Line 1 describes entry 0.

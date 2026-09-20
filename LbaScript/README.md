@@ -20,7 +20,8 @@ SCENE.HQR record ──SceneRecord──▶ life/track bytes ──Bytecode─�
 
 | file | role |
 |---|---|
-| `Opcodes.cs` | Authoritative opcode/operand tables (LM_/LF_/TM_), transcribed from the interpreter's `case` bodies |
+| `Opcodes.cs` | Authoritative LBA2 opcode/operand tables (LM_/LF_/TM_), transcribed from the interpreter's `case` bodies |
+| `OpcodeSet.cs`, `Lba1Tables.cs` | The per-game table sets (`Opcodes.Lba2`, `Opcodes.Lba1`) and the facade that reads whichever is active |
 | `Bytecode.cs` | `Instr` model, decode/encode of both languages |
 | `SceneRecord.cs` | Parses one scene record (as `LoadScene` does) and rebuilds it with replaced scripts |
 | `Lexer.cs`, `Assembler.cs`, `Operands.cs` | Tokenizer, label/fixup assembler, shared operand printing/parsing |
@@ -152,6 +153,27 @@ dotnet run -c Release -- commenttests     # comments: every script, plus save/lo
 dotnet run -c Release -- nativemap        # actor -> scene/slot mapping vs the real native library
 dotnet run -c Release -- show <scene> <actor> life|track
 dotnet run -c Release -- dump <scene> <actor> life|track    # raw hex + linear decode
+dotnet run -c Release -- lba1 all          # LBA1 (E:\GOG Games\Little Big Adventure\SCENE.HQR, or LBA1_SCENE_HQR): decode, jumps, bytes -> C -> bytes, whole-record rebuild
+dotnet run -c Release -- lba1 selftest       # hand-written LBA1 C (AND/OR chains, while, refused switch)
+dotnet run -c Release -- lba1 show <scene> <actor> life|track
 ```
 
 `tools/UiSmoke` parses the script window's XAML in a real WPF process (and can render it to a PNG).
+
+## LBA1
+
+The same translator handles Little Big Adventure 1's scripts: `OpcodeSet` (OpcodeSet.cs) holds the tables of a game and
+`SceneScripts` activates the right one around every operation, so an LBA2 and an LBA1 scene can be open together.
+`Lba1Tables.cs` is the LBA1 set (106 life actions, 30 conditions, 35 track opcodes), transcribed from LBArchitect's
+decompiler tables and checked against the retail data: `dotnet run -c Release -- lba1 all` decodes all 1238 actors'
+scripts exactly, re-encodes them byte-exact, and compiles every script's own C text back to the original record.
+Differences from LBA2 worth knowing:
+
+* Variables and comparison values are mostly bytes; `SET_VAR_CUBE` / `SET_VAR_GAME` take byte values.
+* No `switch`/`AND_IF`/`SWITCH`: `a && b` compiles to consecutive `IF`s (which is what LBA1 itself does), so the decompiler
+  writes such chains as nested `if`s (byte-identical).
+* `SET_DIR` reads the extra operand byte only for `MOVE_FOLLOW`; the move names are `NO_MOVE`, `MOVE_MANUAL`, `MOVE_FOLLOW`,
+  `MOVE_TRACK`, `MOVE_FOLLOW_2`, `MOVE_TRACK_ATTACK`, `MOVE_SAME_XZ`, `MOVE_RANDOM`.
+* Track `GOTO` may jump to -1 (end of script), written `goto(@-1)`; `FACE_TWINSEN` / `WAIT_NB_*` carry hidden runtime bytes
+  like LBA2's.
+* A scene record is `SceneRecord.ParseLba1`; scene N lives in HQR entry N (LBA2: N + 1), scripts have U16 length prefixes.

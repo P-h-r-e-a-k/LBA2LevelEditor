@@ -5,7 +5,11 @@ using System.Numerics;
 namespace LbaBodyStudio;
 
 public sealed record Bone(int Start, int Count, int Pivot, int Parent, byte[] Record);
-public sealed record Face(int[] Points, int Colour, int DetailTone = -1);
+// LBA1 polygons carry lighting data: Material 7 / 8 (flat) a normal for the whole face, 9 / 10 (Gouraud) one normal per point;
+// lower materials are drawn unlit. Colour is the palette index the shade is added to.
+public sealed record Face(int[] Points, int Colour, int DetailTone = -1, int Material = -1, int FaceNormal = -1, int[]? PointNormals = null);
+// A normal of an LBA1 body: a vector (x, y, z) and the "prenormalized range" its lighting is divided by.
+public sealed record BodyNormal(int X, int Y, int Z, int Range);
 public sealed record BodyLine(int A, int B, int Colour);
 public sealed record BodySphere(int Point, int Radius, int Colour);
 
@@ -16,6 +20,9 @@ public sealed class Body
     public List<Vector3> Vertices = [];
     public List<Bone> Bones = [];
     public List<Face> Faces = [];
+    // LBA1 lighting: the normals, in the order of the bones they belong to (NormalBone[i] = the bone of normal i).
+    public List<BodyNormal> Normals = [];
+    public int[] NormalBone = [];
     public List<BodyLine> Lines = [];
     public List<BodySphere> Spheres = [];
     public int Limit => Game == 1 ? 500 : 550;
@@ -56,17 +63,24 @@ public sealed class Body
                 m.Bones.Add(new(U(b,q)/6, U(b,q+2), U(b,q+4)/6, parent == -1 ? -1 : parent/38, b[q..(q+38)]));
             }
             p = groupOffset + groupCount * 38;
-            int normals = U(b,p); p += 2; Range(b,p,normals*8+2); p += normals*8;
+            int normals = U(b,p); p += 2; Range(b,p,normals*8+2);
+            for (int i = 0; i < normals; i++) m.Normals.Add(new(BitConverter.ToInt16(b,p+i*8),BitConverter.ToInt16(b,p+i*8+2),BitConverter.ToInt16(b,p+i*8+4),U(b,p+i*8+6)));
+            // each bone record says how many of the normals are its own (offset 18), in bone order
+            var normalBone = new List<int>();
+            for (int i = 0; i < m.Bones.Count; i++) for (int k = 0, c = U(m.Bones[i].Record, 18); k < c; k++) normalBone.Add(i);
+            m.NormalBone = normalBone.ToArray();
+            p += normals*8;
             int polygons = U(b,p); p += 2;
             for (int i = 0; i < polygons; i++)
             {
                 Range(b,p,4); int type = b[p], n = b[p+1], col = U(b,p+2); p += 4;
                 if (type > 10 || n < 3 || n > 16) throw new InvalidDataException("Unsupported LBA1 polygon.");
-                if (type is 7 or 8) p += 2;
+                int faceNormal = -1;
+                if (type is 7 or 8) { Range(b,p,2); faceNormal = U(b,p); p += 2; }
                 Range(b,p,n*(type >= 9 ? 4 : 2));
-                int[] ids = new int[n];
-                for (int j = 0; j < n; j++) { if (type >= 9) p += 2; int reference = U(b,p); if(reference%6!=0) throw new InvalidDataException("Misaligned polygon point."); ids[j] = reference/6; p += 2; }
-                m.Faces.Add(new(ids,col & 255));
+                int[] ids = new int[n]; int[]? pointNormals = type >= 9 ? new int[n] : null;
+                for (int j = 0; j < n; j++) { if (type >= 9) { pointNormals![j] = U(b,p); p += 2; } int reference = U(b,p); if(reference%6!=0) throw new InvalidDataException("Misaligned polygon point."); ids[j] = reference/6; p += 2; }
+                m.Faces.Add(new(ids,col & 255,-1,type,faceNormal,pointNormals));
             }
             Range(b,p,2); int lines = U(b,p); p += 2; Range(b,p,lines*8+2);
             for (int i=0;i<lines;i++,p+=8) m.Lines.Add(new(U(b,p+4)/6,U(b,p+6)/6,b[p+1]));

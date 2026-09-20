@@ -43,6 +43,7 @@ public sealed class SceneScripts
     }
 
     private readonly SceneRecord record;
+    private readonly OpcodeSet dialect;
     private readonly int sceneNumber;
     private readonly Func<int, ScriptKind, CommentSet?> commentSource;
     private readonly Entry[] life;
@@ -51,10 +52,16 @@ public sealed class SceneScripts
 
     public int ActorCount => life.Length;
 
-    private SceneScripts(SceneRecord record, int sceneNumber, Func<int, ScriptKind, CommentSet?>? comments)
+    internal OpcodeSet Dialect => dialect;
+
+    private IDisposable Scope() => Opcodes.Use(dialect);
+
+    private SceneScripts(SceneRecord record, OpcodeSet dialect, int sceneNumber, Func<int, ScriptKind, CommentSet?>? comments)
     {
         this.record = record;
+        this.dialect = dialect;
         this.sceneNumber = sceneNumber;
+        using var scope = Scope();
         commentSource = comments ?? ((_, _) => null);
         var n = record.Actors.Count;
         life = new Entry[n];
@@ -71,8 +78,9 @@ public sealed class SceneScripts
     }
 
     // `comments` supplies the stored comments for (actor, kind) of this scene, if any.
-    public static SceneScripts Load(byte[] sceneRecordBytes, int sceneNumber = -1, Func<int, ScriptKind, CommentSet?>? comments = null) =>
-        new(SceneRecord.Parse(sceneRecordBytes), sceneNumber, comments);
+    public static SceneScripts Load(byte[] sceneRecordBytes, int sceneNumber = -1, Func<int, ScriptKind, CommentSet?>? comments = null, bool lba1 = false) =>
+        lba1 ? new(SceneRecord.ParseLba1(sceneRecordBytes), Opcodes.Lba1, sceneNumber, comments)
+             : new(SceneRecord.Parse(sceneRecordBytes), Opcodes.Lba2, sceneNumber, comments);
 
     private Entry EntryOf(int actor, ScriptKind kind)
     {
@@ -94,6 +102,7 @@ public sealed class SceneScripts
     {
         var e = EntryOf(actor, kind);
         if (e.OriginalText is not null) return e.OriginalText;
+        using var scope = Scope();
         var header = Header(actor, kind);
         var decompiled = kind == ScriptKind.Life
             ? LifeText.DecompileMapped(e.Original, actor, symbols, header)
@@ -159,6 +168,7 @@ public sealed class SceneScripts
     // As CheckText, plus the compiler's warnings (which don't stop it compiling).
     public (int Size, ScriptDiagnostic? Error, IReadOnlyList<ScriptDiagnostic> Warnings) CheckTextFull(int actor, ScriptKind kind, string text)
     {
+        using var scope = Scope();
         try
         {
             CompiledScript c;
@@ -198,6 +208,7 @@ public sealed class SceneScripts
     // longer resolves.
     public SceneBuildResult Build()
     {
+        using var scope = Scope();
         var errors = new List<ScriptDiagnostic>();
         var n = ActorCount;
 

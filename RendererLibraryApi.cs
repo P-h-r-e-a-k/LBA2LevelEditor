@@ -38,6 +38,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorSpriteFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneCountFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneFn(int index, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1, out int type, out int num);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneSceneFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectInteriorPointFn(int x, int y, int z, out int cx, out int cy);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderSpritePreviewFn(int sprite, out int x, out int y, out int w, out int h);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
@@ -80,6 +81,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetActorSpriteFn? getActorSprite;
     private GetZoneCountFn? getZoneCount;
     private GetZoneFn? getZone;
+    private GetZoneSceneFn? getZoneScene;
     private ProjectInteriorPointFn? projectInteriorPoint;
     private RenderSpritePreviewFn? renderSpritePreview;
     private GetActorFlagsFn? getActorFlags;
@@ -150,6 +152,7 @@ internal sealed class RendererLibraryApi : IDisposable
         getActorSprite = Get<GetActorSpriteFn>("lba2_renderer_get_actor_sprite");
         getZoneCount = Get<GetZoneCountFn>("lba2_renderer_get_zone_count");
         getZone = Get<GetZoneFn>("lba2_renderer_get_zone");
+        getZoneScene = Get<GetZoneSceneFn>("lba2_renderer_get_zone_scene");
         projectInteriorPoint = Get<ProjectInteriorPointFn>("lba2_renderer_project_interior_point");
         renderSpritePreview = Get<RenderSpritePreviewFn>("lba2_renderer_render_sprite_preview");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
@@ -162,6 +165,21 @@ internal sealed class RendererLibraryApi : IDisposable
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool SetDllDirectory(string path);
+
+    // Deletes renderer DLLs extracted by earlier builds of the exe (best effort: one still loaded by
+    // another running instance can't be deleted and is simply left).
+    private static void PruneOldExtractions(string directory, string keep)
+    {
+        try
+        {
+            foreach (var old in Directory.EnumerateFiles(directory, "liblba2_renderer.*.dll"))
+            {
+                if (string.Equals(old, keep, StringComparison.OrdinalIgnoreCase)) continue;
+                try { File.Delete(old); } catch (Exception) { /* in use */ }
+            }
+        }
+        catch (Exception) { /* nothing to prune */ }
+    }
 
     // See the constructor's own comment for why there are three candidates
     // and why the embedded-resource one exists at all.
@@ -188,21 +206,37 @@ internal sealed class RendererLibraryApi : IDisposable
                 var cacheKey = assemblyInfo.Exists
                     ? $"{assemblyInfo.Length}-{assemblyInfo.LastWriteTimeUtc.Ticks}"
                     : resource.Length.ToString();
-                var cacheDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "LBA2LevelEditor", "native", cacheKey);
-                var extractedPath = Path.Combine(cacheDir, "liblba2_renderer.dll");
-                if (!File.Exists(extractedPath))
+                // Extracted beside the executable (a "native" folder), so the app leaves nothing
+                // elsewhere on the machine; if that folder can't be written to, into
+                // %LOCALAPPDATA% instead.
+                var candidates = new[]
                 {
-                    Directory.CreateDirectory(cacheDir);
-                    var tempPath = extractedPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                    using (var file = File.Create(tempPath)) resource.CopyTo(file);
-                    // Atomic-ish: a crash/concurrent launch mid-extract never
-                    // leaves a half-written file at the path other launches
-                    // check for.
-                    File.Move(tempPath, extractedPath, overwrite: true);
+                    Path.Combine(AppContext.BaseDirectory, "native"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBA2LevelEditor", "native"),
+                };
+                foreach (var cacheDir in candidates)
+                {
+                    var extractedPath = Path.Combine(cacheDir, $"liblba2_renderer.{cacheKey}.dll");
+                    try
+                    {
+                        if (!File.Exists(extractedPath))
+                        {
+                            Directory.CreateDirectory(cacheDir);
+                            var tempPath = extractedPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                            using (var file = File.Create(tempPath)) resource.CopyTo(file);
+                            // Atomic-ish: a crash/concurrent launch mid-extract never
+                            // leaves a half-written file at the path other launches
+                            // check for.
+                            File.Move(tempPath, extractedPath, overwrite: true);
+                            PruneOldExtractions(cacheDir, extractedPath);
+                        }
+                        return extractedPath;
+                    }
+                    catch (Exception error) when (error is UnauthorizedAccessException or IOException)
+                    {
+                        resource.Position = 0;
+                    }
                 }
-                return extractedPath;
             }
         }
 
@@ -323,6 +357,8 @@ internal sealed class RendererLibraryApi : IDisposable
         if (getZone is null) { x0 = y0 = z0 = x1 = y1 = z1 = type = num = 0; return false; }
         return getZone(index, out x0, out y0, out z0, out x1, out y1, out z1, out type, out num) == 1;
     }
+    // The scene (numscene) a native zone was read from, or -1. Zones of one scene are listed together in file order.
+    public int GetZoneScene(int index) => getZoneScene?.Invoke(index) ?? -1;
     public bool ProjectInteriorPoint(int x, int y, int z, out int cx, out int cy)
     {
         if (projectInteriorPoint is null) { cx = cy = 0; return false; }

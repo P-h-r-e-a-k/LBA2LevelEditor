@@ -183,6 +183,7 @@ internal static partial class LifeText
 
         private void ParseSwitch()
         {
+            if (!Opcodes.Active.HasSwitch) throw TokenStream.Error("'switch' does not exist in LBA1 life scripts; use if / else if", ts.Peek());
             ts.Next();
             ts.Expect("(");
             var (cd, arg, _) = ExprText.ParseCondCall(ts);
@@ -258,7 +259,7 @@ internal static partial class LifeText
         {
             switch (e)
             {
-                case Leaf l: EmitCond(OpAndIf, l, f); break;
+                case Leaf l: EmitCond(Opcodes.Active.AndIf, l, f); break;
                 case AndExpr a: GenFalse(a.L, f); GenFalse(a.R, f); break;
                 case OrExpr o:
                 {

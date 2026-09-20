@@ -61,14 +61,14 @@
       NativeLibrary.Load resolving a bare "liblba2_renderer.dll" does not
       search that directory either, confirmed by a DllNotFoundException
       there. Embedding it ourselves and extracting it to a location we
-      choose (RendererLibraryApi does this, under the local application
-      data folder) sidesteps that entirely instead of fighting the single
+      choose (RendererLibraryApi does this, in a native folder next to the
+      exe, falling back to the local application data folder) sidesteps that entirely instead of fighting the single
       file host's own resolver.
   -->
   <ItemGroup>
     <None Include="native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll"
           Condition="Exists('native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll')"
-          Link="liblba2_renderer.dll" CopyToOutputDirectory="PreserveNewest" />
+          Link="liblba2_renderer.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
     <EmbeddedResource Include="native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll"
           Condition="Exists('native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll')"
           LogicalName="liblba2_renderer.dll" />
@@ -85,7 +85,21 @@
     actor a nicer-looking placeholder.
   -->
   <ItemGroup>
-    <Content Include="Assets\DummyBody.lm2" CopyToOutputDirectory="PreserveNewest" />
+    <!-- the full playable LBA2 engine (statically linked), for "LBA2: play scene"; extracted to native\ on first use -->
+    <EmbeddedResource Include="native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\lba2cc.exe"
+          Condition="Exists('native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\lba2cc.exe')"
+          LogicalName="lba2cc.exe" />
+    <EmbeddedResource Include="Assets\DummyBody.lm2" LogicalName="DummyBody.lm2" />
+  </ItemGroup>
+
+  <!--
+    The human-readable scene/body/animation name lists (LBAPackageManager's
+    .HQD text files) ship inside the exe, so scene and body names show up on
+    a machine without LBAPackageManager installed. HqdDescriptions prefers a
+    LBAPackageManager copy when one exists.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\FileDesc\*.HQD" LogicalName="FileDesc.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

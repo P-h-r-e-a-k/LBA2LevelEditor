@@ -1544,8 +1544,16 @@ int RendererGetInteriorCameraPosition(int *x, int *y, int *z)
 // function's own comment.
 extern void *Log;
 extern U32 ModeDesiredX, ModeDesiredY;
+extern void SetIsoProjection(S32 xcentre, S32 ycentre);
+extern void SetAngleCamera(S32 alpha, S32 beta, S32 gamma);
 int RendererRenderInteriorFrame(void)
 {
+    // Re-assert the iso view every frame: the actor-attributes preview
+    // (AffichageBodyPreview) renders through the exterior perspective
+    // projection and camera, which would otherwise stay in force here.
+    SetIsoProjection((S32)ModeDesiredX / 2 - 9, (S32)ModeDesiredY / 2);
+    SetAngleCamera(0, 0, 0);
+    SetPosCamera(VueOffsetX, VueOffsetY, VueOffsetZ);
     memset(Log, 0, (size_t)ModeDesiredX * (size_t)ModeDesiredY);
     AffGrille();
     CopyScreen(Log, Screen);
@@ -1675,6 +1683,13 @@ int RendererGetZone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int 
     if (type) *type = z.Type;
     if (num) *num = z.Num;
     return 1;
+}
+
+// Scene (numscene) a zone was read from, or -1. Zones of one scene are listed together, in the scene file's order.
+int RendererGetZoneScene(int index)
+{
+    if (index < 0 || index >= (int)g_zones.size()) return -1;
+    return (int)g_zones[(size_t)index].SceneIndex;
 }
 
 // Canvas position (see RendererRenderInteriorFull) of a scene-local world

@@ -21,6 +21,21 @@
     <Compile Include="..\..\ScriptSession.cs" Link="ScriptSession.cs" />
     <Compile Include="..\..\DebugLog.cs" Link="DebugLog.cs" />
     <Compile Include="..\..\RendererLibraryApi.cs" Link="RendererLibraryApi.cs" />
+    <Compile Include="..\..\HqrFile.cs" Link="HqrFile.cs" />
+    <Compile Include="..\..\HqrLz.cs" Link="HqrLz.cs" />
+    <Compile Include="..\..\FileTransaction.cs" Link="FileTransaction.cs" />
+    <Compile Include="..\..\Scenes\**\*.cs" Link="Scenes\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\Lba1\Lba1Scene.cs" Link="Lba1\Lba1Scene.cs" />
+    <Compile Include="..\..\Lba1\Lba1SceneEdit.cs" Link="Lba1\Lba1SceneEdit.cs" />
+    <Compile Include="..\..\Lba1\Lba1GridEdit.cs" Link="Lba1\Lba1GridEdit.cs" />
+    <Compile Include="..\..\Lba1\Lba1GridCodec.cs" Link="Lba1\Lba1GridCodec.cs" />
+    <Compile Include="..\..\Lba1\Lba1GridValidator.cs" Link="Lba1\Lba1GridValidator.cs" />
+    <Compile Include="..\..\Lba1\Lba1Animation.cs" Link="Lba1\Lba1Animation.cs" />
+    <Compile Include="..\..\Lba1\Runtime\*.cs" Link="Lba1\Runtime\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Lba1\Lba1ActorRecord.cs" Link="Lba1\Lba1ActorRecord.cs" />
+    <Compile Include="..\..\Lba1\Lba1RoomDoorMod.cs" Link="Lba1\Lba1RoomDoorMod.cs" />
+    <Compile Include="..\..\Lba1\Lba1BlankScene.cs" Link="Lba1\Lba1BlankScene.cs" />
+    <Compile Include="..\..\Lba2Engine.cs" Link="Lba2Engine.cs" />
   </ItemGroup>
 
 </Project>

@@ -26,6 +26,17 @@ internal static class Program
             "commenttests" => CommentTests.Run(archive),
             "commentdemo" => CommentTests.Demo(archive),
             "roundtrip" => RoundTrip.Run(archive, args.Length > 1 ? args[1] : "all"),
+            "lba1" => Lba1Tests.Run(args),
+            "foundation" => FoundationTests.Run(args),
+            "store" => StoreTests.Run(args),
+            "runtime" => RuntimeTests.Run(args),
+            "iso" => IsoProbe.Run(args),
+            "lba2play" => Lba2PlayTests.Run(args),
+            "patches" => PatchStudy.Run(),
+            "validate" => ValidatorStudy.Run(),
+            "emptypos" => EmptyPosStudy.Run(),
+            "griddiff" => GridDiffStudy.Run(args),
+            "gridvalidate" => GridValidatorStudy.Run(),
             _ => Usage(),
         };
     }

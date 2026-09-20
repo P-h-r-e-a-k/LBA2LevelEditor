@@ -12,17 +12,36 @@ internal sealed record CompletionItem(string Signature, string Description, stri
 internal static partial class ScriptCompletions
 {
     // Built per name-case setting (ScriptStyle.LowercaseNames), so a settings change takes effect on the next call.
-    private static readonly Dictionary<(ScriptKind, bool), IReadOnlyList<CompletionItem>> cache = new();
+    private static readonly Dictionary<(ScriptKind, bool, OpcodeSet), IReadOnlyList<CompletionItem>> cache = new();
 
-    public static IReadOnlyList<CompletionItem> For(ScriptKind kind)
+    // `dialect` selects the game's opcode set (LBA2 unless given).
+    internal static IReadOnlyList<CompletionItem> For(ScriptKind kind, OpcodeSet? dialect = null)
     {
-        var key = (kind, ScriptStyle.LowercaseNames);
-        if (!cache.TryGetValue(key, out var list)) cache[key] = list = kind == ScriptKind.Life ? BuildLife() : BuildTrack();
+        dialect ??= Opcodes.Lba2;
+        var key = (kind, ScriptStyle.LowercaseNames, dialect);
+        if (!cache.TryGetValue(key, out var list))
+        {
+            using var scope = Opcodes.Use(dialect);
+            cache[key] = list = kind == ScriptKind.Life ? BuildLife() : BuildTrack();
+        }
         return list;
     }
 
-    private static string Describe(Lba2ScriptOpcodes.OpcodeKind kind, string name, string fallback) =>
-        Lba2ScriptOpcodes.All.FirstOrDefault(o => o.Kind == kind && o.Name == name)?.Description ?? fallback;
+    // The hand-written LBA2 descriptions, used for an LBA1 opcode only when LBA2 has the same name on the same id.
+    private static string Describe(Lba2ScriptOpcodes.OpcodeKind kind, string name, byte id, string fallback)
+    {
+        if (!ReferenceEquals(Opcodes.Active, Opcodes.Lba2))
+        {
+            var same = kind switch
+            {
+                Lba2ScriptOpcodes.OpcodeKind.LifeAction => Opcodes.Lba2.Life(name)?.Id == id,
+                Lba2ScriptOpcodes.OpcodeKind.LifeCondition => Opcodes.Lba2.Cond(name)?.Id == id,
+                _ => Opcodes.Lba2.Track(name)?.Id == id,
+            };
+            if (!same) return fallback;
+        }
+        return Lba2ScriptOpcodes.All.FirstOrDefault(o => o.Kind == kind && o.Name == name)?.Description ?? fallback;
+    }
 
     private static string ArgList(ArgDef[] args) => string.Join(", ", args.Where(a => a.Role != ArgRole.Hidden).Select(a => a.Name));
 
@@ -51,6 +70,8 @@ internal static partial class ScriptCompletions
             new("void comportement_N() { ... }", "A comportement block. SET_COMPORTEMENT(comportement_N) selects it for the next tick; it is not a call.", "void comportement_", "keyword", "void"),
         };
 
+        if (!Opcodes.Active.HasSwitch) items.RemoveAll(i => i.Name is "switch" or "case" or "default" or "break");
+
         foreach (var d in Opcodes.LifeOps)
         {
             switch (d.Form)
@@ -58,7 +79,7 @@ internal static partial class ScriptCompletions
                 case LifeForm.Plain or LifeForm.Dir:
                     if (d.Id is LifeText.OpReturn or LifeText.OpEnd or LifeText.OpEndComportement or LifeText.OpOffset or LifeText.OpBreak) continue; // spelled by keyword / implicit
                     var extra = d.Form == LifeForm.Dir ? " (+ object/point for FOLLOW / SAME_XZ / CIRCLE modes)" : "";
-                    items.Add(Call(d.Name, d.Args, "life action", Describe(Lba2ScriptOpcodes.OpcodeKind.LifeAction, d.Name, $"Life-script opcode {d.Id}.") + extra));
+                    items.Add(Call(d.Name, d.Args, "life action", Describe(Lba2ScriptOpcodes.OpcodeKind.LifeAction, d.Name, d.Id, $"Life-script opcode {d.Id}.") + extra));
                     break;
                 case LifeForm.Cond:
                     items.Add(new CompletionItem($"{d.Name}(condition, label);", "Low-level form of a conditional jump (jumps to label when the condition is false; OR_IF when true). Prefer if/while.", $"{d.Name}(", "low-level", d.Name));
@@ -70,7 +91,7 @@ internal static partial class ScriptCompletions
         {
             var n = ScriptStyle.Func(c.Name);
             var sig = c.OperandName is null ? $"value <op> {n}()" : $"value <op> {n}({c.OperandName})";
-            items.Add(new CompletionItem(sig, Describe(Lba2ScriptOpcodes.OpcodeKind.LifeCondition, c.Name, $"Condition {c.Id} ({c.Value} comparison value).") + " Write the literal on the left, e.g. 500 > " + n + "(0).",
+            items.Add(new CompletionItem(sig, Describe(Lba2ScriptOpcodes.OpcodeKind.LifeCondition, c.Name, c.Id, $"Condition {c.Id} ({c.Value} comparison value).") + " Write the literal on the left, e.g. 500 > " + n + "(0).",
                 c.OperandName is null ? $"{n}() " : $"{n}(", "condition", n));
         }
 
@@ -85,7 +106,7 @@ internal static partial class ScriptCompletions
         foreach (var d in Opcodes.TrackOps)
         {
             if (d.Id == 0) continue; // END is implicit
-            items.Add(Call(d.Name, d.Args, "track action", Describe(Lba2ScriptOpcodes.OpcodeKind.TrackAction, d.Name, $"Track-script opcode {d.Id}."), life: false));
+            items.Add(Call(d.Name, d.Args, "track action", Describe(Lba2ScriptOpcodes.OpcodeKind.TrackAction, d.Name, d.Id, $"Track-script opcode {d.Id}."), life: false));
         }
         return items;
     }

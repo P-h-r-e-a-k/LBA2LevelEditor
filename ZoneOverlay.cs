@@ -6,7 +6,7 @@ namespace LBA2LevelEditor;
 // A scene trigger box ("zone") with its 8 corners already projected into the
 // coordinate space of whichever view produced it (framebuffer pixels outdoors,
 // canvas pixels indoors). Corner i has bit 0 = X1 side, bit 1 = Y1 side, bit 2 = Z1 side.
-internal sealed record ProjectedZone(int Type, int Num, Point[] Corners);
+internal sealed record ProjectedZone(int Type, int Num, Point[] Corners, ZoneRef? Ref = null);
 
 // Everything the interior view draws on top of the stitched canvas besides
 // actors: actor patrol routes and zones, in canvas pixels.

@@ -3,8 +3,8 @@ using LBA2LevelEditor.LbaScript;
 
 namespace LBA2LevelEditor;
 
-// Where a UI actor's scripts live in SCENE.HQR: scene number (HQR entry - 1)
-// and object slot inside that scene's record (0 = hero, 1.. = scene actors).
+// Where a UI actor's scripts live in SCENE.HQR: scene number (LBA2: HQR entry - 1, LBA1: the entry
+// itself) and object slot inside that scene's record (0 = hero, 1.. = scene actors).
 internal readonly record struct ActorSource(int Scene, int Slot);
 
 internal sealed record SessionSaveResult(bool Ok, string Message, IReadOnlyList<ScriptDiagnostic> Errors);
@@ -15,17 +15,25 @@ internal sealed record SessionSaveResult(bool Ok, string Message, IReadOnlyList<
 internal sealed class ScriptSession
 {
     private readonly Func<string> gameRoot;
+    private readonly bool lba1;
     private readonly Dictionary<int, SceneScripts> scenes = new();
     private readonly Dictionary<int, List<ActorSource>> exteriorMaps = new();
     private readonly string? commentsPathOverride;
     private CommentStore? commentStore;
 
     // commentsPath: where comments are kept; by default a sidecar next to SCENE.HQR.
-    public ScriptSession(Func<string> gameRoot, string? commentsPath = null)
+    // lba1: the game folder holds Little Big Adventure 1 (scene N in HQR entry N, LBA1 opcodes and scene layout).
+    public ScriptSession(Func<string> gameRoot, string? commentsPath = null, bool lba1 = false)
     {
         this.gameRoot = gameRoot;
+        this.lba1 = lba1;
         commentsPathOverride = commentsPath;
     }
+
+    public bool IsLba1 => lba1;
+
+    // SCENE.HQR entry of a scene: LBA2 keeps a size record in entry 0.
+    private int Entry(int scene) => lba1 ? scene : scene + 1;
 
     public string HqrPath => Path.Combine(gameRoot(), "SCENE.HQR");
 
@@ -45,7 +53,7 @@ internal sealed class ScriptSession
     public string? CommentsLoadError => Comments.LoadError;
 
     // Number of scene entries in SCENE.HQR (entry 0 is metadata, not a scene).
-    private int SceneEntryCount() => Math.Max(0, HqrArchive.CountEntries(HqrPath) - 1);
+    private int SceneEntryCount() => Math.Max(0, HqrArchive.CountEntries(HqrPath) - (lba1 ? 0 : 1));
 
     public SceneScripts? GetScene(int scene)
     {
@@ -54,8 +62,8 @@ internal sealed class ScriptSession
         {
             if (!File.Exists(HqrPath)) return null;
             var archive = HqrArchive.Open(HqrPath);
-            if (scene < 0 || scene >= SceneEntryCount() || !archive.IsValid(scene + 1)) return null;
-            var s = SceneScripts.Load(archive.Read(scene + 1), scene, (actor, kind) => Comments.Get(scene, actor, kind));
+            if (scene < 0 || scene >= SceneEntryCount() || !archive.IsValid(Entry(scene))) return null;
+            var s = SceneScripts.Load(archive.Read(Entry(scene)), scene, (actor, kind) => Comments.Get(scene, actor, kind), lba1);
             scenes[scene] = s;
             return s;
         }
@@ -73,6 +81,16 @@ internal sealed class ScriptSession
     }
 
     public bool HasUnsavedEdits => scenes.Values.Any(s => s.HasEdits);
+
+    // Drops the cached copy of a scene so it is read from SCENE.HQR again (after something else changed the file).
+    // False, and nothing dropped, while the scene has unsaved script edits.
+    public bool ForgetScene(int scene)
+    {
+        if (scenes.TryGetValue(scene, out var loaded) && loaded.HasEdits) return false;
+        scenes.Remove(scene);
+        exteriorMaps.Clear();
+        return true;
+    }
 
     public IReadOnlyList<int> EditedScenes => scenes.Where(p => p.Value.HasEdits).Select(p => p.Key).Order().ToList();
 
@@ -144,7 +162,7 @@ internal sealed class ScriptSession
 
             // Only scenes whose record really changed need SCENE.HQR rewritten: a save
             // that only touched comments leaves the game file alone.
-            var changed = built.Where(b => !archive.Read(b.Scene + 1).AsSpan().SequenceEqual(b.Record)).ToList();
+            var changed = built.Where(b => !archive.Read(Entry(b.Scene)).AsSpan().SequenceEqual(b.Record)).ToList();
 
             // Comments first. They are low-risk, and if writing them fails nothing else has been touched.
             var store = Comments;
@@ -157,22 +175,15 @@ internal sealed class ScriptSession
             var parts = new List<string>();
             if (changed.Count > 0)
             {
-                var updated = File.ReadAllBytes(path);
-                foreach (var (scene, record, _) in changed)
-                    updated = HqrWriter.ReplaceEntry(updated, scene + 1, HqrWriter.StoredEntry(record));
-
-                var backup = path + ".bak";
-                if (!File.Exists(backup)) File.Copy(path, backup);
-
-                // Write beside the target, verify it reads back, then swap it in.
-                var temp = path + ".tmp";
-                File.WriteAllBytes(temp, updated);
-                var check = HqrArchive.Open(temp);
-                foreach (var (scene, record, _) in changed)
-                    if (!check.Read(scene + 1).AsSpan().SequenceEqual(record))
-                        throw new InvalidDataException($"Verification of scene {scene} failed after writing; SCENE.HQR was not modified.");
-                File.Move(temp, path, overwrite: true);
-                parts.Add($"scene {string.Join(", ", changed.Select(b => b.Scene))} written to {Path.GetFileName(path)} (backup: {Path.GetFileName(backup)})");
+                // Through the scene store: the records are checked against the engine's limits, LBA2's patch table and
+                // largest-scene record are brought up to date (the rebuilt scripts move things), all in one
+                // verified transaction, and the save goes on the undo log.
+                var game = lba1 ? Scenes.SceneGame.Lba1 : Scenes.SceneGame.Lba2;
+                var sceneStore = new Scenes.SceneStore(game, Path.GetDirectoryName(path)!);
+                sceneStore.SaveMany(
+                    changed.Select(c => new Scenes.SceneChange(c.Scene, Scenes.SceneSerializer.Parse(game, c.Record))).ToList(),
+                    description: $"Save scripts of scene {string.Join(", ", changed.Select(b => b.Scene))}");
+                parts.Add($"scene {string.Join(", ", changed.Select(b => b.Scene))} written to {Path.GetFileName(path)} (backup: {Path.GetFileName(path)}.bak)");
             }
             else parts.Add("script bytes unchanged, SCENE.HQR left alone");
             if (commentsChanged) parts.Add($"comments saved to {Path.GetFileName(store.Path)}");
@@ -185,6 +196,7 @@ internal sealed class ScriptSession
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or ScriptFormatException)
         {
             try { File.Delete(HqrPath + ".tmp"); } catch (IOException) { }
+            if (e is Scenes.SceneValidationException) DebugLog.Log($"ScriptSession: save refused by the scene validator: {e.Message}");
             return new SessionSaveResult(false, $"Not saved: {e.Message}", Array.Empty<ScriptDiagnostic>());
         }
     }
