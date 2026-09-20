@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using LBA2LevelEditor.Grids;
 using LBA2LevelEditor.Scenes;
 
 namespace LBA2LevelEditor;
@@ -598,11 +599,63 @@ public partial class Lba2SceneEditorWindow : Window
         }
     }
 
+    // The interior grid of the open scene in the grid editor.
+    private void OpenInteriorMap()
+    {
+        try
+        {
+            var gridId = new Lba2GridBackend(directory).GridOfScene(sceneNumber);
+            if (gridId is null) { MessageBox.Show(this, $"Scene {sceneNumber} has no interior grid.", "Interior map", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+            new GridEditorWindow(null, directory, null, gridId) { Owner = this }.Show();
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
+        {
+            MessageBox.Show(this, error.Message, "Interior map", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // A blank interior in this slot: the map (written to LBA_BKG.HQR at once, with a .bak) and the scene (an undoable edit; Save keeps it).
+    private void MakeBlankInterior()
+    {
+        if (MessageBox.Show(this, $"Replace scene {sceneNumber}'s interior map with a flat floor now (LBA_BKG.HQR is written at once, the original kept as .bak), and clear its actors, zones and track points except Twinsen?\n\nThe scene part is undoable and written when you Save.",
+                "Blank interior", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+        try
+        {
+            var backend = new Lba2GridBackend(directory);
+            var gridId = backend.GridOfScene(sceneNumber) ?? throw new SceneEditException($"Scene {sceneNumber} has no interior grid.");
+            var (blank, grid) = Lba2BlankScene.Create(store, backend, sceneNumber);
+            backend.SaveGrid(gridId, grid);
+            doc.Edit($"Make scene {sceneNumber} a blank interior", m =>
+            {
+                m.Actors.Clear(); m.Actors.AddRange(blank.Actors);
+                m.Zones.Clear(); m.Zones.AddRange(blank.Zones);
+                m.TrackPoints.Clear(); m.TrackPoints.AddRange(blank.TrackPoints);
+            });
+        }
+        catch (Exception error) when (error is SceneEditException or IOException or InvalidDataException or InvalidOperationException)
+        {
+            MessageBox.Show(this, error.Message, "Blank interior", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        selKind = Kind.None; selIndex = -1;
+        SetStatus("The map is a flat floor now and the scene holds only Twinsen. Add actors and zones, Save, then Play scene.");
+    }
+
     private void BuildHeader()
     {
         headerFields.Clear();
         liveFields = headerFields;
         HeaderPanel.Children.Clear();
+        if (doc.Scene.CubeMode == 0 && File.Exists(System.IO.Path.Combine(directory, "LBA_BKG.HQR")))
+        {
+            var buttons = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var open = new Button { Content = "Edit this interior's map…", Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 4), ToolTip = "Opens the interior grid editor on this scene's grid (paint blocks, edit the block library)" };
+            open.Click += (_, _) => OpenInteriorMap();
+            var blank = new Button { Content = "Make a blank interior…", Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 4), ToolTip = "Replaces the scene's map with a flat floor and its actors, zones and track points with nothing but Twinsen" };
+            blank.Click += (_, _) => MakeBlankInterior();
+            buttons.Children.Add(open); buttons.Children.Add(blank);
+            HeaderPanel.Children.Add(buttons);
+        }
         var g = NewFieldGrid();
         void Num(string label, Func<SceneModel, int> get, Action<SceneModel, int> set, string? hint = null)
             => AddRow(g, label, () => get(doc.Scene).ToString(CultureInfo.InvariantCulture), text =>

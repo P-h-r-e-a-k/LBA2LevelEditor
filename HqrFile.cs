@@ -135,6 +135,15 @@ internal sealed class HqrFile
         Slots[index].AliasOf = -1;
     }
 
+    // Inserts a stored entry so that it becomes slot `index`; every slot from there on moves up by one (and the slots that share data follow).
+    public int InsertAt(int index, byte[] payload)
+    {
+        Slots.Insert(index, new Slot { Extent = HqrWriter.StoredEntry(payload) });
+        foreach (var s in Slots)
+            if (s.AliasOf >= index && !ReferenceEquals(s, Slots[index])) s.AliasOf++;
+        return index;
+    }
+
     // Removes a slot; every later slot's number goes down by one.
     public void RemoveAt(int index)
     {

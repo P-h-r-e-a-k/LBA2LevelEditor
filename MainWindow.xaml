@@ -108,6 +108,10 @@
                 <MenuItem Header="_Body Studio…" Click="BodyStudio_Click"/>
                 <MenuItem Header="LBA2: play _scene (the full engine)…" Click="Lba2Play_Click"/>
                 <MenuItem Header="LBA2: scene e_ditor…" Click="Lba2Editor_Click"/>
+                <MenuItem Header="LBA2: island _terrain editor…" Click="IslandEditor_Click"/>
+                <MenuItem Header="LBA1 / LBA2: bricks and _sprites…" Click="AssetEditor_Click"/>
+                <MenuItem Header="LBA1 / LBA2: _objects and bodies…" Click="ObjectBrowser_Click"/>
+                <MenuItem Header="LBA1 / LBA2: interior _grid editor…" Click="GridEditor_Click"/>
                 <Separator/>
                 <MenuItem Header="LBA1: scene _editor…" Click="Lba1Editor_Click"/>
                 <MenuItem Header="LBA1: _play scene…" Click="Lba1Play_Click"/>

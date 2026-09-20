@@ -44,6 +44,9 @@ public sealed class Settings
     // already driven consistently off this one flag, so correcting the
     // default here is the complete fix.
     public bool NegativeZFront { get; set; } = false;
+    // Write the game's lighting data (vertex normals, Gouraud polygons on ramp-start colours) so the body is shaded like the game's own
+    // characters, instead of flat unlit polygons.
+    public bool Lit { get; set; } = true;
     public float Fit { get; set; } = 0.8f;
     public float Height { get; set; } = 1f;
     public float Width { get; set; } = 1f;
@@ -230,13 +233,18 @@ public static class Generator
         int Colour(Vector3 p)=>NearestColour(Sample(p));
         if(!settings.HeadDetails)AddDetail(model,world,Sample,Math.Min(settings.DetailBudget,model.Limit-10));
         world=model.World();
-        for(int i=0;i<model.Faces.Count;i++){var f=model.Faces[i];model.Faces[i]=f with{Colour=f.DetailTone>=0?NearestColour(Color.FromArgb(f.DetailTone,f.DetailTone,f.DetailTone)):Colour(f.Points.Select(p=>world[p]).Aggregate(Vector3.Zero,(a,b)=>a+b)/f.Points.Length)};}
+        // Lit polygons are shaded by adding the light (0..~11 ramp steps) to their colour, so their colour is the bottom of the ramp the picture's colour sits in.
+        int Face(int index)=>settings.Lit?LitBase(index,game):index;
+        for(int i=0;i<model.Faces.Count;i++){var f=model.Faces[i];model.Faces[i]=f with{Colour=Face(f.DetailTone>=0?NearestColour(Color.FromArgb(f.DetailTone,f.DetailTone,f.DetailTone)):Colour(f.Points.Select(p=>world[p]).Aggregate(Vector3.Zero,(a,b)=>a+b)/f.Points.Length))};}
         for(int i=0;i<model.Lines.Count;i++){var l=model.Lines[i];model.Lines[i]=l with{Colour=Colour((world[l.A]+world[l.B])/2)};}
         for(int i=0;i<model.Spheres.Count;i++){var sp=model.Spheres[i];model.Spheres[i]=sp with{Colour=Colour(world[sp.Point]),Radius=(int)Math.Round(sp.Radius*Math.Min(settings.Width,settings.Depth))};}
         // Quantize through the native representation used by the exported preview.
-        model=Body.Read(model.Write(),game);
+        model.Lit=settings.Lit;
+        model=Body.Read(model.Write(),game);model.Lit=settings.Lit;
         return new(model,palette,index,archive,settings.ImagePath);
     }
+    // See LightModel: a picture colour is what shows on screen, the body stores the ramp start the game's light lifts to it.
+    public static int LitBase(int index,int game)=>LightModel.BaseOf(index,game);
     static void AddDetail(Body model,Vector3[] world,Func<Vector3,Color> sample,int budget)
     {
         var points=world.ToList();var owners=new List<int>();

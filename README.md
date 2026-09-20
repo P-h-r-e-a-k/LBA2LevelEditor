@@ -198,6 +198,101 @@ Tests: `dotnet run --project tools/ScriptRoundTrip -- lba2play` starts the engin
 islands and checks it arrives in each; adds an actor to a scene with `SceneOps`, saves with `SceneStore`, and checks the
 running engine has one more object.
 
+## LBA2: island terrain editor
+
+**Tools > LBA2: island terrain editor...** (`IslandEditorWindow`, over `Terrain/IslandFile`) edits an island (`.ILE`) from
+above: the textured terrain as the engine lights it, or a height, baked-light, *baked shadows*, game-code or water-depth view.
+Left button applies the current tool with a round brush (radius / hardness / strength), right or middle drag pans, the wheel
+zooms, `[` `]` change the radius, Ctrl+Z / Ctrl+Y undo and redo (an undo step is one stroke; only the changed cubes are kept),
+Ctrl+S saves (a `.bak` of the original, only the records that changed are rewritten, the rest byte for byte; the game folder
+is in the title bar). A strip under the map plots the heights along the row under the pointer.
+
+- **Height:** raise / lower / smooth / flatten to a level (Alt-click reads a level from the ground) / **level to plane** (fits a
+  plane under the brush when the stroke starts and pulls the stroke onto it: the bumps go, the slope stays; tick *Horizontal*
+  to level it flat, for Desert Island's uneven ground) / **ramp** between two clicks / terrace / relief scale. *Objects follow
+  the ground* moves decors with the ground under them. *Weld cube borders* makes the border vertices shared by two cubes agree.
+- **Light and shadows:** the stored per-vertex brightness (the ILE's LUM record) is a plain Lambert light of the terrain (azimuth =
+  360° - BetaLight, elevation about AlphaLight, ~2 levels of 16 off) plus **shadows under objects**: the vertices inside a
+  decor's bounding box are 4-6 levels darker in the retail islands. Tools: set light, add shadow, lighten, **remove shadows**
+  (lifts vertices darker than the plain lighting back up), **cast shadows** (terrain / objects shade the ground for the light
+  angle in *Bake settings*), blob shadow, **shadow under object / clear object shadow** (click an object, or the buttons on the
+  selected object), *Shadows under objects* for all of them, *Bake all light* and *Remove all shadows*. The *Baked shadows* view
+  paints the difference between the stored light and the plain lighting (purple = shadow), so the baked shadows can be seen.
+  The high nibble of the same bytes is the **water depth** (Twinsen sinks 200 units per step on water / marsh cells): its own tool.
+- **Ground:** pick a triangle (texture, game code, diagonal), paint it, paint a tile chosen on the ground atlas (drag a square on
+  the atlas), paint a *game code* (water, lava, electric, conveyors ...), re-cut cell diagonals.
+- **Objects:** select / drag / add / delete / duplicate decors, edit body, position, angle, game code and the hide variable
+  (positions and ZVs are cube-local; the ZV moves with the object).
+
+Tests: `dotnet run --project tools/ScriptRoundTrip -c Release -- island all` parses and rewrites all 14 retail islands byte for
+byte, checks every operation (borders stay equal, levelling recovers a synthetic plane, ramps, footprints, undo restores the
+file exactly, a saved island reloads); `-- islandengine` edits a sandbox copy of DESERT.ILE and renders a scene headless in the
+real engine before / after (a raised hill and darkened ground change the frame as they should). Format notes are in the
+project memory; the viewer's polygon layout (two triangles per cell are interleaved) and decor stride (48 bytes) were wrong and
+are fixed.
+
+## Bricks, sprites, objects and interior maps
+
+**Tools > LBA1 / LBA2: bricks and sprites...** (`AssetEditorWindow`, over `Assets/GphLibrary`) lists the run-length pictures of
+LBA1's `LBA_BRK.HQR` (8715 bricks) and `SPRITES.HQR` (118 sprites) and LBA2's bricks (`LBA_BKG.HQR`, 17903), `SPRITES.HQR` (425) and
+`SPRIRAW.HQR` (167 raw sprites), shows a picture with the game's palette, and edits it: paint / erase pixels with any palette colour,
+right-click picks a colour, undo, clear, **export PNG**, **import PNG** (every pixel becomes the nearest palette colour, alpha under
+128 stays transparent), **new picture** (appended: a new brick or sprite; for LBA2 bricks the file's brick count and the scene -> grid
+table behind the bricks are kept in step), then Save (a `.bak`, the other pictures untouched). `GphImage` decodes and re-encodes the
+format (identical pixels for every picture of every file); `dotnet run --project tools/ScriptRoundTrip -c Release -- assets` checks
+that, a replace and an add.
+
+**Tools > LBA1 / LBA2: objects and bodies...** (`ObjectBrowserWindow`) lists every body of both games' `BODY.HQR` and LBA2's fixed objects
+(`OBJFIX.HQR`: items, the holomap globes ...), drawn by Body Studio's renderer with the LBA2 textures (RESS.HQR entry 6 is the 256 x 256
+texture page; a textured polygon carries a handle into the body's texture table and 8.8 fixed-point UVs) and the game's lighting; drag to
+turn. Export the body as the game stores it or as an OBJ, replace an entry from a `.body` file (read back and checked first, a `.bak` of the
+archive), or open Body Studio. Body Studio's `Body` now keeps textured polygons and static bodies, so a retail body written back keeps its
+textures (verified in the engine: Twinsen rewritten with his textured jumper), and
+`dotnet run --project tools/BodyPipeline -c Release -- bodyroundtrip` writes and reads back every body of both games.
+
+**Tools > LBA1 / LBA2: interior grid editor...** (`GridEditorWindow`, over `Grids/`) edits the isometric map of an interior in both games:
+the 64 x 25 x 64 grid of (block, position in block) cells, the block library (`LBA_BLL.HQR` / the libraries of `LBA_BKG.HQR`) and the bricks.
+A plan of one layer (PgUp / PgDn) to paint on, the isometric picture beside it, the library's blocks with thumbnails; paint (a block's cell at
+offset (i, j, k) is `(block, i + dx * (j + dy * k))`, measured on the retail grids), erase a whole block, fill a rectangle, right-click picks a
+block, undo / redo; the library panel edits a block's brick and shape per cell and adds a **new block** (`GridPaint.AppendBlock`), so with *New
+picture* a brand-new brick can be drawn, made a block and painted (engine-verified in LBA2: the engine draws the new brick). LBA2's grid has
+the 34-byte header (style, fragment set, used-block bitmap) the LBA1 shape lacks; `Lba2GridBackend` converts. LBA1 grids save through the
+scene store (validated against the library and bricks), LBA2's rewrite `LBA_BKG.HQR` (a `.bak`). Reachable from the LBA1 scene editor's
+Scene menu and from the LBA2 scene editor's Scene tab, which also has **Make a blank interior** (a flat floor of the library's floor block and
+Twinsen alone in the scene; `Lba2BlankScene`, engine-verified). Blocks 1..255 only (the grid's used-block bitmap has 256 bits), bricks under
+20000 in LBA2 (the engine's renumbering table).
+
+Tests: `-- grids` (both games' grids, painting, erasing, library edits, saves through the stores), `-- gridengine` / `-- newbrick` / `-- blankengine`
+(the real LBA2 engine renders sandbox copies with painted blocks, a new brick and block, a blank interior), and `-- rebuild`: **a retail scene
+is recreated from a blank one with editor operations only** (blank scene, add actors / zones / track points, paint the blocks of the grid) and comes
+out byte-identical (LBA1 scene 28 and LBA2 scene 190: the scene records match to the byte, every grid cell matches; the invisible collision-only
+cells are set cell by cell).
+
+## Body Studio: flat pictures and game lighting
+
+Body Studio (the image-to-body generator) gained the other direction of the pipeline: **body -> flat picture -> game-style
+picture -> body**.
+
+- **Export a flat sheet of the selected template:** any body of `BODY.HQR` (either game) drawn as the orthographic front + back
+  picture the generator reads: flat palette colours, transparent background. It shows what a picture "for the game" looks like.
+- **Convert the reference image to game style:** any picture of a character (a photo, a painting; a plain or transparent
+  background, or a front + back pair) is cut out, smoothed, clustered into a few flat colours (default 14; the game's own bodies use
+  a median of 7-8, at most 22) that are snapped to real palette entries **the game's own bodies use** (measured over all 132 LBA1 and
+  461 LBA2 bodies), small specks merged away, and saved as a front + back sheet that becomes the reference image.
+- **Game lighting:** the retail bodies are almost all lit (98% of LBA1 polygons, most of LBA2's): a polygon's colour is the *first
+  entry of a 16-step ramp* (53% of the games' polygons) and the game adds up to ~11 (LBA1) / ~9 (LBA2) steps of light, so a body
+  shows base + ~8 / ~7 on a lit surface. Generated bodies used to be flat and unlit (dark base colours in the game). They are now
+  written with vertex normals and Gouraud polygons (`Body.Lit`, on by default): LBA2 type 4 with per-point normals of length
+  10240, LBA1 type 9 with per-point normals of 63 / range 315, and the picture's colours are turned into ramp starts
+  (`LightModel`). The preview shades lit bodies with a fixed light. Verified in the real LBA2 engine (Twinsen's body replaced in a
+  sandbox `BODY.HQR`, scene 55 rendered headless: the retail body written back lit looks like the original, a generated one shows
+  the artwork's colours shaded) and, for LBA1, against the game's own shading maths (`Lba1Shading`: the rewritten retail bodies get
+  the same mean light within 3%).
+
+Tests: `dotnet run --project tools/BodyPipeline -c Release -- stats|sheet|sheets|style|styletest|roundtrip|enginebody|lba1lit|formsmoke ...`
+(`styletest` turns a body into shaded, noisy artwork and checks the converter recovers it: 86-98% silhouette overlap, 1-9 dE
+colour error; `roundtrip` is body -> sheet -> generated body, ~75-80% silhouette overlap with the original for both rigs).
+
 ## LBA1 play mode (test a scene without DOSBox)
 
 **Tools > LBA1: play scene...** opens `Lba1PlayWindow`: the scene's isometric map with Twinsen and the actors animating on

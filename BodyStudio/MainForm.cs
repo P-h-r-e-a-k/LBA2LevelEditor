@@ -15,6 +15,9 @@ public sealed class MainForm : Form
     readonly ComboBox method=Combo("New humanoid","Fit template");
     readonly NumericUpDown body1=Number(0,10000,0),body2=Number(0,10000,0),threshold=Number(1,254,45),fit=Number(0,100,80),height=Number(25,300,100),width=Number(25,300,100),depth=Number(25,300,100),head=Number(25,150,70),budget=Number(0,540,460);
     readonly CheckBox autoCrop=new(){Text="Auto crop subject",Checked=true,AutoSize=true},flip=new(){Text="Mirror image projection",AutoSize=true},negative=new(){Text="Front faces negative Z",AutoSize=true} /* actual default comes from Settings.NegativeZFront via Apply() below */,archive=new(){Text="Include a separate BODY.HQR copy",Checked=true,AutoSize=true};
+    readonly NumericUpDown flatColours=Number(2,40,14);
+    readonly CheckBox pairImage=new(){Text="The picture holds a front view (left) and a back view (right)",AutoSize=true},symmetric=new(){Text="Make the figure symmetric (copy the left half)",AutoSize=true},lit=new(){Text="Game lighting: shade the body like the game's own characters",Checked=true,AutoSize=true};
+    readonly Dictionary<int,BodyStyleStats> styleStats=[];
     readonly ModelView preview=new(){Dock=DockStyle.Fill};
     readonly PictureBox reference=new(){Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Color.FromArgb(25,30,39)};
     readonly Label status=new(){Dock=DockStyle.Bottom,Height=52,Padding=new Padding(16,8,16,8),Text="Choose an image, generate, then inspect the preview before exporting."};
@@ -39,6 +42,11 @@ public sealed class MainForm : Form
         }
         Label("LBA BODY STUDIO");Add(new Label(){Text="Fit a native character template to a reference image. Both games export independently with their own rig and palette.",AutoSize=true,MaximumSize=new Size(325,0)});
         Field("Reference image",Browse(imagePath,true));Field("Image layout",layout);Field("Subject mask",mask);Field("Mask threshold",threshold);Add(autoCrop);Add(flip);Add(negative);
+        Label("Flat picture for the game");Add(new Label(){Text="Turn any picture into the flat, few-colour, palette-exact picture the generator works best with (the game's own bodies use a dozen or so colours). Or export a game body as such a picture to see what one looks like: the template's game and index are chosen below.",AutoSize=true,MaximumSize=new Size(325,0)});
+        Field("Flat colours",flatColours);Add(pairImage);Add(symmetric);
+        var convertButton=new Button(){Text="Convert the reference image to game style",AutoSize=true};Add(convertButton);convertButton.Click+=async(_,_)=>await ConvertStyle();
+        var sheetButton=new Button(){Text="Export a flat sheet of the selected template…",AutoSize=true};Add(sheetButton);sheetButton.Click+=(_,_)=>ExportSheet();
+        Add(lit);
         Label("Head details — optional");Add(headDetails);Field("Bandana lettering (up to 8 characters)",bandanaText);
         Add(new Label(){Text="New humanoid mode only. Builds actual head-bone geometry. Uses a compact block font; text is supplied here, not read automatically from the image.",AutoSize=true,MaximumSize=new Size(325,0)});
         headDetails.CheckedChanged+=(_,_)=>bandanaText.Enabled=headDetails.Checked;
@@ -72,13 +80,13 @@ public sealed class MainForm : Form
     void InvalidateGeneration(){generatedSettings=null;export.Enabled=false;}
     static ComboBox Combo(params string[] items){var c=new ComboBox(){DropDownStyle=ComboBoxStyle.DropDownList};c.Items.AddRange(items);c.SelectedIndex=0;return c;}
     static NumericUpDown Number(int min,int max,int value)=>new(){Minimum=min,Maximum=max,Value=value};
-    Settings ReadSettings()=>new(){ImagePath=imagePath.Text,Lba1Folder=game1.Text,Lba2Folder=game2.Text,Lba1Body=(int)body1.Value,Lba2Body=(int)body2.Value,Target=target.Text,Layout=layout.Text,Method=method.Text,Mask=mask.Text,Threshold=(int)threshold.Value,AutoCrop=autoCrop.Checked,FlipFront=flip.Checked,NegativeZFront=negative.Checked,Fit=(float)fit.Value/100,Height=(float)height.Value/100,Width=(float)width.Value/100,Depth=(float)depth.Value/100,HeadScale=(float)head.Value/100,DetailBudget=(int)budget.Value,HeadDetails=headDetails.Checked,BandanaText=bandanaText.Text,ArchiveCopy=archive.Checked,OutputFolder=output.Text};
+    Settings ReadSettings()=>new(){ImagePath=imagePath.Text,Lba1Folder=game1.Text,Lba2Folder=game2.Text,Lba1Body=(int)body1.Value,Lba2Body=(int)body2.Value,Target=target.Text,Layout=layout.Text,Method=method.Text,Mask=mask.Text,Threshold=(int)threshold.Value,AutoCrop=autoCrop.Checked,FlipFront=flip.Checked,NegativeZFront=negative.Checked,Fit=(float)fit.Value/100,Height=(float)height.Value/100,Width=(float)width.Value/100,Depth=(float)depth.Value/100,HeadScale=(float)head.Value/100,DetailBudget=(int)budget.Value,HeadDetails=headDetails.Checked,BandanaText=bandanaText.Text,ArchiveCopy=archive.Checked,OutputFolder=output.Text,Lit=lit.Checked};
     void Apply(Settings s)
     {
         imagePath.Text=s.ImagePath;game1.Text=s.Lba1Folder;game2.Text=s.Lba2Folder;output.Text=s.OutputFolder;
         headDetails.Checked=s.HeadDetails;bandanaText.Text=s.BandanaText;bandanaText.Enabled=s.HeadDetails;
         body1.Value=Math.Clamp(s.Lba1Body,0,10000);body2.Value=Math.Clamp(s.Lba2Body,0,10000);threshold.Value=Math.Clamp(s.Threshold,1,254);fit.Value=Math.Clamp((decimal)s.Fit*100,0,100);height.Value=Math.Clamp((decimal)s.Height*100,25,300);width.Value=Math.Clamp((decimal)s.Width*100,25,300);depth.Value=Math.Clamp((decimal)s.Depth*100,25,300);head.Value=Math.Clamp((decimal)s.HeadScale*100,25,150);budget.Value=Math.Clamp(s.DetailBudget,0,540);
-        target.SelectedItem=s.Target;layout.SelectedItem=s.Layout;method.SelectedItem=s.Method;mask.SelectedItem=s.Mask;autoCrop.Checked=s.AutoCrop;flip.Checked=s.FlipFront;negative.Checked=s.NegativeZFront;archive.Checked=s.ArchiveCopy;
+        lit.Checked=s.Lit;target.SelectedItem=s.Target;layout.SelectedItem=s.Layout;method.SelectedItem=s.Method;mask.SelectedItem=s.Mask;autoCrop.Checked=s.AutoCrop;flip.Checked=s.FlipFront;negative.Checked=s.NegativeZFront;archive.Checked=s.ArchiveCopy;
     }
     void LoadImage()=>Try(()=>{using var b=new Bitmap(imagePath.Text);var copy=new Bitmap(b);reference.Image?.Dispose();reference.Image=copy;});
     void ShowGenerated(){preview.Model=generated.FirstOrDefault(g=>g.Body.Game==previewGame.SelectedIndex+1);preview.Invalidate();}
@@ -99,6 +107,49 @@ public sealed class MainForm : Form
         if(generatedSettings==null)return;Enabled=false;status.Text="Writing body files, archive copies and previews…";
         try{string folder=await Task.Run(()=>Generator.Export(generatedSettings,generated));status.Text="Exported to "+folder;MessageBox.Show(this,"Export complete. Original game files were not modified.\n\n"+folder+"\n\nRead INSTALL.txt before testing in a copy of the game.","Export complete");}
         catch(Exception e){Error(e);}finally{Enabled=true;}
+    }
+    // ---- flat pictures ----
+    static byte[] PaletteBytes(string folder)=>new Hqr(Path.Combine(folder,"RESS.HQR")).Read(0);
+    BodyStyleStats StatsFor(int game,string folder)
+    {
+        if(styleStats.TryGetValue(game,out var known))return known;
+        var hqr=new Hqr(Generator.BodyArchive(folder));var bodies=new List<byte[]>();
+        for(int i=0;i<hqr.Count;i++){try{bodies.Add(hqr.Read(i));}catch(InvalidDataException){}}
+        return styleStats[game]=BodyStyleStats.Analyse(game,bodies);
+    }
+    // The template's game and body index are the preview game's own fields (LBA1 / LBA2 installation and body index).
+    void ExportSheet()=>Try(()=>
+    {
+        int game=previewGame.SelectedIndex+1;var s=ReadSettings();string folder=game==1?s.Lba1Folder:s.Lba2Folder;int index=game==1?s.Lba1Body:s.Lba2Body;
+        var body=Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(index),game);
+        var sheet=FlatSheet.Render(body,PaletteBytes(folder));
+        using var d=new SaveFileDialog(){Filter="PNG image|*.png",FileName=$"lba{game}-body{index}-flat-sheet.png"};
+        if(d.ShowDialog()!=DialogResult.OK)return;
+        FlatBitmap.Save(sheet,d.FileName);
+        status.Text=$"Saved the game's own body {index} of LBA{game} as a flat front + back sheet ({FlatSheet.Colours(body).Length} colours, {body.Faces.Count} polygons): {d.FileName}. It is the kind of picture the generator reads.";
+    });
+    async Task ConvertStyle()
+    {
+        var s=ReadSettings();int game=previewGame.SelectedIndex+1;string folder=game==1?s.Lba1Folder:s.Lba2Folder;
+        if(!File.Exists(s.ImagePath)){Error(new InvalidDataException("Choose a reference image first."));return;}
+        var options=new StyleOptions(){Colours=(int)flatColours.Value,Symmetrise=symmetric.Checked,BackFromFront=true};
+        bool pair=pairImage.Checked;Enabled=false;status.Text="Reading the game's bodies and flattening the picture…";
+        try
+        {
+            var (result,path)=await Task.Run(()=>
+            {
+                options.Allowed=StatsFor(game,folder).RecommendedDisplay(3);
+                var image=FlatBitmap.Load(s.ImagePath);var palette=PaletteBytes(folder);
+                var r=pair?GameStyle.ConvertPair(image,palette,options):GameStyle.Convert(image,palette,options);
+                string directory=Path.Combine(string.IsNullOrWhiteSpace(s.OutputFolder)?AppContext.BaseDirectory:s.OutputFolder,"Flat sheets");Directory.CreateDirectory(directory);
+                string file=Path.Combine(directory,Path.GetFileNameWithoutExtension(s.ImagePath)+$"-lba{game}-flat.png");FlatBitmap.Save(r.Sheet,file);
+                return (r,file);
+            });
+            imagePath.Text=path;layout.SelectedItem="Front + back";mask.SelectedItem="Transparent background";LoadImage();
+            status.Text=$"Flat sheet saved to {path} and set as the reference image (front + back, transparent background): {result.Notes}. Generate to build the body.";
+        }
+        catch(Exception e){Error(e);}
+        finally{Enabled=true;}
     }
     void Try(Action action){try{action();}catch(Exception e){Error(e);}}
     void Error(Exception e){status.Text=e.Message;MessageBox.Show(this,e.Message,"Body Studio",MessageBoxButtons.OK,MessageBoxIcon.Error);}

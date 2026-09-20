@@ -62,9 +62,18 @@ public static class Renderer
         var pixels=new int[width*height];
         float Edge(PointF a,PointF b,float x,float y)=>(x-a.X)*(b.Y-a.Y)-(y-a.Y)*(b.X-a.X);
         var lit=shading!=null&&model.Game==1&&model.Normals.Count>0?shading.Intensities(model):null;
+        // A generated body carries game lighting (Body.Lit): preview it with a light from above-left of the viewer, the game adds up to its
+        // maximum number of ramp steps to each polygon's start colour.
+        float[]? previewLight=null;
+        if(lit==null&&(model.Lit||model.Faces.Any(x=>x.Material>=0)))
+        {
+            var normals=model.VertexNormals();var toLight=Vector3.Normalize(new Vector3(-0.35f,0.55f,-0.75f));float max=LightModel.Max(model.Game);
+            previewLight=normals.Select(n=>{var r=new Vector3(n.X*MathF.Cos(yaw)+n.Z*MathF.Sin(yaw),n.Y,-n.X*MathF.Sin(yaw)+n.Z*MathF.Cos(yaw));return Math.Clamp(Vector3.Dot(r,toLight),0,1)*max;}).ToArray();
+        }
         foreach(var f in model.Faces)
         {
             int colour=palette[Math.Clamp(f.Colour,0,255)].ToArgb();
+            bool faceLit=previewLight!=null&&LightModel.IsLit(f,model.Game,model.Lit);
             // the game's lighting: flat faces take one intensity, Gouraud faces one per corner (blended below)
             float[]? corner=null;
             if(lit!=null&&f.Material>=7)
@@ -92,7 +101,19 @@ public static class Renderer
                     if(z<=depth[index])
                     {
                         depth[index]=z;
-                        if(corner!=null&&f.Material>=9){float shade=wa*corner[0]+wb*corner[t]+wc*corner[t+1];pixels[index]=palette[Math.Clamp(f.Colour+(int)Math.Round(shade),0,255)].ToArgb();}
+                        if(f.Texture!=null&&model.TexturePage!=null&&f.Texture.Handle<model.Textures.Length)
+                        {
+                            // textured polygon: (U, V) are 8.8 fixed point pixels of the 256 x 256 page; the table entry gives the offset and a repeat mask per axis
+                            var uv=f.Texture.UV;int a0=0,b0=t,c0=t+1;
+                            float u=wa*uv[a0*2]+wb*uv[b0*2]+wc*uv[c0*2],v=wa*uv[a0*2+1]+wb*uv[b0*2+1]+wc*uv[c0*2+1];
+                            uint info=model.Textures[f.Texture.Handle];int mask=(int)(info>>16);
+                            int tx=((int)u>>8)&(mask&0xFF),ty=((int)v>>8)&((mask>>8)&0xFF);
+                            int texel=model.TexturePage[((int)(info&0xFFFF)+ty*256+tx)&0xFFFF];
+                            float shade=faceLit?wa*previewLight[f.Points[0]]+wb*previewLight[f.Points[t]]+wc*previewLight[f.Points[t+1]]:0;
+                            pixels[index]=palette[Math.Clamp(texel+(int)Math.Round(shade),0,255)].ToArgb();
+                        }
+                        else if(faceLit){float shade=wa*previewLight[f.Points[0]]+wb*previewLight[f.Points[t]]+wc*previewLight[f.Points[t+1]];pixels[index]=palette[Math.Clamp(f.Colour+(int)Math.Round(shade),0,255)].ToArgb();}
+                        else if(corner!=null&&f.Material>=9){float shade=wa*corner[0]+wb*corner[t]+wc*corner[t+1];pixels[index]=palette[Math.Clamp(f.Colour+(int)Math.Round(shade),0,255)].ToArgb();}
                         else pixels[index]=colour;
                     }
                 }

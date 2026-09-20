@@ -36,6 +36,10 @@
     <Compile Include="..\..\Lba1\Lba1RoomDoorMod.cs" Link="Lba1\Lba1RoomDoorMod.cs" />
     <Compile Include="..\..\Lba1\Lba1BlankScene.cs" Link="Lba1\Lba1BlankScene.cs" />
     <Compile Include="..\..\Lba2Engine.cs" Link="Lba2Engine.cs" />
+    <Compile Include="..\..\Terrain\**\*.cs" Link="Terrain\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\Assets\**\*.cs" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\Grids\**\*.cs" Link="Grids\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\Lba1\Lba1GridRenderer.cs" Link="Lba1\Lba1GridRenderer.cs" />
   </ItemGroup>
 
 </Project>

@@ -44,7 +44,7 @@ internal static class TopDownMapRenderer
             for (var x = 0; x < CellsPerCube; x++)
             {
                 var first = island.PolygonAt(cubeId, x, z);
-                var second = island.PolygonAt(cubeId, x + CellsPerCube, z);
+                var second = island.PolygonAt(cubeId, x, z, 1);
                 var firstCorners = ((first >> 16) & 1) == 0 ? Corners0 : Corners1;
                 var secondCorners = ((second >> 16) & 1) == 0 ? Corners2 : Corners3;
                 RasterCellTriangle(pixels, size, island, cubeId, cubeX, cubeY, x, z, pixelsPerCell, first, firstCorners);

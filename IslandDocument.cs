@@ -67,7 +67,8 @@ internal sealed class IslandDocument
     public short MaxHeight => heights.Values.SelectMany(values => values).DefaultIfEmpty().Max();
     public byte CubeAt(int x, int y) => map[y * MapSize + x];
     public short HeightAt(int cubeId, int x, int y) => heights.TryGetValue(cubeId, out var heightMap) ? heightMap[y * 65 + x] : (short)0;
-    public uint PolygonAt(int cubeId, int x, int y) => groundPolygons.TryGetValue(cubeId, out var polygons) ? polygons[y * 128 + x] : 0;
+    // the two triangles of a cell are interleaved in the file ([z * 128 + x * 2 + half]), as the engine reads them
+    public uint PolygonAt(int cubeId, int x, int z, int half = 0) => groundPolygons.TryGetValue(cubeId, out var polygons) ? polygons[z * 128 + x * 2 + half] : 0;
     public ushort[]? TextureAt(int cubeId, int index) => textureDefinitions.TryGetValue(cubeId, out var textures) && index * 6 + 5 < textures.Length ? textures[(index * 6)..(index * 6 + 6)] : null;
     public byte IntensityAt(int cubeId, int x, int y) => intensities.TryGetValue(cubeId, out var values) ? (byte)(values[y * 65 + x] & 15) : (byte)15;
     public Color ColorAt(double u, double v, int lightLevel)
@@ -142,11 +143,11 @@ internal sealed class IslandDocument
             if (archive.IsValid(decorIndex))
             {
                 var decorRecord = archive.Read(decorIndex);
-                var count = decorRecord.Length / 52;
+                var count = decorRecord.Length / 48;
                 var values = new Decor[count];
                 for (var index = 0; index < count; index++)
                 {
-                    var span = decorRecord.AsSpan(index * 52);
+                    var span = decorRecord.AsSpan(index * 48);
                     values[index] = new Decor(
                         BinaryPrimitives.ReadInt32LittleEndian(span), BinaryPrimitives.ReadInt32LittleEndian(span[4..]), BinaryPrimitives.ReadInt32LittleEndian(span[8..]), BinaryPrimitives.ReadInt32LittleEndian(span[12..]),
                         BinaryPrimitives.ReadInt32LittleEndian(span[24..]), BinaryPrimitives.ReadInt32LittleEndian(span[28..]), BinaryPrimitives.ReadInt32LittleEndian(span[32..]), BinaryPrimitives.ReadInt32LittleEndian(span[36..]), BinaryPrimitives.ReadInt32LittleEndian(span[40..]), BinaryPrimitives.ReadInt32LittleEndian(span[44..]));

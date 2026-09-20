@@ -7,7 +7,9 @@ namespace LbaBodyStudio;
 public sealed record Bone(int Start, int Count, int Pivot, int Parent, byte[] Record);
 // LBA1 polygons carry lighting data: Material 7 / 8 (flat) a normal for the whole face, 9 / 10 (Gouraud) one normal per point;
 // lower materials are drawn unlit. Colour is the palette index the shade is added to.
-public sealed record Face(int[] Points, int Colour, int DetailTone = -1, int Material = -1, int FaceNormal = -1, int[]? PointNormals = null);
+// A textured LBA2 polygon: which entry of the body's texture table it uses and one (U, V) pair per point, 8.8 fixed point pixels of the object texture page.
+public sealed record FaceTexture(int Handle, int[] UV);
+public sealed record Face(int[] Points, int Colour, int DetailTone = -1, int Material = -1, int FaceNormal = -1, int[]? PointNormals = null, FaceTexture? Texture = null);
 // A normal of an LBA1 body: a vector (x, y, z) and the "prenormalized range" its lighting is divided by.
 public sealed record BodyNormal(int X, int Y, int Z, int Range);
 public sealed record BodyLine(int A, int B, int Colour);
@@ -16,6 +18,14 @@ public sealed record BodySphere(int Point, int Radius, int Colour);
 public sealed class Body
 {
     public int Game;
+    // Write the body with the game's lighting data (vertex normals, Gouraud polygons) instead of flat unlit polygons. The normals
+    // are computed from the geometry at write time, so this stays right when a generator moves points about.
+    public bool Lit;
+    // LBA2 textured polygons: the texture table (low 16 bits: offset into the page, high 16: repeat mask) and, when set by the caller, the page (RESS.HQR entry 6, 256 x 256)
+    public uint[] Textures = [];
+    public byte[]? TexturePage;
+    // a body that is not animated (LBA2 fixed objects: OBJFIX.HQR); kept as such when written
+    public bool Static;
     public byte[] Header = [];
     public List<Vector3> Vertices = [];
     public List<Bone> Bones = [];
@@ -33,14 +43,14 @@ public sealed class Body
     {
         if (p < 0 || n < 0 || p > b.Length - n) throw new InvalidDataException("Body section outside file.");
     }
-    public static Body Read(byte[] data, int game)
+    public static Body Read(byte[] data, int game, bool allowStatic = false)
     {
         if (game != 1 && game != 2) throw new ArgumentOutOfRangeException(nameof(game));
-        try { return ReadInternal(data, game); }
+        try { return ReadInternal(data, game, allowStatic); }
         catch (Exception e) when (e is ArgumentException or IndexOutOfRangeException or OverflowException)
         { throw new InvalidDataException("Truncated or invalid body.", e); }
     }
-    static Body ReadInternal(byte[] b, int game)
+    static Body ReadInternal(byte[] b, int game, bool allowStatic)
     {
         var m = new Body { Game = game };
         int p, count, groupOffset, groupCount;
@@ -89,7 +99,7 @@ public sealed class Body
         }
         else
         {
-            Range(b,0,96); if ((I(b,0)&256)==0) throw new InvalidDataException("Choose an animated body template.");
+            Range(b,0,96); m.Static=(I(b,0)&256)==0; if (m.Static&&!allowStatic) throw new InvalidDataException("Choose an animated body template.");
             m.Header=b[..96]; groupCount=I(b,32);groupOffset=I(b,36);count=I(b,40);p=I(b,44);
             if(count<1||count>550||groupCount<1||groupCount>30)throw new InvalidDataException("Body exceeds engine limits.");
             Range(b,p,count*8);Range(b,groupOffset,groupCount*8);
@@ -104,13 +114,21 @@ public sealed class Body
                 int stride=env?16:texture?(quad?32:24):12;
                 if((type&255)>23)throw new InvalidDataException("Unsupported LBA2 polygon type.");
                 Range(b,p,checked(n*stride));
-                for(int i=0;i<n;i++,p+=stride) { int[] ids=new int[quad?4:3];for(int j=0;j<ids.Length;j++)ids[j]=U(b,p+j*2);m.Faces.Add(new(ids,U(b,p+8)&255)); }
+                for(int i=0;i<n;i++,p+=stride)
+                {
+                    int[] ids=new int[quad?4:3];for(int j=0;j<ids.Length;j++)ids[j]=U(b,p+j*2);
+                    FaceTexture? tex=null;
+                    if(texture&&!env){int handle=U(b,p+(quad?28:6));int[] uv=new int[ids.Length*2];for(int j=0;j<uv.Length;j++)uv[j]=U(b,p+12+j*2);tex=new(handle,uv);}
+                    m.Faces.Add(new(ids,U(b,p+8)&255,-1,type&255,-1,null,tex));
+                }
                 if(p>end)throw new InvalidDataException("Polygon block overlaps line section.");
             }
             int lines=I(b,72);p=I(b,76);Range(b,p,checked(lines*8));
             for(int i=0;i<lines;i++,p+=8)m.Lines.Add(new(U(b,p+4),U(b,p+6),U(b,p+2)&255));
             int spheres=I(b,80);p=I(b,84);Range(b,p,checked(spheres*8));
             for(int i=0;i<spheres;i++,p+=8)m.Spheres.Add(new(U(b,p+4),U(b,p+6),U(b,p+2)&255));
+            int textureCount=I(b,88),textureOffset=I(b,92);
+            if(textureCount>0&&textureCount<4096&&textureOffset>=0&&textureOffset+textureCount*4<=b.Length){m.Textures=new uint[textureCount];for(int i=0;i<textureCount;i++)m.Textures[i]=BitConverter.ToUInt32(b,textureOffset+i*4);}
         }
         m.Validate();return m;
     }
@@ -153,20 +171,44 @@ public sealed class Body
             for(int i=bone.Start;i<bone.Start+bone.Count;i++)Vertices[i]=world[i]-origin;
         }
     }
+    // Smooth vertex normals of the neutral pose (unit length): each polygon's area-weighted normal is shared by its points. The game's
+    // bodies wind their polygons so that this (Newell) normal points out of the surface (checked on both games' bodies), so no flipping.
+    public Vector3[] VertexNormals()
+    {
+        var world=World();var sum=new Vector3[Vertices.Count];
+        foreach(var f in Faces)
+        {
+            var n=Vector3.Zero;
+            for(int i=0;i<f.Points.Length;i++)
+            {
+                var a=world[f.Points[i]];var b=world[f.Points[(i+1)%f.Points.Length]];
+                n+=new Vector3((a.Y-b.Y)*(a.Z+b.Z),(a.Z-b.Z)*(a.X+b.X),(a.X-b.X)*(a.Y+b.Y));
+            }
+            foreach(int p in f.Points)sum[p]+=n;
+        }
+        for(int i=0;i<sum.Length;i++)sum[i]=sum[i].LengthSquared()>1e-9f?Vector3.Normalize(sum[i]):Vector3.Zero;
+        return sum;
+    }
+    // LBA2 vertex normals are 10240 long, LBA1 normals 63 long with a "range" of 315 (what the retail bodies use).
+    static short Scaled(float v,float length)=>(short)Math.Clamp((int)Math.Round(v*length),-32767,32767);
     public byte[] Write()
     {
         Validate();using var s=new MemoryStream();using var w=new BinaryWriter(s);
         var world=World();
+        var normalsOfPoints=Lit?VertexNormals():null;
         if(Game==1)
         {
             byte[] header=(byte[])Header.Clone();
             for(int axis=0;axis<3;axis++) { short lo=Checked(world.Min(v=>Component(v,axis))),hi=Checked(world.Max(v=>Component(v,axis)));BitConverter.GetBytes(lo).CopyTo(header,2+axis*4);BitConverter.GetBytes(hi).CopyTo(header,4+axis*4); }
             w.Write(header);w.Write((ushort)Vertices.Count);foreach(var v in Vertices)WriteVector(w,v);
             w.Write((ushort)Bones.Count);
-            foreach(var bone in Bones){byte[] r=(byte[])bone.Record.Clone();Array.Clear(r,8,8);Array.Clear(r,18,2);w.Write(r);}
-            w.Write((ushort)0); // Solid polygons require no lighting normals.
+            // a bone record says how many of the normals are its own (offset 18); lit bodies give every point a normal, in point order
+            foreach(var bone in Bones){byte[] r=(byte[])bone.Record.Clone();Array.Clear(r,8,8);Array.Clear(r,18,2);if(Lit)BitConverter.GetBytes((ushort)bone.Count).CopyTo(r,18);w.Write(r);}
+            if(normalsOfPoints==null)w.Write((ushort)0); // Solid polygons require no lighting normals.
+            else{w.Write((ushort)Vertices.Count);foreach(var n in normalsOfPoints){w.Write(Scaled(n.X,63));w.Write(Scaled(n.Y,63));w.Write(Scaled(n.Z,63));w.Write((ushort)315);}}
             w.Write((ushort)Faces.Count);
-            foreach(var f in Faces){w.Write((byte)0);w.Write((byte)f.Points.Length);w.Write((ushort)f.Colour);foreach(int i in f.Points)w.Write((ushort)(i*6));}
+            // type 9 = Gouraud lit: colour is the ramp's first entry, the game adds the light; each corner names its point's normal, then the point
+            foreach(var f in Faces){w.Write((byte)(Lit?9:0));w.Write((byte)f.Points.Length);w.Write((ushort)f.Colour);foreach(int i in f.Points){if(Lit)w.Write((ushort)i);w.Write((ushort)(i*6));}}
             w.Write((ushort)Lines.Count);foreach(var l in Lines){w.Write((byte)0);w.Write((byte)l.Colour);w.Write((ushort)0);w.Write((ushort)(l.A*6));w.Write((ushort)(l.B*6));}
             w.Write((ushort)Spheres.Count);foreach(var sp in Spheres){w.Write((byte)0);w.Write((byte)sp.Colour);w.Write((ushort)0);w.Write((ushort)sp.Radius);w.Write((ushort)(sp.Point*6));}
         }
@@ -176,18 +218,30 @@ public sealed class Body
             foreach(var b in Bones){w.Write((ushort)(b.Parent<0?65535:b.Parent));w.Write((ushort)b.Pivot);w.Write((ushort)b.Count);w.Write((ushort)0);}
             int points=(int)s.Position;
             for(int j=0;j<Bones.Count;j++)for(int i=Bones[j].Start;i<Bones[j].Start+Bones[j].Count;i++){WriteVector(w,Vertices[i]);w.Write((ushort)j);}
-            int normals=(int)s.Position;w.Write(new byte[Vertices.Count*8]);int polys=(int)s.Position;
-            foreach(var group in Faces.GroupBy(f=>f.Points.Length))
+            int normals=(int)s.Position;
+            if(normalsOfPoints==null)w.Write(new byte[Vertices.Count*8]);
+            else for(int j=0;j<Bones.Count;j++)for(int i=Bones[j].Start;i<Bones[j].Start+Bones[j].Count;i++){var n=normalsOfPoints[i];w.Write(Scaled(n.X,10240));w.Write(Scaled(n.Y,10240));w.Write(Scaled(n.Z,10240));w.Write((ushort)j);}
+            int polys=(int)s.Position;
+            // blocks of triangles / quads, textured ones (type 8, or 10 = Gouraud lit when Lit) apart from the plain ones (type 0, or 4 = Gouraud)
+            foreach(var group in Faces.GroupBy(f=>(Quad:f.Points.Length==4,Textured:f.Texture!=null)))
             {
-                if(group.Key is not (3 or 4))throw new InvalidDataException("LBA2 requires triangles or quads.");
-                w.Write((ushort)(group.Key==4?32768:0));w.Write((ushort)group.Count());w.Write(8+group.Count()*12);
-                foreach(var f in group){foreach(int i in f.Points)w.Write((ushort)i);if(group.Key==3)w.Write((ushort)0);w.Write((ushort)f.Colour);w.Write((ushort)0);}
+                if(group.Key.Quad==false&&group.First().Points.Length!=3)throw new InvalidDataException("LBA2 requires triangles or quads.");
+                bool quad=group.Key.Quad,textured=group.Key.Textured;int stride=textured?(quad?32:24):12;
+                w.Write((ushort)((quad?32768:0)|(textured?(Lit?10:8):(Lit?4:0))));w.Write((ushort)group.Count());w.Write(8+group.Count()*stride);
+                foreach(var f in group)
+                {
+                    if(!textured){foreach(int i in f.Points)w.Write((ushort)i);if(!quad)w.Write((ushort)0);w.Write((ushort)f.Colour);w.Write((ushort)0);continue;}
+                    var t=f.Texture!;
+                    if(quad){foreach(int i in f.Points)w.Write((ushort)i);w.Write((ushort)f.Colour);w.Write((ushort)0);foreach(int uv in t.UV)w.Write((ushort)uv);w.Write((ushort)t.Handle);w.Write((ushort)0);}
+                    else{foreach(int i in f.Points)w.Write((ushort)i);w.Write((ushort)t.Handle);w.Write((ushort)f.Colour);w.Write((ushort)0);foreach(int uv in t.UV)w.Write((ushort)uv);}
+                }
             }
             int lines=(int)s.Position;foreach(var l in Lines){w.Write((ushort)0);w.Write((ushort)l.Colour);w.Write((ushort)l.A);w.Write((ushort)l.B);}
             int spheres=(int)s.Position;foreach(var sp in Spheres){w.Write((ushort)0);w.Write((ushort)sp.Colour);w.Write((ushort)sp.Point);w.Write((ushort)sp.Radius);}
-            int end=(int)s.Position;s.Position=0;w.Write(256|(BitConverter.ToInt32(Header,0)&255));w.Write((short)96);w.Write((short)0);
+            int end=(int)s.Position;foreach(uint t in Textures)w.Write(t);
+            s.Position=0;w.Write(Static?BitConverter.ToInt32(Header,0):256|(BitConverter.ToInt32(Header,0)&255));w.Write((short)96);w.Write((short)0);
             for(int axis=0;axis<3;axis++){w.Write((int)Math.Floor(world.Min(v=>Component(v,axis))));w.Write((int)Math.Ceiling(world.Max(v=>Component(v,axis))));}
-            foreach(int v in new[]{Bones.Count,groups,Vertices.Count,points,Vertices.Count,normals,0,polys,Faces.Count,polys,Lines.Count,lines,Spheres.Count,spheres,0,end})w.Write(v);
+            foreach(int v in new[]{Bones.Count,groups,Vertices.Count,points,Vertices.Count,normals,0,polys,Faces.Count,polys,Lines.Count,lines,Spheres.Count,spheres,Textures.Length,end})w.Write(v);
         }
         return s.ToArray();
     }

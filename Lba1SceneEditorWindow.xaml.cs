@@ -1045,11 +1045,26 @@ public partial class Lba1SceneEditorWindow : Window
         saveAs.Click += (_, _) => SaveAsSlot();
         var blank = new MenuItem { Header = "Make this scene blank (a flat floor and Twinsen)…" };
         blank.Click += (_, _) => MakeBlank();
+        var map = new MenuItem { Header = "Edit this scene's map in the grid editor…" };
+        map.Click += (_, _) => OpenMapEditor();
         menu.Items.Add(check);
         menu.Items.Add(saveAs);
+        menu.Items.Add(map);
         menu.Items.Add(new Separator());
         menu.Items.Add(blank);
         menu.IsOpen = true;
+    }
+
+    // The scene's grid in the grid editor (paint blocks, edit the library). The grid editor writes LBA_GRI.HQR itself, so unsaved changes here are saved first.
+    private void OpenMapEditor()
+    {
+        if (doc.IsDirty)
+        {
+            if (MessageBox.Show(this, "Save this scene first? The grid editor works on the saved grid.", "Grid editor", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            try { doc.Save(); }
+            catch (Exception error) when (error is SceneValidationException or IOException or InvalidDataException) { MessageBox.Show(this, error.Message, "Grid editor", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+        }
+        new GridEditorWindow(directory, null, null, null, sceneNumber) { Owner = this }.Show();
     }
 
     // Replaces the scene's contents with an empty world: a flat floor built from the slot's own floor block, and Twinsen on

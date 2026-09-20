@@ -43,7 +43,7 @@ internal static class SoftwareTerrainRenderer
             for (var x = 0; x < 64; x++)
             {
                 var first = island.PolygonAt(cubeId, x, z);
-                var second = island.PolygonAt(cubeId, x + 64, z);
+                var second = island.PolygonAt(cubeId, x, z, 1);
                 var firstCorners = ((first >> 16) & 1) == 0 ? new[] { 0, 1, 2 } : new[] { 3, 0, 1 };
                 var secondCorners = ((second >> 16) & 1) == 0 ? new[] { 2, 3, 0 } : new[] { 1, 2, 3 };
                 RasterTriangle(island, pixels, depth, width, height, camera, right, up, forward, focal, cubeId, cubeX, cubeY, x, z, first, firstCorners);

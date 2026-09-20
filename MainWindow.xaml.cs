@@ -1326,6 +1326,78 @@ public partial class MainWindow : Window
         }
     }
 
+    // Tools > interior grid editor: the isometric maps of both games' interiors (paint blocks, edit the block library).
+    private void GridEditor_Click(object sender, RoutedEventArgs e)
+    {
+        var lba1 = EditorSettings.Current.Lba1Directory;
+        var lba2 = File.Exists(Path.Combine(gameRoot, "LBA_BKG.HQR")) ? gameRoot : null;
+        if (!Lba1Game.IsInstalled(lba1) && lba2 is null)
+        {
+            MessageBox.Show(this, "Neither game folder is set. Choose them under File > Settings.", "Interior grid editor", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try
+        {
+            Func<int, string?>? describe = null;
+            if (Lba1Game.IsInstalled(lba1)) { var game = new Lba1Game(lba1); describe = game.Description; }
+            new GridEditorWindow(Lba1Game.IsInstalled(lba1) ? lba1 : null, lba2, describe) { Owner = this }.Show();
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, $"Couldn't open the grid editor: {error.Message}", "Interior grid editor", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // Tools > objects and bodies: every body of BODY.HQR and LBA2's OBJFIX.HQR, drawn with textures and lighting.
+    private void ObjectBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        var lba1 = EditorSettings.Current.Lba1Directory;
+        var lba2 = File.Exists(Path.Combine(gameRoot, "BODY.HQR")) ? gameRoot : null;
+        if (!Lba1Game.IsInstalled(lba1) && lba2 is null)
+        {
+            MessageBox.Show(this, "Neither game folder is set. Choose them under File > Settings.", "Objects and bodies", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try { new ObjectBrowserWindow(lba1, lba2) { Owner = this }.Show(); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, $"Couldn't open the object browser: {error.Message}", "Objects and bodies", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // Tools > bricks and sprites: the game's run-length pictures with a pixel editor, PNG import / export.
+    private void AssetEditor_Click(object sender, RoutedEventArgs e)
+    {
+        var lba1 = EditorSettings.Current.Lba1Directory;
+        var lba2 = Lba2Engine.IsGameFolder(gameRoot) || File.Exists(Path.Combine(gameRoot, "LBA_BKG.HQR")) ? gameRoot : null;
+        if (!Lba1Game.IsInstalled(lba1) && lba2 is null)
+        {
+            MessageBox.Show(this, "Neither game folder is set. Choose them under File > Settings.", "Bricks and sprites", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try { new AssetEditorWindow(lba1, lba2) { Owner = this }.Show(); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, $"Couldn't open the picture editor: {error.Message}", "Bricks and sprites", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    // Tools > LBA2: island terrain editor (heights, levelling, baked light and shadows, ground, objects).
+    private void IslandEditor_Click(object sender, RoutedEventArgs e)
+    {
+        if (!Lba2Engine.IsGameFolder(gameRoot))
+        {
+            MessageBox.Show(this, "The LBA2 game folder isn't set. Choose it under File > Settings.", "LBA2", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try { new IslandEditorWindow(gameRoot, currentIsland is null ? null : Path.GetFileName(currentIsland.Path)) { Owner = this }.Show(); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: island editor failed: {error}");
+            MessageBox.Show(this, $"Couldn't open the island editor: {error.Message}", "LBA2: island terrain editor", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // The scene editor hands an actor's scripts to the script editor (which saves through the scene store).
     private void EditLba2ScriptFromEditor(int scene, int actor)
     {
