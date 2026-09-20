@@ -62,7 +62,7 @@ public partial class MainWindow
         zoneOriginal = zone is null ? null : LookupZone(zone);
         LoadZoneForm();
         SyncZoneListSelection();
-        if (showTab && zone is not null) SideTabs.SelectedItem = ZoneDetailsTab;
+        if (showTab && zone is not null && ZoneDetailsTab.Visibility == Visibility.Visible) SideTabs.SelectedItem = ZoneDetailsTab;
         RefreshActorOverlayForSelection();
         if (center && zone is not null && interiorSceneActive) CenterOnZone(zone);
     }
@@ -188,6 +188,7 @@ public partial class MainWindow
         }
         finally { zoneFormLoading = false; }
         UpdateZoneDerived();
+        UpdateZoneEditability();
     }
 
     private void ZoneBounds_TextChanged(object sender, TextChangedEventArgs e)
@@ -227,7 +228,7 @@ public partial class MainWindow
 
     private void ZoneApply_Click(object sender, RoutedEventArgs e)
     {
-        if (zoneOriginal is null) return;
+        if (zoneOriginal is null || editMode != EditMode.Build) return;
         var edited = zoneOriginal.Clone();
 
         // A bound is only rewritten when it was changed, so a zone stored "backwards" keeps its order.
@@ -300,7 +301,7 @@ public partial class MainWindow
             if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
             else
             {
-                nativeRenderer.InvalidateLoadedIsland();
+                InvalidateNativeIsland();
                 if (nativeViewActive) RenderNativeCamera();
             }
         }

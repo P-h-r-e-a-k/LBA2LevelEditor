@@ -1393,6 +1393,9 @@ int RendererLoadInteriorScene(int numscene)
 
     if (CubeMode != CUBE_INTERIEUR) return 0; // caller should use an exterior Load* instead
 
+    // Actor animations may start particle flows while the objects initialise; nothing here ever runs or draws them, so free
+    // every slot each time rather than filling the (small) table over many scene loads.
+    RazListPartFlow();
     StartInitAllObjs();
     ApplyInitialScriptState();
 
@@ -1707,6 +1710,19 @@ int RendererProjectInteriorPoint(int x, int y, int z, int *cx, int *cy)
     if (cx) *cx = Xp + ox;
     if (cy) *cy = Yp + oy;
     return 1;
+}
+
+// Top of the highest solid brick at or below fromY in the column (x, z) of the loaded interior scene: the height a character
+// dropped there ends up at (the brick grid is BufCube, 64 x 25 x 64 bricks of 512 x 256 x 512). -1 when there is none.
+int RendererInteriorFloorY(int x, int fromY, int z)
+{
+    if (x < 0 || z < 0 || (x >> 9) >= 64 || (z >> 9) >= 64) return -1;
+    S32 top = fromY >> 8;
+    if (top > 24) top = 24;
+    for (S32 ym = top; ym >= 0; ym--) {
+        if (WorldColBrick(x, ym * SIZE_BRICK_Y, z) != 0) return (ym + 1) * SIZE_BRICK_Y;
+    }
+    return -1;
 }
 
 // Draws one sprite, centred on an otherwise empty frame, for the attributes

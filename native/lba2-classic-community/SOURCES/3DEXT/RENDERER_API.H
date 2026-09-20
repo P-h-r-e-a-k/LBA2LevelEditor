@@ -223,6 +223,10 @@ LBA2_RENDERER_API int lba2_renderer_get_zone_scene(int index);
    of a scene-local point of the loaded interior scene. */
 LBA2_RENDERER_API int lba2_renderer_project_interior_point(int x, int y, int z, int *cx, int *cy);
 
+/* Top of the highest solid brick at or below fromY in the column (x, z) of the loaded interior scene (where a character
+   dropped there stands), or -1 when the column has none / is outside the scene. */
+LBA2_RENDERER_API int lba2_renderer_interior_floor_y(int x, int fromY, int z);
+
 /* Draws one sprite centred in the framebuffer (for a preview panel) and
    returns its rectangle. */
 LBA2_RENDERER_API int lba2_renderer_render_sprite_preview(int sprite, int *x, int *y, int *w, int *h);

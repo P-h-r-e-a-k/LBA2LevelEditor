@@ -24,6 +24,10 @@ internal sealed record SceneChange(int Scene, SceneModel Model, byte[]? Grid = n
 // A scene exactly as it is in the game files.
 internal sealed record RawScene(int Scene, byte[] Record, byte[]? Grid);
 
+// Another game file that has to change together with the scenes (a body added to BODY.HQR for an actor a scene now uses):
+// it joins the save's transaction, so either everything is written or nothing is. SceneHistory doesn't undo it.
+internal sealed record ExtraFile(string Path, byte[] Content, Func<byte[], string?>? Verify = null);
+
 // Loads and saves scenes of one game folder as SceneModel (+ the grid, for LBA1). Saving validates first, writes the
 // scene record with SceneSerializer, keeps LBA2's "largest scene" record (SCENE.HQR entry 0) true, and writes every
 // touched file as one FileTransaction (one-time .bak copies, written beside and verified, then swapped in).
@@ -88,8 +92,9 @@ internal sealed class SceneStore
     public SceneSaveResult Save(int scene, SceneModel model, byte[]? grid = null, bool allowErrors = false, string? description = null)
         => SaveMany(new[] { new SceneChange(scene, model, grid) }, allowErrors, description);
 
-    // Saves several scenes in one transaction (all or none), as one undo step.
-    public SceneSaveResult SaveMany(IReadOnlyList<SceneChange> changes, bool allowErrors = false, string? description = null)
+    // Saves several scenes in one transaction (all or none), as one undo step. `extraFiles` are written in the same
+    // transaction (see ExtraFile); an undo puts the scenes and grids back but leaves them as they are.
+    public SceneSaveResult SaveMany(IReadOnlyList<SceneChange> changes, bool allowErrors = false, string? description = null, IReadOnlyList<ExtraFile>? extraFiles = null)
     {
         if (changes.Count == 0) return new SceneSaveResult(Array.Empty<SceneIssue>(), 0);
         var allIssues = new List<SceneIssue>();
@@ -108,7 +113,7 @@ internal sealed class SceneStore
         if (!allowErrors && allIssues.Any(i => i.Severity == SceneIssueSeverity.Error)) throw new SceneValidationException(allIssues);
 
         var before = description is null ? null : Snapshot(records.Select(r => r.Scene));
-        Write(records);
+        Write(records, extraFiles);
         if (description is not null) SceneHistory.Record(new SceneHistoryEntry(description, Game, Directory, before!, records));
         return new SceneSaveResult(allIssues, records.Sum(r => r.Record.Length));
     }
@@ -120,7 +125,7 @@ internal sealed class SceneStore
     internal List<RawScene> Snapshot(IEnumerable<int> scenes)
         => scenes.Select(s => new RawScene(s, LoadRecord(s), Game == SceneGame.Lba1 ? LoadGrid(s) : null)).ToList();
 
-    private void Write(IReadOnlyList<RawScene> scenes)
+    private void Write(IReadOnlyList<RawScene> scenes, IReadOnlyList<ExtraFile>? extraFiles = null)
     {
         var hqr = HqrFile.Parse(File.ReadAllBytes(ScenePath));
         foreach (var scene in scenes)
@@ -156,6 +161,7 @@ internal sealed class SceneStore
                 return null;
             });
         }
+        foreach (var extra in extraFiles ?? Array.Empty<ExtraFile>()) transaction.Write(extra.Path, extra.Content, extra.Verify);
         transaction.Commit();
     }
 

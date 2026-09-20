@@ -29,6 +29,7 @@ internal static class StoreTests
         if (what is "document" or "all") Document();
         if (what is "prefab" or "all") Prefabs();
         if (what is "doormod" or "all") DoorMod();
+        if (what is "surprise" or "all") Surprise();
         if (what is "ops" or "all") Ops();
         if (what is "blank" or "all") Blank();
         Console.WriteLine(failures == 0 ? $"store tests: all {checks} checks passed" : $"store tests: {failures} of {checks} checks FAILED");
@@ -469,12 +470,12 @@ internal static class StoreTests
             Check(EntriesEqualExcept(Path.Combine(dir, "LBA_GRI.HQR.bak"), Path.Combine(dir, "LBA_GRI.HQR"), 13), "door tool: only grid 13 changed");
 
             // the game files the earlier version of the tool produced (and the game was tested with) hold the same entries
+            // (scene 61 is left out: the game folder's copy also holds the pink elf, see Surprise)
             var live = Path.Combine(Lba1Dir, "SCENE.HQR");
             if (HqrFile.Parse(File.ReadAllBytes(live)).Read(13).Length != HqrFile.Parse(sceneOriginal).Read(13).Length)
             {
-                Check(EntriesEqualExcept(live, Path.Combine(dir, "SCENE.HQR")), "door tool: scenes match the ones already in the game folder, entry for entry");
+                Check(EntriesEqualExcept(live, Path.Combine(dir, "SCENE.HQR"), 61), "door tool: scenes match the ones already in the game folder, entry for entry");
                 Check(EntriesEqualExcept(Path.Combine(Lba1Dir, "LBA_GRI.HQR"), Path.Combine(dir, "LBA_GRI.HQR")), "door tool: grids match the ones already in the game folder, entry for entry");
-                Check(File.ReadAllBytes(live).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(dir, "SCENE.HQR"))), "door tool: SCENE.HQR is byte-identical to the one in the game folder");
             }
 
             Check(!Lba1RoomDoorMod.Apply(dir).Changed, "door tool: a second run changes nothing");
@@ -484,6 +485,105 @@ internal static class StoreTests
             Check(EntriesEqualExcept(Path.Combine(dir, "SCENE.HQR.bak"), Path.Combine(dir, "SCENE.HQR")) && EntriesEqualExcept(Path.Combine(dir, "LBA_GRI.HQR.bak"), Path.Combine(dir, "LBA_GRI.HQR")), "door tool: undo puts scenes 13, 61 and grid 13 back");
             SceneHistory.Redo();
             Check(pristine.Load(13).Actors.Count == 29, "door tool: redo brings the door back");
+        }
+        finally { Cleanup(dir); SceneHistory.Clear(); }
+    }
+
+    // The untouched copy of a game file: the .bak the editor keeps on the first change, else the file itself.
+    private static string PristineFile(string name)
+    {
+        var live = Path.Combine(Lba1Dir, name);
+        return File.Exists(live + ".bak") ? live + ".bak" : live;
+    }
+
+    // Tools > LBA1: Make surprise changes: the door plus the pink elf (Lba1PinkElf, Lba1SurpriseChanges), on temp copies.
+    private static void Surprise()
+    {
+        SceneHistory.Clear();
+        var dir = TempLba1();
+        try
+        {
+            foreach (var name in new[] { "BODY.HQR", "FILE3D.HQR" }) File.Copy(PristineFile(name), Path.Combine(dir, name));
+            var retailBodies = HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR")));
+            var retailEntities = HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "FILE3D.HQR")));
+            var bodyBytes = File.ReadAllBytes(Path.Combine(dir, "BODY.HQR"));
+            var entityBytes = File.ReadAllBytes(Path.Combine(dir, "FILE3D.HQR"));
+            var store = new SceneStore(SceneGame.Lba1, dir);
+            Check(retailBodies.Count == 132 && retailEntities.Count == 82, "surprise: the source BODY.HQR / FILE3D.HQR are the retail ones (132 bodies, 82 entities)");
+
+            // the body: Raymond with only the outfit polygons' colour bytes changed
+            var raymond = retailBodies.Read(Lba1PinkElf.SourceBody);
+            var pink = Lba1PinkElf.Recolour(raymond);
+            var changedBytes = Enumerable.Range(0, raymond.Length).Where(i => raymond[i] != pink[i]).ToList();
+            Check(pink.Length == raymond.Length && changedBytes.Count == 45 && changedBytes.All(i => raymond[i] is 64 or 160 && pink[i] == 224), "pink elf: exactly the 45 outfit polygons' colour bytes change (64 and 160 -> 224)");
+            var refused = false;
+            try { Lba1PinkElf.Recolour(retailBodies.Read(87)); } catch (InvalidDataException) { refused = true; }
+            Check(refused, "pink elf: a body that isn't Raymond (Joe) is refused as the source");
+
+            var result = Lba1SurpriseChanges.Apply(dir);
+            Check(result.Changed, "surprise: applies to the original files");
+            Console.WriteLine("  " + result.Message.Replace("\n", "\n  "));
+
+            // BODY.HQR: one new entry, everything else as it was
+            var bodies = HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR")));
+            Check(bodies.Count == 133 && bodies.Read(132).AsSpan().SequenceEqual(pink), "surprise: BODY.HQR gained entry 132, the pink elf");
+            Check(Enumerable.Range(0, 132).All(i => bodies.Read(i).AsSpan().SequenceEqual(retailBodies.Read(i))), "surprise: the 132 retail bodies are unchanged");
+            Check(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR.bak")).AsSpan().SequenceEqual(bodyBytes), "surprise: BODY.HQR.bak holds the original file");
+            Check(bodies.ToBytes().Length == HqrFile.Parse(bodyBytes).ToBytes().Length + 4 + 10 + pink.Length, "surprise: the file grew by one table slot and one stored entry");
+
+            // FILE3D.HQR: the Elf entity has one more record, BODY id 42 -> entry 132, and nothing else changed
+            var entities = HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "FILE3D.HQR")));
+            Check(EntriesEqualExcept(Path.Combine(dir, "FILE3D.HQR.bak"), Path.Combine(dir, "FILE3D.HQR"), Lba1PinkElf.Entity), "surprise: only the Elf entity changed in FILE3D.HQR");
+            var before = retailEntities.Read(Lba1PinkElf.Entity); var after = entities.Read(Lba1PinkElf.Entity);
+            var record = new byte[] { 1, Lba1PinkElf.BodyId, 4, 132, 0, 0 };
+            Check(after.Length == before.Length + 6 && after.AsSpan(12, 6).SequenceEqual(record) && after.AsSpan(0, 12).SequenceEqual(before.AsSpan(0, 12)) && after.AsSpan(18).SequenceEqual(before.AsSpan(12)),
+                "surprise: the Elf entity gained the record 01 2A 04 84 00 00 after its two bodies, animations untouched");
+
+            // scene 61: the elf is the last actor, in pink text, and the scene validates
+            var room = store.Load(61);
+            var elf = room.Actors[^1];
+            Check(room.Actors.Count == 3 && elf.Entity == 49 && elf.Body == 42 && elf.Anim == 0 && !elf.IsSprite && elf.CoulObj == 14, "surprise: scene 61 has the pink elf as actor 2 (entity 49, body 42, animation 0, colour 14)");
+            Check(elf.Life.Length > 0 && elf.Track.Length > 0, "surprise: the elf has its scripts");
+            Check(!store.Validate(61, room).Any(i => i.Severity == SceneIssueSeverity.Error) && !store.Validate(13, store.Load(13), store.LoadGrid(13)).Any(i => i.Severity == SceneIssueSeverity.Error), "surprise: scenes 61 and 13 validate");
+            Check(EntriesEqualExcept(Path.Combine(dir, "SCENE.HQR.bak"), Path.Combine(dir, "SCENE.HQR"), 13, 61), "surprise: only scenes 13 and 61 changed");
+            Check(EntriesEqualExcept(Path.Combine(dir, "LBA_GRI.HQR.bak"), Path.Combine(dir, "LBA_GRI.HQR"), 13), "surprise: only grid 13 changed");
+
+            // what the game folder holds, when the tool has been applied there
+            var liveBody = Path.Combine(Lba1Dir, "BODY.HQR");
+            if (HqrFile.CountSlots(File.ReadAllBytes(liveBody)) == 133)
+            {
+                Check(EntriesEqualExcept(liveBody, Path.Combine(dir, "BODY.HQR")), "surprise: BODY.HQR matches the game folder's, entry for entry");
+                Check(EntriesEqualExcept(Path.Combine(Lba1Dir, "FILE3D.HQR"), Path.Combine(dir, "FILE3D.HQR")), "surprise: FILE3D.HQR matches the game folder's, entry for entry");
+                Check(EntriesEqualExcept(Path.Combine(Lba1Dir, "SCENE.HQR"), Path.Combine(dir, "SCENE.HQR")), "surprise: SCENE.HQR matches the game folder's, entry for entry");
+                Console.WriteLine($"  game folder BODY.HQR byte-identical to the tool's: {File.ReadAllBytes(liveBody).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR")))}");
+            }
+
+            // a second run changes nothing
+            Check(!Lba1SurpriseChanges.Apply(dir).Changed, "surprise: a second run changes nothing");
+
+            // one undo step: the scenes and the grid go back (the new body stays, unused), redo brings the elf back
+            Check(SceneHistory.UndoDescription == Lba1SurpriseChanges.HistoryName, "surprise: it is one step on the undo log");
+            SceneHistory.Undo();
+            Check(store.Load(61).Actors.Count == 2 && store.Load(13).Actors.Count == 28, "surprise: undo takes the elf and the door out of the scenes");
+            Check(HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR"))).Count == 133, "surprise: undo leaves the new body in BODY.HQR (unused)");
+            SceneHistory.Redo();
+            Check(store.Load(61).Actors[^1].Body == 42, "surprise: redo brings the elf back");
+
+            // an elf made before the colour was set (the first version spoke in teal): the tool repairs it in place
+            var older = store.Load(61); older.Actors[^1].CoulObj = 10; store.Save(61, older);
+            var repair = Lba1SurpriseChanges.Apply(dir);
+            var repaired = store.Load(61);
+            Check(repair.Changed && repaired.Actors.Count == 3 && repaired.Actors[^1].CoulObj == 14, "surprise: an elf with another text colour is set to pink (14) without adding a second one");
+            Check(HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR"))).Count == 133, "surprise: the repair doesn't add another body");
+
+            // a different body already using id 42 is refused, and nothing is written
+            var clash = HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "BODY.HQR")));
+            clash.SetStored(132, raymond);
+            File.WriteAllBytes(Path.Combine(dir, "BODY.HQR"), clash.ToBytes());
+            var sceneNow = File.ReadAllBytes(Path.Combine(dir, "SCENE.HQR"));
+            var clashRefused = false;
+            try { Lba1SurpriseChanges.Apply(dir); } catch (InvalidDataException) { clashRefused = true; }
+            Check(clashRefused && File.ReadAllBytes(Path.Combine(dir, "SCENE.HQR")).AsSpan().SequenceEqual(sceneNow), "surprise: a body that isn't the pink elf under id 42 is refused and nothing is written");
         }
         finally { Cleanup(dir); SceneHistory.Clear(); }
     }

@@ -64,9 +64,13 @@ internal static class Lba1RoomDoorMod
         return edits;
     }
 
-    public static Result Apply(string directory)
+    // `roomEdit` may change the bedroom's scene (61) further before it is saved (returns true when it did) and
+    // `extraFiles` are written in the same transaction: Lba1SurpriseChanges adds its elf this way, so that everything
+    // is one all-or-nothing save and one undo step. `historyName` names that step. Without them this is the door alone.
+    public static Result Apply(string directory, Func<SceneModel, bool>? roomEdit = null, IReadOnlyList<ExtraFile>? extraFiles = null, string? historyName = null)
     {
         var store = new SceneStore(SceneGame.Lba1, directory);
+        var extras = extraFiles ?? Array.Empty<ExtraFile>();
 
         // ---- grid 13 ----
         var grid = store.LoadGrid(OutsideScene);
@@ -91,16 +95,27 @@ internal static class Lba1RoomDoorMod
         var roomChanged = false;
         if (!room.Zones.Any(z => z.Type == 0 && z.Info[0] == OutsideScene)) { room.Zones.Add(ZoneOut()); roomChanged = true; }
 
-        if (newGrid is null && !outsideChanged && !roomChanged) return new Result(false, "Scene 61 is already connected; nothing to change.");
+        var doorChanged = newGrid is not null || outsideChanged || roomChanged;
+        var doorScenesChanged = outsideChanged || roomChanged;
+        if (roomEdit?.Invoke(room) == true) roomChanged = true;
+
+        if (newGrid is null && !outsideChanged && !roomChanged && extras.Count == 0) return new Result(false, "Scene 61 is already connected; nothing to change.");
 
         var changes = new List<SceneChange>();
         if (outsideChanged || newGrid is not null) changes.Add(new SceneChange(OutsideScene, outside, newGrid));
         if (roomChanged) changes.Add(new SceneChange(RoomScene, room));
-        store.SaveMany(changes, description: HistoryName);
+        if (changes.Count > 0) store.SaveMany(changes, description: historyName ?? HistoryName, extraFiles: extras);
+        else
+        {
+            var transaction = new FileTransaction();
+            foreach (var extra in extras) transaction.Write(extra.Path, extra.Content, extra.Verify);
+            transaction.Commit();
+        }
 
         var messages = new List<string>();
         if (newGrid is not null) messages.Add("grid 13: bricked arch replaced by an open arch and recess (LBA_GRI.HQR)");
-        if (outsideChanged || roomChanged) messages.Add("scene 13: sliding door actor and the zone into scene 61; scene 61: the zone back out (SCENE.HQR)");
-        return new Result(true, string.Join("; ", messages) + ". Originals kept as .bak.");
+        if (doorScenesChanged) messages.Add("scene 13: sliding door actor and the zone into scene 61; scene 61: the zone back out (SCENE.HQR)");
+        var standalone = roomEdit is null && extras.Count == 0;
+        return new Result(true, doorChanged ? string.Join("; ", messages) + (standalone ? ". Originals kept as .bak." : ".") : "");
     }
 }

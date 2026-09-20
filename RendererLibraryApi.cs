@@ -40,6 +40,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneFn(int index, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1, out int type, out int num);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetZoneSceneFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectInteriorPointFn(int x, int y, int z, out int cx, out int cy);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int InteriorFloorYFn(int x, int fromY, int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderSpritePreviewFn(int sprite, out int x, out int y, out int w, out int h);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFlagsFn(int index, out uint flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorFlagsFn(int index, uint flags);
@@ -83,6 +84,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetZoneFn? getZone;
     private GetZoneSceneFn? getZoneScene;
     private ProjectInteriorPointFn? projectInteriorPoint;
+    private InteriorFloorYFn? interiorFloorY;
     private RenderSpritePreviewFn? renderSpritePreview;
     private GetActorFlagsFn? getActorFlags;
     private SetActorFlagsFn? setActorFlags;
@@ -154,6 +156,7 @@ internal sealed class RendererLibraryApi : IDisposable
         getZone = Get<GetZoneFn>("lba2_renderer_get_zone");
         getZoneScene = Get<GetZoneSceneFn>("lba2_renderer_get_zone_scene");
         projectInteriorPoint = Get<ProjectInteriorPointFn>("lba2_renderer_project_interior_point");
+        interiorFloorY = Get<InteriorFloorYFn>("lba2_renderer_interior_floor_y");
         renderSpritePreview = Get<RenderSpritePreviewFn>("lba2_renderer_render_sprite_preview");
         getActorFlags = Get<GetActorFlagsFn>("lba2_renderer_get_actor_flags");
         setActorFlags = Get<SetActorFlagsFn>("lba2_renderer_set_actor_flags");
@@ -364,6 +367,8 @@ internal sealed class RendererLibraryApi : IDisposable
         if (projectInteriorPoint is null) { cx = cy = 0; return false; }
         return projectInteriorPoint(x, y, z, out cx, out cy) == 1;
     }
+    // Where a character dropped at (x, z) from fromY stands in the loaded interior scene (top of the highest solid brick below), or -1.
+    public int InteriorFloorY(int x, int fromY, int z) => interiorFloorY?.Invoke(x, fromY, z) ?? -1;
     public bool RenderSpritePreview(int sprite, out int x, out int y, out int w, out int h)
     {
         if (renderSpritePreview is null) { x = y = w = h = 0; return false; }

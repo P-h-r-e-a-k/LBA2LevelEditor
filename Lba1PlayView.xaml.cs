@@ -18,7 +18,7 @@ namespace LBA2LevelEditor;
 // actors, sprites (doors, keys ...), zones and speech on top. It reads the game files as they are on disk, so a scene,
 // door or zone the editor has just changed can be tried at once. Arrow keys walk and turn, Space is the action key, F1-F4
 // switch Twinsen's behaviour; walk into a scene-change zone and the next scene loads, as in the game.
-public partial class Lba1PlayWindow : Window
+public partial class Lba1PlayView : UserControl
 {
     private const int MaxScenes = 120;
     private const double FrameMilliseconds = 40;   // one Frame() = 2 ticks of the 50 Hz clock
@@ -46,7 +46,7 @@ public partial class Lba1PlayWindow : Window
     private int inventorySelect;
     private int musicClock;
 
-    internal Lba1PlayWindow(Lba1Game game, Lba1ActorImages images, string directory, int startScene)
+    internal Lba1PlayView(Lba1Game game, Lba1ActorImages images, string directory)
     {
         InitializeComponent();
         this.game = game;
@@ -65,7 +65,7 @@ public partial class Lba1PlayWindow : Window
             }
             catch (Exception error)
             {
-                DebugLog.Log($"Lba1PlayWindow: scene {scene} unreadable: {error.Message}");
+                DebugLog.Log($"Lba1PlayView: scene {scene} unreadable: {error.Message}");
                 continue;
             }
             SceneCombo.Items.Add(new SceneItem(scene, $"{scene}: {label}"));
@@ -75,15 +75,25 @@ public partial class Lba1PlayWindow : Window
         // below input priority, so key presses are never starved by drawing
         timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(20) };
         timer.Tick += (_, _) => Step();
-        Loaded += (_, _) =>
-        {
-            if (int.TryParse(Environment.GetEnvironmentVariable("LBA2_EDITOR_PLAY_SCENE"), out var testScene)) startScene = testScene;   // a hook for testing
-            StartScene(startScene);
-            lastTick = clock.ElapsedMilliseconds;
-            timer.Start();
-            // a hook for testing: start a film at once
-            if (Environment.GetEnvironmentVariable("LBA2_EDITOR_PLAY_FILM") is { Length: > 0 } filmName) StartFilm(filmName);
-        };
+    }
+
+    // Starts the scene and the clock (call once the view is in the window).
+    public void Start(int startScene, (int X, int Y, int Z)? spawn = null)
+    {
+        if (int.TryParse(Environment.GetEnvironmentVariable("LBA2_EDITOR_PLAY_SCENE"), out var testScene)) startScene = testScene;   // a hook for testing
+        StartScene(startScene);
+        if (spawn is { } put) runtime.Place(put.X, put.Y, put.Z, runtime.Hero.Beta);      // where the player dropped Twinsen
+        lastTick = clock.ElapsedMilliseconds;
+        timer.Start();
+        // a hook for testing: start a film at once
+        if (Environment.GetEnvironmentVariable("LBA2_EDITOR_PLAY_FILM") is { Length: > 0 } filmName) StartFilm(filmName);
+        Focus();
+    }
+
+    // Key presses for the play view from the window that hosts it (they only reach it by themselves when it holds the keyboard focus).
+    public void ForwardKey(KeyEventArgs e, bool down)
+    {
+        if (down) Window_PreviewKeyDown(this, e); else Window_PreviewKeyUp(this, e);
     }
 
     private sealed record SceneItem(int Scene, string Label)
@@ -135,7 +145,7 @@ public partial class Lba1PlayWindow : Window
 
     private void Loadout_Click(object sender, RoutedEventArgs e)
     {
-        var window = new Lba1LoadoutWindow(loadout, ItemName) { Owner = this };
+        var window = new Lba1LoadoutWindow(loadout, ItemName) { Owner = Window.GetWindow(this) };
         if (window.ShowDialog() != true) return;
         runtime.ApplyLoadout(loadout);
     }
@@ -220,7 +230,7 @@ public partial class Lba1PlayWindow : Window
         names = names.Distinct(StringComparer.OrdinalIgnoreCase).Order().ToList();
         if (names.Count == 0) { StatusText.Text = "No films found: the game folder has no LBA.iso / LBA.GOG and no FLA folder."; return; }
         var items = names.Select((n, i) => (i, n)).ToList();
-        if (ListPickWindow.Pick(this, "Watch a film", items, 0, "The films come from the game's CD image.") is { } chosen) StartFilm(names[chosen]);
+        if (ListPickWindow.Pick(Window.GetWindow(this)!, "Watch a film", items, 0, "The films come from the game's CD image.") is { } chosen) StartFilm(names[chosen]);
     }
 
     private void StartFilm(string name)
@@ -284,7 +294,7 @@ public partial class Lba1PlayWindow : Window
         try
         {
             var voiceToUse = voices[nextVoice++ % voices.Length];
-            voiceToUse.Stream = new MemoryStream(wav);
+            voiceToUse.Stream = new MemoryStream(PcmVolume.Scale(wav, Audio.Effects / 100.0));
             if (sound.Repeat == 0) voiceToUse.PlayLooping(); else voiceToUse.Play();
         }
         catch (Exception error) when (error is InvalidOperationException or IOException) { DebugLog.Log($"film sound {sound.Sample}: {error.Message}"); }
@@ -302,6 +312,40 @@ public partial class Lba1PlayWindow : Window
 
     private bool lastTickReset;
 
+
+    // ---- the sound balance ----
+
+    // The levels to play at (the main window hands over the game's saved balance; the sliders here change it live).
+    public AudioLevels Audio { get; set; } = new();
+    private bool audioLoading;
+
+    // Shows the balance in the controls and applies it (sound and music switched on / off, the music's level).
+    public void ApplyAudio()
+    {
+        audioLoading = true;
+        try
+        {
+            MuteAllCheck.IsChecked = Audio.Mute;
+            SoundCheck.IsChecked = MusicCheck.IsChecked = !Audio.Mute;
+            MusicSlider.Value = Audio.Music; VoicesSlider.Value = Audio.Voices; EffectsSlider.Value = Audio.Effects;
+        }
+        finally { audioLoading = false; }
+        music.Volume = Audio.Music / 100.0;
+        if (Audio.Mute) music.Stop(); else if (runtime is not null) PlayMusicNumber(runtime.Music);
+    }
+
+    private void MuteAll_Click(object sender, RoutedEventArgs e)
+    {
+        Audio.Mute = MuteAllCheck.IsChecked == true;
+        ApplyAudio();
+    }
+
+    private void AudioSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (audioLoading || MusicSlider is null || VoicesSlider is null || EffectsSlider is null || music is null) return;      // (the sliders raise this while the XAML loads)
+        Audio.Music = (int)MusicSlider.Value; Audio.Voices = (int)VoicesSlider.Value; Audio.Effects = (int)EffectsSlider.Value;
+        music.Volume = Audio.Music / 100.0;
+    }
     // ---- voices ----
 
     private readonly SoundPlayer voice = new();
@@ -313,7 +357,7 @@ public partial class Lba1PlayWindow : Window
         try
         {
             if (data.Speech(textFile, textId) is not { } wav) return;
-            voice.Stream = new MemoryStream(wav);
+            voice.Stream = new MemoryStream(PcmVolume.Scale(wav, Audio.Voices / 100.0));
             voice.Play();
         }
         catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException)
@@ -339,7 +383,7 @@ public partial class Lba1PlayWindow : Window
         try
         {
             var voice = voices[nextVoice++ % voices.Length];
-            voice.Stream = new MemoryStream(wav);
+            voice.Stream = new MemoryStream(PcmVolume.Scale(wav, Audio.Effects / 100.0));
             voice.Play();
         }
         catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException)
@@ -697,6 +741,7 @@ public partial class Lba1PlayWindow : Window
         if (image is null || ZonesCheck.IsChecked != true) return;
         foreach (var z in runtime.Zones)
         {
+            if (ZoneFilter is { } wanted && !wanted(z.Type)) continue;      // the zone types ticked in the main window's Zones tab
             // the top face of the box
             var corners = new[] { (z.X0, z.Z0), (z.X1, z.Z0), (z.X1, z.Z1), (z.X0, z.Z1) };
             var points = new PointCollection(corners.Select(c => image.Project(c.Item1, Math.Max(z.Y0, z.Y1), c.Item2)));
@@ -713,6 +758,12 @@ public partial class Lba1PlayWindow : Window
     }
 
     private void Zones_Click(object sender, RoutedEventArgs e) => BuildZones();
+
+    // The zone types to draw changed (the main window's Zones tab).
+    public void RefreshZones() => BuildZones();
+
+    // Which zone types to draw (the main window's Zones tab); null draws them all.
+    public Func<int, bool>? ZoneFilter { get; set; }
 
     // The game camera shows exactly the game's 640 x 480 screen (at the zoom), centred in the window.
     private void GameView_Click(object sender, RoutedEventArgs e) => ApplyViewFrame();
@@ -865,10 +916,26 @@ public partial class Lba1PlayWindow : Window
         runtime.Place(x, y, z, runtime.Hero.Beta);
     }
 
-    private void Window_Closed(object? sender, EventArgs e)
+    // Ends the play session: the clock, the music and the sounds stop. The control is not used again after this.
+    public void Stop()
     {
         timer.Stop();
         music.Dispose();
         foreach (var voice in voices) voice.Dispose();
+    }
+}
+
+// The LBA1 play view in a window of its own, for the scene editor's Play button (the main window shows it in its own view).
+internal sealed class Lba1PlayHostWindow : Window
+{
+    public Lba1PlayHostWindow(Lba1Game game, Lba1ActorImages images, string directory, int scene)
+    {
+        Title = "LBA1 - play scene";
+        Width = 1180; Height = 780; MinWidth = 760; MinHeight = 480;
+        Background = new SolidColorBrush(Color.FromRgb(0x10, 0x14, 0x18));
+        var view = new Lba1PlayView(game, images, directory);
+        Content = view;
+        Loaded += (_, _) => view.Start(scene);
+        Closed += (_, _) => view.Stop();
     }
 }

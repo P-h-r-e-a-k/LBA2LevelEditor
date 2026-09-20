@@ -442,5 +442,19 @@ internal static class RuntimeTests
         Console.WriteLine($"  scenes visited: {string.Join(" -> ", rt.CubeHistory)}; hero now at ({rt.Hero.PosX}, {rt.Hero.PosY}, {rt.Hero.PosZ})");
         Check(rt.NumCube == 13, "walking out of the bedroom returns to Lupin Burg");
         Check(rt.Hero.PosX >= 51 * 512 - 256 && rt.Hero.PosX <= 54 * 512, "he comes out at the arch, not somewhere else in the town");
+
+        // the pink elf of the surprise changes, when they have been applied to these game files
+        var roomActors = data.Scene(61).Actors;
+        var pinkElfIndex = Enumerable.Range(1, roomActors.Count - 1).FirstOrDefault(i => !roomActors[i].IsSprite && roomActors[i].Entity == 49 && roomActors[i].Body == 42);
+        if (pinkElfIndex == 0) { Console.WriteLine("  (the pink elf isn't in these game files; skipping)"); return; }
+        var pinkElf = roomActors[pinkElfIndex];
+        rt = new Lba1Runtime(data);
+        rt.ChangeCube(61);
+        var elf = rt.Objects[pinkElfIndex];
+        Check(elf.GenBody == 42 && elf.Body != -1 && elf.Anim != -1, $"the pink elf gets a body (body id 42 -> {elf.Body}) and an animation ({elf.Anim}) from the Elf entity");
+        var facing = elf.Beta;
+        rt.Run(120);
+        Check(elf.Beta != facing, $"the pink elf turns to face Twinsen when he is near (facing {facing} -> {elf.Beta})");
+        Check(elf.PosY == pinkElf.Y, "the pink elf stands on the floor where it was put");
     }
 }

@@ -18,6 +18,8 @@ internal sealed class CommunityRendererBackend
     private readonly object directRenderLock = new();
     private string? directIsland;
     private bool directSession;
+    private volatile bool reloadRequested;   // set by ReloadCubes, acted on inside the next render's lock
+    private string? liveRoot;              // data root that stands in for the game folder while unsaved edits are previewed (LiveDataRoot)
     private string directFailure = "none";
     public string DirectFailure => directFailure;
     public RendererLibraryApi? RendererLibrary { get; }
@@ -60,6 +62,7 @@ internal sealed class CommunityRendererBackend
     {
         if (string.Equals(gameDirectory, path, StringComparison.OrdinalIgnoreCase)) return;
         ShutdownDirectRenderer();
+        liveRoot = null;
         gameDirectory = path;
     }
 
@@ -67,6 +70,37 @@ internal sealed class CommunityRendererBackend
     public void InvalidateLoadedIsland()
     {
         lock (directRenderLock) directIsland = null;
+    }
+
+    // Live preview of unsaved island edits: the renderer reads its data from `root` (a LiveDataRoot) instead of the game folder,
+    // until EndLive. The island there is rewritten as the edits are made and ReloadCubes makes the next frame read it.
+    public void BeginLive(string root)
+    {
+        lock (directRenderLock)
+        {
+            liveRoot = root;
+            if (directSession && RendererLibrary is not null) RendererLibrary.SetDataRoot(root);
+            directIsland = null;
+        }
+    }
+
+    public void EndLive()
+    {
+        lock (directRenderLock)
+        {
+            if (liveRoot is null) return;
+            liveRoot = null;
+            if (directSession && RendererLibrary is not null) RendererLibrary.SetDataRoot(gameDirectory);
+            directIsland = null;
+        }
+    }
+
+    public bool LiveActive => liveRoot is not null;
+
+    // The renderer keeps the cubes it has read in a cache that only loading the island again empties: the next frame does that.
+    public void ReloadCubes()
+    {
+        reloadRequested = true;   // consumed by the next frame: this is called on every preview refresh and must not wait for one in flight
     }
 
     public bool IsAvailable => File.Exists(enginePath) && Directory.Exists(gameDirectory);
@@ -94,15 +128,17 @@ internal sealed class CommunityRendererBackend
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
         {
+            if (interiorLoaded) { directFailure = "an interior scene is loaded"; return null; }
             RendererLibrary.SetDrawSky(drawSky);
             RendererLibrary.SetDrawSea(true);
             var baseName = islandName.ToLowerInvariant();
             if (!directSession)
             {
-                if (!RendererLibrary.SetDataRoot(gameDirectory)) { directFailure = "set data root failed"; return null; }
+                if (!RendererLibrary.SetDataRoot(liveRoot ?? gameDirectory)) { directFailure = "set data root failed"; return null; }
                 if (!RendererLibrary.Initialize()) { directFailure = "native initialize failed"; return null; }
                 directSession = true;
             }
+            if (reloadRequested) { reloadRequested = false; directIsland = null; }
             if (!string.Equals(directIsland, baseName, StringComparison.OrdinalIgnoreCase))
             {
                 if (RendererLibrary.LoadIsland(baseName) == 0) { directFailure = $"load island failed: {baseName}"; return null; }
@@ -163,14 +199,15 @@ internal sealed class CommunityRendererBackend
         {
             if (!directSession)
             {
-                if (!RendererLibrary.SetDataRoot(gameDirectory)) { directFailure = "set data root failed"; return null; }
+                if (!RendererLibrary.SetDataRoot(liveRoot ?? gameDirectory)) { directFailure = "set data root failed"; return null; }
                 if (!RendererLibrary.Initialize()) { directFailure = "native initialize failed"; return null; }
                 directSession = true;
             }
-            if (!RendererLibrary.LoadInteriorScene(numscene)) { directFailure = $"load interior scene failed: {numscene}"; return null; }
-            // The interior replaced the native actor/zone lists, so whichever island was loaded is
-            // gone: the next exterior render must load its island again even if it is the same name.
+            // Loading the interior replaces the native actor/zone lists, so whichever island was loaded is
+            // gone (even if the load fails part-way): the next exterior render must load its island again
+            // even if it is the same name.
             directIsland = null;
+            if (!RendererLibrary.LoadInteriorScene(numscene)) { directFailure = $"load interior scene failed: {numscene}"; return null; }
             RendererLibrary.GetInteriorCameraPosition(out cameraX, out cameraY, out cameraZ);
             if (!RendererLibrary.RenderInteriorFrame()) { directFailure = "native interior render returned failure"; return null; }
             var pointer = RendererLibrary.GetFramebuffer(out var width, out var height, out var pitch);
@@ -185,6 +222,31 @@ internal sealed class CommunityRendererBackend
 
     public const int InteriorCanvasWidth = 3712;
     public const int InteriorCanvasHeight = 2400;
+
+    // While an interior scene is what the native side holds, exterior renders and minimap snapshots (which reload an island
+    // and so replace the scene's actors and zones) must not run: one that was already queued behind the render lock when the
+    // scene was chosen would otherwise slip in between the load and the stitched render, or after them, and the interior view
+    // then reads (and renders from) another scene's state -- a sporadic native crash when picking a scene straight after an
+    // island. Cleared by ReleaseInterior() when the interior view is left.
+    private volatile bool interiorLoaded;
+    public bool InteriorLoaded => interiorLoaded;
+    public void ReleaseInterior() => interiorLoaded = false;
+
+    // RenderInteriorSceneDirect + RenderInteriorFullDirect as one step under the render lock.
+    public BitmapSource? RenderInteriorSceneFullDirect(int numscene, byte[] paletteBytes, out List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> actors, out InteriorOverlay overlay)
+    {
+        actors = new();
+        overlay = InteriorOverlay.Empty;
+        if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
+        lock (directRenderLock)
+        {
+            interiorLoaded = false;
+            var first = RenderInteriorSceneDirect(numscene, paletteBytes, out _, out _, out _);
+            var canvas = first is null ? null : RenderInteriorFullDirect(paletteBytes, out actors, out overlay);
+            interiorLoaded = canvas is not null;
+            return canvas;
+        }
+    }
 
     // Renders the whole scene RenderInteriorSceneDirect last loaded into one
     // InteriorCanvasWidth x InteriorCanvasHeight indexed bitmap (the native
@@ -530,10 +592,11 @@ internal sealed class CommunityRendererBackend
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady || presentCubes.Count == 0) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
         {
+            if (interiorLoaded) { directFailure = "an interior scene is loaded"; return null; }
             var baseName = islandName.ToLowerInvariant();
             if (!directSession)
             {
-                if (!RendererLibrary.SetDataRoot(gameDirectory)) { directFailure = "set data root failed"; return null; }
+                if (!RendererLibrary.SetDataRoot(liveRoot ?? gameDirectory)) { directFailure = "set data root failed"; return null; }
                 if (!RendererLibrary.Initialize()) { directFailure = "native initialize failed"; return null; }
                 directSession = true;
             }
@@ -659,6 +722,7 @@ internal sealed class CommunityRendererBackend
     {
         lock (directRenderLock)
         {
+            interiorLoaded = false;
             if (!directSession || RendererLibrary is null) return;
             RendererLibrary.Shutdown();
             directSession = false;

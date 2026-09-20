@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -11,13 +12,22 @@ using LBA2LevelEditor.Terrain;
 
 namespace LBA2LevelEditor;
 
-// Tools > LBA2: island terrain editor. An island (.ILE) from above, edited with brushes: heights (with levelling tools for
-// uneven islands), the baked light and shadows, the ground texture / game codes / water depth, and the decor objects. Works
-// on IslandFile (Terrain/), saves through it (a .bak of the original, only changed records rewritten).
-internal sealed class IslandEditorWindow : Window
+// The island terrain editor, hosted by the main window's Build mode (it is not a window of its own). An island (.ILE) from
+// above, edited with brushes: heights (with levelling tools for uneven islands), the baked light and shadows, the ground
+// texture / game codes / water depth, and the decor objects. Works on IslandFile (Terrain/), saves through it (a .bak of the
+// original, only changed records rewritten).
+//
+// It hands out two pieces for the host to place: Panel (undo / save, tools, brush, settings, object, baked light, ground atlas)
+// and MapArea (an optional top-down map of the island with its height profile). The host's own 3D view is the main way to edit:
+// it finds the ground point under the mouse and feeds it to PointerDown / PointerMove / PointerUp; every change raises Edited so
+// the host can show it live. The host says which island to open and hears about status text and saves through events.
+internal sealed class IslandEditorView
 {
+    private const string Caption = "Island terrain editor";
+
     private enum Tool
     {
+        Navigate,
         Raise, Lower, Smooth, Flatten, LevelPlane, Ramp, Terrace, Relief,
         PaintLight, Darken, Lighten, RemoveShadows, CastShadows, BlobShadow, WaterDepth,
         Eyedropper, PaintTile, PaintTexture, PaintCode, FixDiagonals,
@@ -26,6 +36,10 @@ internal sealed class IslandEditorWindow : Window
 
     private static readonly (string Group, (Tool Tool, string Name, string Tip)[] Items)[] ToolGroups =
     {
+        ("VIEW", new[]
+        {
+            (Tool.Navigate, "Move the view", "No editing: drag to orbit, the wheel zooms, the middle button pans (the view is never changed by clicking)"),
+        }),
         ("HEIGHT", new[]
         {
             (Tool.Raise, "Raise", "Hold to build the ground up under the brush"),
@@ -64,14 +78,14 @@ internal sealed class IslandEditorWindow : Window
         }),
     };
 
-    private readonly string gameDirectory;
+    private string gameDirectory;
     private IslandFile? island;
     private IslandHistory? history;
     private IslandMapRenderer? renderer;
     private WriteableBitmap? bitmap;
     private byte[] palette = Array.Empty<byte>();
     private MapView view = MapView.Terrain;
-    private Tool tool = Tool.Raise;
+    private Tool tool = Tool.Navigate;
 
     // view
     private double zoom = 1;
@@ -91,8 +105,8 @@ internal sealed class IslandEditorWindow : Window
     private readonly DispatcherTimer strokeTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
 
     // controls
-    private readonly ComboBox islandBox = new();
     private readonly ComboBox viewBox = new();
+    private readonly CheckBox mapBox = new() { Content = "Show the top-down map instead of the 3D view" };
     private readonly Canvas world = new();
     private readonly Image mapImage = new();
     private readonly Canvas overlay = new();
@@ -118,7 +132,6 @@ internal sealed class IslandEditorWindow : Window
     private readonly TextBox shadowDepthBox = new() { Text = "5" };
     private readonly CheckBox terrainShadowBox = new() { Content = "Terrain casts shadows", IsChecked = true };
     private readonly CheckBox decorShadowBox = new() { Content = "Objects cast shadows" };
-    private readonly TextBlock status = new() { Foreground = Brushes.Gainsboro, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock info = new() { Foreground = Brushes.Gainsboro, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
     private readonly Canvas profile = new() { Height = 96, Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), ClipToBounds = true };
     private readonly Image atlasImage = new() { Width = 256, Height = 256, Stretch = Stretch.Fill };
@@ -130,119 +143,155 @@ internal sealed class IslandEditorWindow : Window
     private readonly Dictionary<Tool, RadioButton> toolButtons = new();
     private readonly TextBox[] decorFields = Enumerable.Range(0, 8).Select(_ => new TextBox { Padding = new Thickness(2) }).ToArray();
     private readonly StackPanel decorPanel = new();
-    private bool loadingFields, switching;
+    private bool loadingFields;
     private string? currentName;
+    private static readonly Brush Fore = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
 
-    public IslandEditorWindow(string gameDirectory, string? startIsland = null)
+    public event Action<string>? StatusChanged;
+    public event Action? Saved;
+    public event Action? StateChanged;
+    public event Action? Edited;                 // the island changed (a stroke tick, a commit, an undo): the host can refresh its own view
+    public event Action<bool>? MapRequested;     // the top-down map was ticked / unticked in the panel
+
+    public UIElement MapArea { get; private set; } = null!;
+    public UIElement Panel { get; private set; } = null!;
+    public string? CurrentName => currentName;
+    public bool Dirty => history is { Dirty: true };
+    public string? UndoLabel => history?.CanUndo == true ? history.UndoLabel ?? "" : null;
+    public string? RedoLabel => history?.CanRedo == true ? history.RedoLabel ?? "" : null;
+    private Window? Owner => Window.GetWindow(MapArea);
+    private bool mapActive;
+    // Whether the top-down map is the visible surface; while it isn't nothing is drawn for it.
+    public bool MapActive
+    {
+        get => mapActive;
+        set
+        {
+            if (mapActive == value) return;
+            mapActive = value;
+            if (value && renderer is not null) { RedrawAll(); FitView(); }
+            if (mapBox.IsChecked != value) mapBox.IsChecked = value;
+        }
+    }
+
+
+    public IslandEditorView(string gameDirectory)
     {
         this.gameDirectory = gameDirectory;
-        Title = "LBA2: island terrain editor";
-        Width = 1500; Height = 950;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x1B, 0x19));
-        Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
         BuildLayout();
-
-        foreach (var path in Directory.EnumerateFiles(gameDirectory, "*.ILE").Where(p => !System.IO.Path.GetFileName(p).StartsWith("_", StringComparison.Ordinal)).OrderBy(p => p))
-            islandBox.Items.Add(System.IO.Path.GetFileName(path));
-        islandBox.SelectionChanged += (_, _) => { if (!switching && islandBox.SelectedItem is string name) TryOpen(name); };
-        var start = startIsland is not null && islandBox.Items.Contains(startIsland) ? startIsland : islandBox.Items.Contains("DESERT.ILE") ? "DESERT.ILE" : islandBox.Items.OfType<string>().FirstOrDefault();
         strokeTimer.Tick += (_, _) => { if (stroking) StrokeTick(); };
-        Closing += OnClosing;
-        Loaded += (_, _) => { if (start is not null) islandBox.SelectedItem = start; };
     }
+
+    // The game folder can change under File > Settings.
+    public string GameDirectory { get => gameDirectory; set => gameDirectory = value; }
 
     // ---- layout ---------------------------------------------------------------------------------------------------------------------------
 
     private static Brush Muted => new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B));
 
+    private static readonly Style ButtonStyle = (Style)System.Windows.Markup.XamlReader.Parse(
+        "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>" +
+        "<Setter Property='Foreground' Value='#D5D8C6'/><Setter Property='Background' Value='#1F2B25'/><Setter Property='BorderBrush' Value='#3E4C44'/>" +
+        "<Setter Property='Padding' Value='9,3'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>" +
+        "<Border x:Name='B' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' Padding='{TemplateBinding Padding}'>" +
+        "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers>" +
+        "<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='B' Property='Background' Value='#2C3C33'/></Trigger>" +
+        "<Trigger Property='IsPressed' Value='True'><Setter TargetName='B' Property='Background' Value='#3A4F43'/></Trigger>" +
+        "<Trigger Property='IsEnabled' Value='False'><Setter TargetName='B' Property='Opacity' Value='0.45'/></Trigger>" +
+        "</ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>");
+
     private void BuildLayout()
     {
-        var root = new DockPanel();
-
-        // top bar
-        var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 6, 8, 6) };
-        DockPanel.SetDock(top, Dock.Top);
-        top.Children.Add(Label("Island"));
-        islandBox.Width = 150; islandBox.Margin = new Thickness(0, 0, 12, 0);
-        top.Children.Add(islandBox);
-        top.Children.Add(Label("View"));
-        foreach (var (v, name) in new[] { (MapView.Terrain, "Terrain (as lit)"), (MapView.Height, "Height"), (MapView.Light, "Baked light"), (MapView.Shadows, "Baked shadows (vs plain light)"), (MapView.GameCode, "Game codes"), (MapView.WaterDepth, "Water depth") })
-            viewBox.Items.Add(new ComboBoxItem { Content = name, Tag = v });
-        viewBox.SelectedIndex = 0; viewBox.Width = 210; viewBox.Margin = new Thickness(0, 0, 12, 0);
-        viewBox.SelectionChanged += (_, _) => { if (viewBox.SelectedItem is ComboBoxItem { Tag: MapView v }) { view = v; RedrawAll(); } };
-        top.Children.Add(viewBox);
-        foreach (var (button, handler) in new (Button, RoutedEventHandler)[]
+        // action bar at the top of the panel: undo / redo / save, weld, check, and the optional top-down map
+        var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 2) };
+        undoButton.ToolTip = "Undo (Ctrl+Z)"; redoButton.ToolTip = "Redo (Ctrl+Y)"; saveButton.ToolTip = "Save the island (Ctrl+S); the original is kept as .bak";
+        foreach (var (button, handler, tip) in new (Button, RoutedEventHandler, string?)[]
         {
-            (undoButton, (_, _) => DoUndo()), (redoButton, (_, _) => DoRedo()), (saveButton, (_, _) => Save()),
-            (new Button { Content = "Play a scene…" }, (_, _) => Play()), (new Button { Content = "Fit" }, (_, _) => FitView()),
-            (new Button { Content = "Weld cube borders" }, (_, _) => Weld()), (new Button { Content = "Check" }, (_, _) => Check()),
+            (undoButton, (_, _) => DoUndo(), null), (redoButton, (_, _) => DoRedo(), null), (saveButton, (_, _) => Save(), null),
+            (new Button { Content = "Weld borders" }, (_, _) => Weld(), "Makes the shared vertices on cube borders agree again"),
+            (new Button { Content = "Check" }, (_, _) => Check(), "Looks for anything the game may not like"),
         })
         {
-            button.Padding = new Thickness(12, 3, 12, 3); button.Margin = new Thickness(0, 0, 6, 0);
+            button.Style = ButtonStyle; button.Margin = new Thickness(0, 0, 6, 6);
+            if (tip is not null) button.ToolTip = tip;
             button.Click += handler;
-            top.Children.Add(button);
+            actions.Children.Add(button);
         }
-        root.Children.Add(top);
+        var liveNote = new TextBlock { Text = "The 3D view shows your edits as you make them (from a preview copy). Save writes the island into the game folder.", TextWrapping = TextWrapping.Wrap, Foreground = Muted, FontSize = 10, Margin = new Thickness(0, 2, 0, 6) };
+        foreach (var (v, name) in new[] { (MapView.Terrain, "Terrain (as lit)"), (MapView.Height, "Height"), (MapView.Light, "Baked light"), (MapView.Shadows, "Baked shadows (vs plain light)"), (MapView.GameCode, "Game codes"), (MapView.WaterDepth, "Water depth") })
+            viewBox.Items.Add(new ComboBoxItem { Content = name, Tag = v });
+        viewBox.SelectedIndex = 0; viewBox.Margin = new Thickness(0, 4, 0, 0);
+        viewBox.SelectionChanged += (_, _) => { if (viewBox.SelectedItem is ComboBoxItem { Tag: MapView v }) { view = v; if (mapActive) RedrawAll(); } };
+        mapBox.Foreground = Fore; mapBox.Margin = new Thickness(0, 2, 0, 0);
+        mapBox.ToolTip = "Replace the 3D view with a map from above that can also show the height, the baked light and shadows, the game codes and the water depth";
+        mapBox.Checked += (_, _) => MapRequested?.Invoke(true);
+        mapBox.Unchecked += (_, _) => MapRequested?.Invoke(false);
+        var mapRow = new StackPanel();
+        mapRow.Children.Add(mapBox);
+        mapRow.Children.Add(viewBox);
+        var fitButton = new Button { Content = "Fit the map", Style = ButtonStyle, Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+        fitButton.Click += (_, _) => FitView();
+        mapRow.Children.Add(fitButton);
 
-        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), Child = status };
-        DockPanel.SetDock(bottom, Dock.Bottom);
-        root.Children.Add(bottom);
-
-        // left: tools and options
-        var left = new StackPanel { Margin = new Thickness(8) };
+        // panel: actions, tools, brush, settings, pointer info, object, baked light, ground atlas
+        var stack = new StackPanel { Margin = new Thickness(14, 10, 14, 14) };
+        stack.Children.Add(actions);
+        stack.Children.Add(liveNote);
+        stack.Children.Add(Section("TOP-DOWN MAP", mapRow, open: false, out _));
+        var tools = new StackPanel();
         foreach (var (group, items) in ToolGroups)
         {
-            left.Children.Add(Heading(group));
+            tools.Children.Add(Heading(group));
+            var grid = new UniformGrid { Columns = 2 };
             foreach (var (t, name, tip) in items)
             {
-                var button = new RadioButton { Content = name, GroupName = "tool", ToolTip = tip, Margin = new Thickness(0, 1, 0, 1), Foreground = Foreground };
+                var button = new RadioButton { Content = name, GroupName = "tool", ToolTip = tip, Margin = new Thickness(0, 1, 4, 1), Foreground = Fore };
                 var captured = t;
                 button.Checked += (_, _) => SelectTool(captured);
                 toolButtons[t] = button;
-                left.Children.Add(button);
+                grid.Children.Add(button);
             }
+            tools.Children.Add(grid);
         }
-        left.Children.Add(Heading("BRUSH"));
-        left.Children.Add(SliderRow("Radius", radius, "vertices (cells); [ and ] change it"));
-        left.Children.Add(SliderRow("Hardness", hardness, "how much of the radius is full strength"));
-        left.Children.Add(SliderRow("Strength", strength, "rate while held"));
-        left.Children.Add(Heading("TOOL SETTINGS"));
-        left.Children.Add(FieldRow("Level", levelBox, "world units; the height Flatten pulls to"));
-        left.Children.Add(FieldRow("Light value", lightBox, "0-15: Set light / Blob depth / Water depth"));
-        left.Children.Add(FieldRow("Terrace step", stepBox, "world units"));
-        left.Children.Add(FieldRow("Relief factor", reliefBox, "<1 flatten, >1 exaggerate"));
+        stack.Children.Add(Section("TOOLS", tools, open: true, out _));
+
+        var brush = new StackPanel();
+        brush.Children.Add(SliderRow("Radius", radius, "vertices (cells); [ and ] change it"));
+        brush.Children.Add(SliderRow("Hardness", hardness, "how much of the radius is full strength"));
+        brush.Children.Add(SliderRow("Strength", strength, "rate while held"));
+        stack.Children.Add(Section("BRUSH", brush, open: true, out _));
+
+        var settings = new StackPanel();
+        settings.Children.Add(FieldRow("Level", levelBox, "world units; the height Flatten pulls to"));
+        settings.Children.Add(FieldRow("Light value", lightBox, "0-15: Set light / Blob depth / Water depth"));
+        settings.Children.Add(FieldRow("Terrace step", stepBox, "world units"));
+        settings.Children.Add(FieldRow("Relief factor", reliefBox, "<1 flatten, >1 exaggerate"));
         for (var i = 0; i < 16; i++) codeBox.Items.Add($"{i}: {IslandPolygon.CodeJeuNames[i]}");
         codeBox.SelectedIndex = 1;
-        var codeRow = FieldRow("Game code", codeBox, "what the ground does");
-        left.Children.Add(codeRow);
-        left.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL for Add object"));
-        horizontalBox.Foreground = followBox.Foreground = diagonalBox.Foreground = Foreground;
-        terrainShadowBox.Foreground = decorShadowBox.Foreground = Foreground;
-        left.Children.Add(horizontalBox); left.Children.Add(followBox); left.Children.Add(diagonalBox);
-        var scroll = new ScrollViewer { Width = 270, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = left };
-        DockPanel.SetDock(scroll, Dock.Left);
-        root.Children.Add(scroll);
+        settings.Children.Add(FieldRow("Game code", codeBox, "what the ground does"));
+        settings.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL for Add object"));
+        horizontalBox.Foreground = followBox.Foreground = diagonalBox.Foreground = Fore;
+        terrainShadowBox.Foreground = decorShadowBox.Foreground = Fore;
+        settings.Children.Add(horizontalBox); settings.Children.Add(followBox); settings.Children.Add(diagonalBox);
+        stack.Children.Add(Section("TOOL SETTINGS", settings, open: true, out _));
 
-        // right: info, object, bake, atlas
-        var right = new StackPanel { Margin = new Thickness(8) };
-        right.Children.Add(Heading("UNDER THE POINTER"));
-        right.Children.Add(info);
-        right.Children.Add(Heading("SELECTED OBJECT"));
+        stack.Children.Add(Section("UNDER THE POINTER", info, open: true, out _));
+
         BuildDecorPanel();
-        right.Children.Add(decorPanel);
-        right.Children.Add(Heading("BAKE SETTINGS"));
-        right.Children.Add(FieldRow("Azimuth °", azimuthBox, "direction the light comes from (the cube's BetaLight is 360 - azimuth)"));
-        right.Children.Add(FieldRow("Elevation °", elevationBox, "height of the light above the horizon"));
-        right.Children.Add(FieldRow("Gain", gainBox, "brightness = offset + gain x (normal . light)"));
-        right.Children.Add(FieldRow("Offset", offsetBox, ""));
-        right.Children.Add(FieldRow("Shadow level", shadowLevelBox, "the brightest a shadowed vertex may be (0-15)"));
-        right.Children.Add(FieldRow("Shadow depth", shadowDepthBox, "levels a footprint shadow under an object darkens by (retail buildings: about 5)"));
-        right.Children.Add(terrainShadowBox); right.Children.Add(decorShadowBox);
+        stack.Children.Add(Section("SELECTED OBJECT", decorPanel, open: true, out _));
+
+        var bake = new StackPanel();
+        bake.Children.Add(FieldRow("Azimuth °", azimuthBox, "direction the light comes from (the cube's BetaLight is 360 - azimuth)"));
+        bake.Children.Add(FieldRow("Elevation °", elevationBox, "height of the light above the horizon"));
+        bake.Children.Add(FieldRow("Gain", gainBox, "brightness = offset + gain x (normal . light)"));
+        bake.Children.Add(FieldRow("Offset", offsetBox, ""));
+        bake.Children.Add(FieldRow("Shadow level", shadowLevelBox, "the brightest a shadowed vertex may be (0-15)"));
+        bake.Children.Add(FieldRow("Shadow depth", shadowDepthBox, "levels a footprint shadow under an object darkens by (retail buildings: about 5)"));
+        bake.Children.Add(terrainShadowBox); bake.Children.Add(decorShadowBox);
         var bakeButtons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         void BakeButton(string text, string tip, RoutedEventHandler handler)
         {
-            var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 6) };
+            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
             b.Click += handler; bakeButtons.Children.Add(b);
         }
         BakeButton("Use the cube's light", "Reads the azimuth and elevation from the island's first cube", (_, _) => LoadBakeFromCube());
@@ -250,18 +299,20 @@ internal sealed class IslandEditorWindow : Window
         BakeButton("Add cast shadows", "Darkens vertices the terrain / objects shade, everywhere", (_, _) => BakeWhole(true));
         BakeButton("Shadows under objects", "Bakes a footprint shadow under every object at least 2 cells across (like the retail buildings)", (_, _) => FootprintsAll(false));
         BakeButton("Remove all shadows", "Lifts every shadowed vertex back to the plain lighting", (_, _) => RemoveAllShadows());
-        right.Children.Add(bakeButtons);
-        right.Children.Add(Heading("GROUND ATLAS (drag a square for Paint atlas tile)"));
+        bake.Children.Add(bakeButtons);
+        stack.Children.Add(Section("BAKED LIGHT AND SHADOWS", bake, open: false, out _));
+
+        var atlas = new StackPanel();
+        atlas.Children.Add(new TextBlock { Text = "Drag a square, then use Paint atlas tile.", Foreground = Muted, FontSize = 10, Margin = new Thickness(0, 0, 0, 4) });
         atlasCanvas.Children.Add(atlasImage); atlasCanvas.Children.Add(atlasSelection);
         atlasCanvas.MouseLeftButtonDown += AtlasDown; atlasCanvas.MouseMove += AtlasMove; atlasCanvas.MouseLeftButtonUp += (_, _) => atlasCanvas.ReleaseMouseCapture();
-        right.Children.Add(new Border { BorderBrush = Muted, BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left });
-        var rightScroll = new ScrollViewer { Width = 290, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = right };
-        DockPanel.SetDock(rightScroll, Dock.Right);
-        root.Children.Add(rightScroll);
+        atlas.Children.Add(new Border { BorderBrush = Muted, BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left });
+        stack.Children.Add(Section("GROUND ATLAS", atlas, open: false, out openAtlas));
+        Panel = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = stack };
 
-        // centre: the map and the profile strip
+        // map area: the map and the profile strip
         DockPanel.SetDock(profile, Dock.Bottom);
-        var centre = new DockPanel();
+        var centre = new DockPanel { ClipToBounds = true };
         centre.Children.Add(profile);
         RenderOptions.SetBitmapScalingMode(mapImage, BitmapScalingMode.NearestNeighbor);
         world.Children.Add(mapImage); world.Children.Add(overlay); world.Children.Add(brushCircle);
@@ -276,11 +327,24 @@ internal sealed class IslandEditorWindow : Window
         viewport.MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { panning = false; viewport.ReleaseMouseCapture(); } };
         viewport.SizeChanged += (_, _) => { if (renderer is not null && zoom == 1 && pan == default) FitView(); };
         centre.Children.Add(viewport);
-        root.Children.Add(centre);
-        Content = root;
+        MapArea = centre;
 
-        PreviewKeyDown += OnKey;
-        toolButtons[Tool.Raise].IsChecked = true;
+        toolButtons[Tool.Navigate].IsChecked = true;
+    }
+
+    private Action<bool> openAtlas = _ => { };
+
+    // A collapsible group in the side panel.
+    private static UIElement Section(string title, UIElement content, bool open, out Action<bool> setOpen)
+    {
+        var body = new Border { Child = content, Visibility = open ? Visibility.Visible : Visibility.Collapsed, Padding = new Thickness(0, 2, 0, 4) };
+        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Foreground = Muted, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2) };
+        void Set(bool show) { body.Visibility = show ? Visibility.Visible : Visibility.Collapsed; header.Text = (show ? "▾  " : "▸  ") + title; }
+        header.MouseLeftButtonDown += (_, _) => Set(body.Visibility != Visibility.Visible);
+        setOpen = Set;
+        var panel = new StackPanel();
+        panel.Children.Add(header); panel.Children.Add(body);
+        return panel;
     }
 
     private static TextBlock Label(string text) => new() { Text = text, Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
@@ -294,6 +358,12 @@ internal sealed class IslandEditorWindow : Window
         var text = Label(label); text.ToolTip = tip;
         grid.Children.Add(text);
         box.ToolTip = tip; box.Padding = new Thickness(3);
+        if (box is TextBox)
+        {
+            box.Background = new SolidColorBrush(Color.FromRgb(0x0F, 0x15, 0x12));
+            box.Foreground = new SolidColorBrush(Color.FromRgb(0xDC, 0xE0, 0xC8));
+            box.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x47, 0x40));
+        }
         Grid.SetColumn(box, 1);
         grid.Children.Add(box);
         return grid;
@@ -320,7 +390,7 @@ internal sealed class IslandEditorWindow : Window
         var buttons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         void B(string text, string tip, RoutedEventHandler handler)
         {
-            var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 6) };
+            var b = new Button { Content = text, ToolTip = tip, Style = ButtonStyle, Margin = new Thickness(0, 0, 6, 6) };
             b.Click += handler; buttons.Children.Add(b);
         }
         B("Apply", "Writes the fields to the object (the ZV moves with it)", (_, _) => ApplyDecorFields());
@@ -335,14 +405,12 @@ internal sealed class IslandEditorWindow : Window
 
     // ---- opening, saving --------------------------------------------------------------------------------------------------------------------
 
-    private void TryOpen(string name)
+    // Opens an island of the game folder (by file name, e.g. "DESERT.ILE"); false when the unsaved changes of the island now open
+    // were neither saved nor discarded (the user cancelled) or the file couldn't be read.
+    public bool Open(string name, bool reload = false)
     {
-        if (!ConfirmDiscard())
-        {
-            switching = true; islandBox.SelectedItem = currentName; switching = false;
-            return;
-        }
-        currentName = name;
+        if (!reload && island is not null && string.Equals(name, currentName, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!ConfirmDiscard()) return false;
         try
         {
             var path = System.IO.Path.Combine(gameDirectory, name);
@@ -362,11 +430,14 @@ internal sealed class IslandEditorWindow : Window
             RedrawAll(); FitView(); UpdateButtons();
             var (lo, hi) = IslandOps.HeightRange(island);
             SetStatus($"{name}: {island.Cubes.Count} cubes, height {lo}..{hi}, {island.Cubes.Values.Sum(c => c.Decors.Count)} objects. Left button edits, right/middle drag pans, wheel zooms.");
-            Title = $"LBA2: island terrain editor - {name}  [{gameDirectory}]";
+            currentName = name;
+            StateChanged?.Invoke();
+            return true;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
-            MessageBox.Show(this, $"Couldn't open {name}: {e.Message}", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Owner, $"Couldn't open {name}: {e.Message}", Caption, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
         }
     }
 
@@ -387,25 +458,25 @@ internal sealed class IslandEditorWindow : Window
         return bmp;
     }
 
-    private bool ConfirmDiscard()
+    // Asks what to do with unsaved changes; false = the user cancelled (or the save failed), so the caller must stay where it is.
+    public bool ConfirmDiscard()
     {
         if (history is not { Dirty: true }) return true;
-        var answer = MessageBox.Show(this, "Save the changes to this island first?", Title, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        var answer = MessageBox.Show(Owner, $"Save the changes to {currentName ?? "this island"} first?\n\nYes saves them, No throws them away.", Caption, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Cancel) return false;
         if (answer == MessageBoxResult.Yes) return Save();
+        // thrown away: drop the edited copy, so the island is read from disk again next time and nothing asks twice
+        island = null; history = null; renderer = null; bitmap = null; currentName = null; selected = null;
+        mapImage.Source = null; overlay.Children.Clear(); profile.Children.Clear(); decorPanel.IsEnabled = false;
+        StateChanged?.Invoke();
         return true;
     }
 
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
-    {
-        if (!ConfirmDiscard()) e.Cancel = true;
-    }
-
-    private bool Save()
+    public bool Save()
     {
         if (island is null || history is null) return true;
         var problems = IslandValidator.Validate(island).Where(p => p.IsError).ToList();
-        if (problems.Count > 0 && MessageBox.Show(this, "The island has problems the game may not like:\n\n" + string.Join("\n", problems.Take(8).Select(p => "• " + p.Message)) + "\n\nSave anyway?", Title, MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        if (problems.Count > 0 && MessageBox.Show(Owner, "The island has problems the game may not like:\n\n" + string.Join("\n", problems.Take(8).Select(p => "• " + p.Message)) + "\n\nSave anyway?", Caption, MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
             return false;
         try
         {
@@ -413,31 +484,21 @@ internal sealed class IslandEditorWindow : Window
             history.MarkSaved();
             UpdateButtons();
             SetStatus($"Saved {System.IO.Path.GetFileName(island.Path)} (the original is kept as .bak).");
+            Saved?.Invoke();
             return true;
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, $"Couldn't save: {e.Message}", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Owner, $"Couldn't save: {e.Message}", Caption, MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
-    }
-
-    private void Play()
-    {
-        if (island is null) return;
-        if (history is { Dirty: true } && MessageBox.Show(this, "The game plays what is saved on disk. Save the island first?", Title, MessageBoxButton.YesNo) == MessageBoxResult.Yes && !Save()) return;
-        var scenes = Lba2SceneList.Load(gameDirectory);
-        var dialog = new Lba2PlayWindow(scenes, Lba2Play.LastOptions?.Scene ?? 0) { Owner = this };
-        if (dialog.ShowDialog() != true || dialog.Options is not { } options) return;
-        if (Lba2Play.Launch(gameDirectory, options, out var problem) is null) MessageBox.Show(this, problem ?? "The game didn't start.", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
-        else SetStatus($"Started LBA2 in scene {options.Scene}.");
     }
 
     private void Check()
     {
         if (island is null) return;
         var problems = IslandValidator.Validate(island);
-        MessageBox.Show(this, problems.Count == 0 ? "No problems found." : string.Join("\n", problems.Take(30).Select(p => (p.IsError ? "ERROR  " : "note   ") + p.Message)), "Island check", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(Owner, problems.Count == 0 ? "No problems found." : string.Join("\n", problems.Take(30).Select(p => (p.IsError ? "ERROR  " : "note   ") + p.Message)), "Island check", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void Weld()
@@ -453,9 +514,11 @@ internal sealed class IslandEditorWindow : Window
     private void UpdateButtons()
     {
         undoButton.IsEnabled = history?.CanUndo == true; redoButton.IsEnabled = history?.CanRedo == true;
-        undoButton.Content = history?.UndoLabel is { } u ? $"Undo {u}" : "Undo";
-        redoButton.Content = history?.RedoLabel is { } r ? $"Redo {r}" : "Redo";
+        undoButton.ToolTip = history?.UndoLabel is { } u ? $"Undo {u} (Ctrl+Z)" : "Undo (Ctrl+Z)";
+        redoButton.ToolTip = history?.RedoLabel is { } r ? $"Redo {r} (Ctrl+Y)" : "Redo (Ctrl+Y)";
+        StateChanged?.Invoke();
         saveButton.Content = history?.Dirty == true ? "Save *" : "Save";
+        Edited?.Invoke();
     }
 
     private void DoUndo() { if (history?.Undo() == true) { ReselectAfterHistory(); } }
@@ -464,24 +527,27 @@ internal sealed class IslandEditorWindow : Window
 
     // ---- drawing --------------------------------------------------------------------------------------------------------------------------
 
-    private void SetStatus(string text) => status.Text = text;
+    private void SetStatus(string text) => StatusChanged?.Invoke(text);
 
     private void RedrawAll()
     {
         if (renderer is null || bitmap is null || island is null) return;
-        var (lo, hi) = IslandOps.HeightRange(island);
-        renderer.HeightMin = lo; renderer.HeightMax = Math.Max(lo + 1, hi);
-        renderer.RenderAll(view);
-        bitmap.WritePixels(new Int32Rect(0, 0, renderer.PixelWidth, renderer.PixelHeight), renderer.Pixels, renderer.PixelWidth * 4, 0);
-        RebuildOverlay();
+        if (mapActive)
+        {
+            var (lo, hi) = IslandOps.HeightRange(island);
+            renderer.HeightMin = lo; renderer.HeightMax = Math.Max(lo + 1, hi);
+            renderer.RenderAll(view);
+            bitmap.WritePixels(new Int32Rect(0, 0, renderer.PixelWidth, renderer.PixelHeight), renderer.Pixels, renderer.PixelWidth * 4, 0);
+            RebuildOverlay();
+            DrawProfile();
+        }
         UpdateButtons();
-        DrawProfile();
     }
 
     // Redraws the cells around a brush stamp.
     private void RedrawAround(double gx, double gz, double reach)
     {
-        if (renderer is null || bitmap is null) return;
+        if (!mapActive || renderer is null || bitmap is null) return;
         var x0 = (int)Math.Floor(gx - reach) - 2; var x1 = (int)Math.Ceiling(gx + reach) + 1;
         var z0 = (int)Math.Floor(gz - reach) - 2; var z1 = (int)Math.Ceiling(gz + reach) + 1;
         x0 = Math.Max(x0, renderer.OriginX); z0 = Math.Max(z0, renderer.OriginZ);
@@ -498,7 +564,7 @@ internal sealed class IslandEditorWindow : Window
     private void RebuildOverlay()
     {
         overlay.Children.Clear();
-        if (renderer is null || island is null) return;
+        if (!mapActive || renderer is null || island is null) return;
         var thin = 1 / zoom;
         // cube borders
         var grid = new GeometryGroup();
@@ -595,6 +661,7 @@ internal sealed class IslandEditorWindow : Window
         tool = t; rampStart = null;
         if (renderer is not null) RebuildOverlay();
         brushCircle.Visibility = t is Tool.SelectDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow ? Visibility.Collapsed : brushCircle.Visibility;
+        if (t == Tool.PaintTile) openAtlas(true);
         var tip = ToolGroups.SelectMany(g => g.Items).First(i => i.Tool == t).Tip;
         SetStatus(tip);
     }
@@ -619,7 +686,7 @@ internal sealed class IslandEditorWindow : Window
     private void Whole(string label, Func<int> action)
     {
         if (island is null || history is null) return;
-        Cursor = Cursors.Wait;
+        Mouse.OverrideCursor = Cursors.Wait;
         try
         {
             history.Begin();
@@ -627,7 +694,7 @@ internal sealed class IslandEditorWindow : Window
             history.Commit(label);
             SetStatus($"{label}: {n} vertices changed.");
         }
-        finally { Cursor = null; }
+        finally { Mouse.OverrideCursor = null; }
         RedrawAll();
     }
 
@@ -668,14 +735,68 @@ internal sealed class IslandEditorWindow : Window
 
     private BrushRegion Brush() => new(pointer.Gx, pointer.Gz, radius.Value, hardness.Value);
 
+    // ---- the pointer: from the top-down map here, or from the host's 3D view through PointerDown / Move / Up ----------------------------------
+
+    private double pointerTolerance = 3;      // how close (cells) a click must be to an object to pick it
+
+    private void Capture() { if (mapActive) viewport.CaptureMouse(); }
+    private void ReleaseCapture() { if (mapActive) viewport.ReleaseMouseCapture(); }
+
+    public bool Busy => stroking || draggingDecor;
+    public bool NavigateTool => tool == Tool.Navigate;
+    // tools that paint with the round brush (the host draws the brush ring for them)
+    public bool BrushTool => tool is not (Tool.Navigate or Tool.Eyedropper or Tool.Ramp or Tool.SelectDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow);
+    public double BrushRadius => radius.Value;
+    public (double X, double Y, double Z)? SelectedObjectWorld => selected is { } s ? WorldOf(s) : null;
+    public string? IslandPath => island?.Path;
+    public (int Lo, int Hi) HeightRange => island is null ? (0, 0) : IslandOps.HeightRange(island);
+    public byte[]? ToBytes() => island?.ToBytes();
+    public double GroundAltitude(double worldX, double worldZ) => island is null ? double.NaN : IslandOps.Altitude(island, worldX, worldZ) ?? double.NaN;
+
+    private (double X, double Y, double Z) WorldOf((IslandCube Cube, IslandDecor Decor) s)
+    {
+        foreach (var (cx, cz, cube) in IslandOps.CubeCells(island!))
+            if (cube == s.Cube) return (cx * IslandFile.CubeSize + s.Decor.X, s.Decor.Y, cz * IslandFile.CubeSize + s.Decor.Z);
+        return (0, 0, 0);
+    }
+
+    // The ground point (island cell units) under the pointer, from a host surface. Returns whether a stroke / drag started (so the host keeps the mouse).
+    public bool PointerDown(double gx, double gz, double toleranceCells)
+    {
+        if (island is null || history is null) return false;
+        pointer = (gx, gz);
+        pointerTolerance = Math.Max(1, toleranceCells);
+        PointerDownCore();
+        return Busy;
+    }
+
+    public void PointerMove(double gx, double gz)
+    {
+        pointer = (gx, gz);
+        if (island is null) return;
+        if (draggingDecor && selected is { } s) MoveDecorTo(s);
+        UpdateInfo();
+    }
+
+    public void PointerUp() => PointerUpCore();
+
     private void ViewDown(object sender, MouseButtonEventArgs e)
     {
         if (island is null || history is null || renderer is null) return;
         viewport.Focus();
+        if (tool == Tool.Navigate) { panning = true; panStart = e.GetPosition(viewport); panOrigin = pan; viewport.CaptureMouse(); return; }
         pointer = ToCell(e.GetPosition(viewport));
+        pointerTolerance = Math.Max(3, 12 / (zoom * renderer.Scale));
+        PointerDownCore();
+    }
+
+    private void PointerDownCore()
+    {
+        if (island is null || history is null) return;
         if (Keyboard.Modifiers == ModifierKeys.Alt) { SampleLevel(); return; }
         switch (tool)
         {
+            case Tool.Navigate: return;
             case Tool.Eyedropper: Pick(); return;
             case Tool.Ramp: RampClick(); return;
             case Tool.SelectDecor: SelectAt(); return;
@@ -695,18 +816,24 @@ internal sealed class IslandEditorWindow : Window
         strokePlane = null;
         follow = tool is Tool.Raise or Tool.Lower or Tool.Smooth or Tool.Flatten or Tool.LevelPlane or Tool.Terrace or Tool.Relief && followBox.IsChecked == true ? new IslandOps.DecorFollow(island) : null;
         if (tool == Tool.LevelPlane) strokePlane = IslandOps.FitPlane(island, Brush());
-        viewport.CaptureMouse();
+        Capture();
         StrokeTick();
         strokeTimer.Start();
     }
 
     private void ViewUp(object sender, MouseButtonEventArgs e)
     {
-        if (draggingDecor) { draggingDecor = false; history?.Commit("move object"); viewport.ReleaseMouseCapture(); RebuildOverlay(); UpdateButtons(); return; }
+        if (tool == Tool.Navigate && panning) { panning = false; viewport.ReleaseMouseCapture(); return; }
+        PointerUpCore();
+    }
+
+    private void PointerUpCore()
+    {
+        if (draggingDecor) { draggingDecor = false; history?.Commit("move object"); ReleaseCapture(); RebuildOverlay(); UpdateButtons(); return; }
         if (!stroking) return;
         stroking = false;
         strokeTimer.Stop();
-        viewport.ReleaseMouseCapture();
+        ReleaseCapture();
         var label = ToolGroups.SelectMany(g => g.Items).First(i => i.Tool == tool).Name.ToLowerInvariant();
         if (follow is not null) follow.Apply();
         history!.Commit(label);
@@ -725,10 +852,10 @@ internal sealed class IslandEditorWindow : Window
             ApplyTransform();
             return;
         }
-        if (renderer is null || island is null) return;
+        if (!mapActive || renderer is null || island is null) return;
         pointer = ToCell(screen);
         var r = radius.Value * renderer.Scale;
-        brushCircle.Visibility = tool is Tool.SelectDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow ? Visibility.Collapsed : Visibility.Visible;
+        brushCircle.Visibility = !BrushTool ? Visibility.Collapsed : Visibility.Visible;
         brushCircle.Width = brushCircle.Height = r * 2;
         Canvas.SetLeft(brushCircle, CellToPixelX(pointer.Gx) - r); Canvas.SetTop(brushCircle, CellToPixelZ(pointer.Gz) - r);
         if (draggingDecor && selected is { } s) MoveDecorTo(s);
@@ -767,7 +894,7 @@ internal sealed class IslandEditorWindow : Window
             case Tool.FixDiagonals: n = IslandGround.OptimiseDiagonals(island, region); break;
         }
         if (follow is not null && n > 0) follow.Apply();
-        if (n > 0) RedrawAround(pointer.Gx, pointer.Gz, radius.Value + 1);
+        if (n > 0) { RedrawAround(pointer.Gx, pointer.Gz, radius.Value + 1); Edited?.Invoke(); }
         if (view is MapView.Shadows or MapView.Height && n > 0) RedrawAround(pointer.Gx, pointer.Gz, radius.Value + 3);
         if (follow is not null && n > 0) RebuildOverlay();
         UpdateInfo();
@@ -847,7 +974,7 @@ internal sealed class IslandEditorWindow : Window
                 var distance = Math.Sqrt((wx - gx) * (wx - gx) + (wz - gz) * (wz - gz));
                 if (distance < bestDistance) { bestDistance = distance; best = (cube, d); }
             }
-        return bestDistance <= Math.Max(3, 12 / (zoom * renderer!.Scale)) ? best : null;
+        return bestDistance <= pointerTolerance ? best : null;
     }
 
     private void SelectAt()
@@ -857,11 +984,12 @@ internal sealed class IslandEditorWindow : Window
         decorPanel.IsEnabled = selected is not null;
         LoadDecorFields();
         RebuildOverlay();
+        Edited?.Invoke();
         if (selected is { } s)
         {
             history.Begin();
             draggingDecor = true;
-            viewport.CaptureMouse();
+            Capture();
         }
     }
 
@@ -875,7 +1003,7 @@ internal sealed class IslandEditorWindow : Window
             // the object may have changed cube
             var cube = island.Cubes.Values.First(c => c.Decors.Contains(s.Decor));
             selected = (cube, s.Decor);
-            RebuildOverlay(); LoadDecorFields();
+            RebuildOverlay(); LoadDecorFields(); Edited?.Invoke();
         }
     }
 
@@ -982,17 +1110,26 @@ internal sealed class IslandEditorWindow : Window
 
     // ---- keyboard, info ---------------------------------------------------------------------------------------------------------------------
 
-    private void OnKey(object sender, KeyEventArgs e)
+    // Keys while the host shows this editor (false = not one of ours).
+    public bool HandleKey(KeyEventArgs e)
     {
-        if (Keyboard.FocusedElement is TextBox) return;
+        if (Keyboard.FocusedElement is TextBox) return false;
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-        if (ctrl && e.Key == Key.Z) { DoUndo(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.Y) { DoRedo(); e.Handled = true; }
-        else if (ctrl && e.Key == Key.S) { Save(); e.Handled = true; }
-        else if (e.Key == Key.Delete) { DeleteSelected(); e.Handled = true; }
-        else if (e.Key == Key.OemOpenBrackets) { radius.Value = Math.Max(1, radius.Value - 1); e.Handled = true; }
-        else if (e.Key == Key.OemCloseBrackets) { radius.Value = Math.Min(60, radius.Value + 1); e.Handled = true; }
+        if (ctrl && e.Key == Key.Z) DoUndo();
+        else if (ctrl && e.Key == Key.Y) DoRedo();
+        else if (ctrl && e.Key == Key.S) Save();
+        else if (e.Key == Key.Delete && selected is not null) DeleteSelected();
+        else if (e.Key == Key.OemOpenBrackets) radius.Value = Math.Max(1, radius.Value - 1);
+        else if (e.Key == Key.OemCloseBrackets) radius.Value = Math.Min(60, radius.Value + 1);
+        else return false;
+        return true;
     }
+
+    public void Undo() => DoUndo();
+    public void Redo() => DoRedo();
+    public void Fit() => FitView();
+    public void ZoomBy(double factor) { if (viewport.ActualWidth > 0) ZoomAt(new Point(viewport.ActualWidth / 2, viewport.ActualHeight / 2), factor); }
+    public double ZoomPercent => zoom * 100;
 
     private void UpdateInfo()
     {

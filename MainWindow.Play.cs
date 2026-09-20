@@ -1,0 +1,213 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using LBA2LevelEditor.Lba1;
+
+namespace LBA2LevelEditor;
+
+// Playing a scene inside the main window. LBA2: the community engine's own window (a separate process) is embedded in the view
+// (EmbeddedGameHost); LBA1: the C# play view (Lba1PlayView) is shown there. The game takes the area below the top bar until it
+// is stopped (or, for LBA2, quits itself). The scene played is the one that is open: Lba2SceneToPlay / the LBA1 scene on screen.
+public partial class MainWindow
+{
+    private EmbeddedGameHost? gameHost;
+    private Lba1PlayView? lba1Play;
+    private bool playing;
+    private GameKind playingGame;
+
+    private void PlayScene_Click(object sender, RoutedEventArgs e)
+    {
+        if (placing) { CompletePlacement(); return; }            // "START HERE": Twinsen stays where he is on the map
+        StartPlay(currentGame);
+    }
+
+    private void Lba2Play_Click(object sender, RoutedEventArgs e) => StartPlay(GameKind.Lba2);
+
+    private void Lba1Play_Click(object sender, RoutedEventArgs e) => StartPlay(GameKind.Lba1);
+
+    private void StopPlay_Click(object sender, RoutedEventArgs e)
+    {
+        if (placing) CancelPlacement();
+        else StopPlay();
+    }
+
+    private void RestartPlay_Click(object sender, RoutedEventArgs e)
+    {
+        var game = playingGame;
+        StopPlay();
+        StartPlay(game);
+    }
+
+    private void PlayEveryItem_Click(object sender, RoutedEventArgs e)
+    {
+        // the inventory is game variables 0..40; money (8) is a count, not an item
+        var lines = Enumerable.Range(0, 41).Where(i => i != 8).Select(i => $"vargame {i} 1");
+        var existing = PlayCommandsBox.Text.Trim();
+        PlayCommandsBox.Text = string.Join(";", lines) + (existing.Length > 0 ? ";" + existing : "");
+    }
+
+    private void PlayClearCommands_Click(object sender, RoutedEventArgs e) => PlayCommandsBox.Clear();
+
+    // Play pressed: the scene that is open is shown with Twinsen on it to be put where the game should start (unless that is switched
+    // off), then the game starts.
+    private void StartPlay(GameKind game)
+    {
+        if (playing) StopPlay();
+        if (placing) EndPlacement();
+        SaveAudioIfDirty();
+        if (game != currentGame)
+        {
+            SwitchGame(game);
+            if (currentGame != game) return;
+        }
+        if (PlacementCheck.IsChecked == true && (game == GameKind.Lba2 ? BeginLba2Placement() : BeginLba1Placement())) return;
+        LaunchPlay(game, null, null);
+    }
+
+    // `spawn` is where the hero starts (in the scene's own coordinates), `scene` overrides the scene that is open.
+    private async void LaunchPlay(GameKind game, (int X, int Y, int Z)? spawn, int? scene)
+    {
+        try
+        {
+            if (game == GameKind.Lba1) StartLba1Play(spawn);
+            else await StartLba2Play(spawn, scene);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: play failed: {error}");
+            StopPlay();
+            MessageBox.Show(this, $"Couldn't start the scene: {error.Message}", "Play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void ShowPlayOverlay(UIElement content, string status)
+    {
+        PlayHostBorder.Child = content;
+        PlayOverlay.Visibility = Visibility.Visible;
+        PlayButton.Visibility = Visibility.Collapsed;
+        PlayRunningPanel.Visibility = Visibility.Visible;
+        SideTabs.SelectedItem = PlayTab;
+        playing = true;
+        PlayStatus.Text = status;
+        PlayOverlay.UpdateLayout();
+    }
+
+    // Ends the game and gives the area back to the editor.
+    private void StopPlay()
+    {
+        if (!playing && gameHost is null && lba1Play is null) return;
+        playing = false;
+        SaveAudioIfDirty();
+        if (gameHost is not null) { gameHost.GameExited -= OnGameExited; gameHost.Stop(); }
+        PlayHostBorder.Child = null;
+        gameHost = null;
+        lba1Play?.Stop();
+        lba1Play = null;
+        PlayOverlay.Visibility = Visibility.Collapsed;
+        PlayButton.Visibility = Visibility.Visible;
+        PlayRunningPanel.Visibility = Visibility.Collapsed;
+        UpdatePlayButton();
+        Keyboard.Focus(this);
+    }
+
+    private void OnGameExited()
+    {
+        if (!playing) return;
+        StopPlay();
+        FileLabel.Text = "The game ended.";
+    }
+
+    // ---- zone boxes and actor paths over the game ---------------------------------------------------------------------------------------
+
+    // Bit n set = zone type n is ticked in the Zones tab.
+    private int ZoneMask()
+    {
+        var mask = 0;
+        for (var type = 0; type < 30; type++) if (ZoneShown(type)) mask |= 1 << type;
+        return mask;
+    }
+
+    // The Zones tab changed while a scene is playing: LBA1's view redraws its zones, the LBA2 engine picks up the new overlay file.
+    private void SyncPlayOverlay()
+    {
+        if (!playing) return;
+        if (playingGame == GameKind.Lba1) { lba1Play?.RefreshZones(); return; }
+        if (Lba2Play.UserDirectory(out _) is { } user) Lba2Play.WriteOverlay(user, ZoneMask(), pathsVisible);
+    }
+
+    // ---- LBA1 ------------------------------------------------------------------------------------------------------------------------------
+
+    private void StartLba1Play((int X, int Y, int Z)? spawn)
+    {
+        var directory = EditorSettings.Current.Lba1Directory;
+        if (!Lba1Game.IsInstalled(directory))
+        {
+            MessageBox.Show(this, "The LBA1 game folder isn't set. Choose it under File > Settings.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var start = lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0;
+        var game = new Lba1Game(directory);          // read again, so a scene the editor has just saved is what plays
+        lba1Play = new Lba1PlayView(game, new Lba1ActorImages(game), directory) { ZoneFilter = ZoneShown, Audio = EditorSettings.Current.Lba1Audio };      // draws the zone types ticked in the Zones tab
+        playingGame = GameKind.Lba1;
+        ShowPlayOverlay(lba1Play, lba1Session.EditedScenes.Any()
+            ? "Playing what is saved on disk; scripts you haven't saved yet aren't included."
+            : "Arrow keys walk and turn, Space is the action key, F1-F4 change behaviour.");
+        lba1Play.ApplyAudio();
+        lba1Play.Start(start, spawn);
+    }
+
+    // ---- LBA2 ------------------------------------------------------------------------------------------------------------------------------
+
+    private async Task StartLba2Play((int X, int Y, int Z)? spawn, int? sceneOverride)
+    {
+        if (!Lba2Engine.IsGameFolder(gameRoot))
+        {
+            MessageBox.Show(this, "The LBA2 game folder isn't set. Choose it under File > Settings.", "LBA2", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (terrainEditor is { Dirty: true } editor)
+        {
+            var answer = MessageBox.Show(this, $"The game plays what is saved on disk, and {editor.CurrentName} has unsaved changes.\n\nSave them first?", "Play the scene", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Cancel || answer == MessageBoxResult.Yes && !editor.Save()) return;
+        }
+
+        var scene = sceneOverride ?? Lba2SceneToPlay();
+        var options = Lba2Play.LastOptions is { } last ? last.WithScene(scene) : new Lba2PlayOptions { Scene = scene };
+        options.Audio = EditorSettings.Current.Lba2Audio;      // (Launch writes the volumes to the engine's cfg and mutes it when asked)
+        options.KeepFocus = true;                              // the game sits in the editor's window and must keep running while the side panel has the focus
+        options.Commands = PlayCommandsBox.Text;
+        options.Spawn = spawn;
+        options.ZoneMask = ZoneMask();
+        options.Paths = pathsVisible;
+
+        var label = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"scene {scene}";
+        var host = new EmbeddedGameHost();
+        gameHost = host;
+        playingGame = GameKind.Lba2;
+        host.GameExited += OnGameExited;
+        ShowPlayOverlay(host, $"Starting {label} ...");
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
+        if (!ReferenceEquals(gameHost, host)) return;
+
+        (options.Width, options.Height) = host.FitSize();
+        string? problem = null;
+        PlayStatus.Text = $"Entering {label} ...";
+        var process = await Task.Run(() => Lba2Play.Launch(gameRoot, options, out problem, embedded: true));   // makes the scene's save first: a few seconds
+        if (process is null)
+        {
+            StopPlay();
+            MessageBox.Show(this, problem ?? "The game didn't start.", "LBA2: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        var attached = await host.AttachAsync(process);
+        if (!ReferenceEquals(gameHost, host)) return;      // stopped while it was starting
+        if (!attached)
+        {
+            StopPlay();
+            MessageBox.Show(this, "The game started but its window didn't appear in the editor.", "LBA2: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        PlayStatus.Text = $"Playing {label}. It plays what is saved on disk. Click the game to give it the keyboard.";
+    }
+}

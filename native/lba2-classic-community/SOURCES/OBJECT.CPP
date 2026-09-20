@@ -6122,6 +6122,7 @@ startaffscene:
     }
 
     /*------------------------------------------------------------------------*/
+    { extern void EditorOverlay_Draw(void); EditorOverlay_Draw(); }      /* the level editor's zone boxes and actor paths (EDITOR_OVERLAY.CPP) */
     //DrawZonesDec()	;
 
     //	if ( FlagNoFlip )	return	;//	Cf DoFoundObj()

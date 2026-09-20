@@ -95,8 +95,9 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   On Proxima the rune-stone scenes (45 lower, 46 upper) are placed by eye rather than by a zone, so the two
   motorbikes line up (45) and the upper stone follows on from scene 47, "before the upper rune stone" (46).
   Every map is listed as `Outside (scenes ...)` unless `Lba1Areas.AreaNames` names it (`Temple of Bú`, `Mutation centre`).
-- **Tools > LBA1: connect the bedroom (scene 61) to Lupin Burg** edits the game files so the otherwise unreachable
-  "Some room (cut-out ?)" (scene 61) can be entered. Scene 13 (Lupin Burg) has a bricked-up arch on the east side of a
+- **Tools > LBA1: Make surprise changes** (`Lba1SurpriseChanges`; the door part is `Lba1RoomDoorMod`, the elf part
+  `Lba1PinkElf`) edits the game files in two ways, saved together as one all-or-nothing transaction. First, so the
+  otherwise unreachable "Some room (cut-out ?)" (scene 61) can be entered: Scene 13 (Lupin Burg) has a bricked-up arch on the east side of a
   house (cells x 51, z 11-15); the tool does to it what the game does for the Rabbibunny house next door (scene 28),
   moved to the new arch. In `LBA_GRI.HQR` (grid 13) the bricks become an open arch with a recess floor, copied from
   the Rabbibunny doorway. In `SCENE.HQR` scene 13 gets the standard sliding door: a sprite actor (sprite 11, flags
@@ -112,6 +113,22 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   entry's last 32 bytes stay the bitmap of blocks in use (the engine reads it from the end of the entry to decide which
   bricks to load; a grid that lost it loads the wrong bricks and runs slowly); and a door is a SPRITE_3D + SPRITE_CLIP
   actor, whose Info fields are its clip rectangle on screen.
+  Second, the room gets a visitor, a pink elf. `BODY.HQR` entry 88 (Raymond the Elf, blue) is cloned with only the
+  colour byte of his blue polygons changed - hat and tunic (colour 64, palette ramp 4) and sleeve cuffs (160, ramp 10)
+  become the first colour of the pink ramp (224, ramp 14) - so face, eyes, nose, hands, shoes, trousers, hat band and
+  bobble keep theirs, and every point, bone and lighting normal stays byte-identical (the body works with all of the
+  Elf entity's animations). The clone is appended to `BODY.HQR` as a new stored entry (132) and `FILE3D.HQR`'s Elf
+  entity (49) gets a BODY record `01 2A 04 84 00 00` for it: an actor's body number is an id inside its entity that the
+  engine turns into a `BODY.HQR` entry through that record (`SearchBody` in FICHE.C), never an entry number itself, so
+  the pink elf is body 42 of entity 49. Scene 61 gets it as its last actor (flags 0x0803, animation 0, on the floor at
+  cell 57, 55 between the beds) with a small script that turns it to face Twinsen within 2500 units and lets go beyond
+  3000; its dialogue colour (`CoulObj`) is 14, the pink ramp. A copy that already exists is left alone (its dialogue
+  colour is set to 14 if it differs); a different body under id 42 is refused. Everything is saved through
+  `SceneStore.SaveMany` with the two HQR files as `ExtraFile`s in the same transaction; Edit > Undo takes the scenes and
+  the grid back and leaves the (then unused) body in `BODY.HQR`. Limits from the engine source: a clone stays inside the
+  renderer's fixed buffers (30 bones, 500 points, 500 normals) and the 400,000-byte scene memory holds one copy of the
+  body per elf actor. Tests: `store surprise` (temp copies, undo/redo, repair, refusals) and `runtime doors` (the
+  elf's body resolves and it turns to face the hero).
 - Actor bodies come from `FILE3D.HQR` (entity, body variant) -> `BODY.HQR`, rendered through Body Studio's renderer.
   Double-clicking an actor (or right-click > Edit Attributes) opens `Lba1ActorAttributesWindow`, laid out like the LBA2
   one: position and facing, entity / body / animation (listed as `index: description`, from the LBAPackageManager
@@ -119,6 +136,72 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   chosen animation (pause and rotation speed as in LBA2). LBA1 has no live renderer to hold session edits, so *Apply*
   writes the actor's header in `SCENE.HQR` (first save keeps `SCENE.HQR.bak`), like the zone inspector. *Edit Script...*
   opens the same C script editor as LBA2 (see below) on the LBA1 scripts.
+
+## Modes: Explore, Build, Script
+
+The main window has three modes, chosen with the buttons at the top of the right-hand column (or Ctrl+1 / Ctrl+2 / Ctrl+3, or
+the View menu). The window title shows the game folder the editor is working in.
+
+- **Explore** only looks: orbit (left drag), pan (middle drag or the scroll bars / arrow keys) and zoom (wheel) the scene, toggle
+  zone / path layers, select actors and zones. Nothing can be changed (no add-actor menu, no double-click editing, the zone
+  fields are read-only).
+- **Build** makes the changes. The **BUILD** tab offers two sets of tools. *Terrain* sculpts an LBA2 island **in the same 3D view
+  as Explore, live**: pick a tool (`IslandEditorView`, see "LBA2: island terrain editor"), paint on the ground under the mouse
+  and the view shows the edit as you make it; "Move the view" is the tool that just orbits. While a terrain tool is chosen the
+  right button orbits and the middle button pans. *Actors and zones* is the ordinary view with right-click *Add Actor Here*,
+  double-click an actor for its attributes and the zone data editable under DETAILS. Interiors and LBA1 scenes have the second
+  set, plus buttons for the scene editor, the interior map (grid editor), bricks and sprites, objects and bodies and Body
+  Studio. Unsaved terrain edits stay when you change mode; Edit > Undo / Redo, File > Save and the Ctrl keys act on the terrain
+  editor while its tools are showing; switching island or game, or closing, asks about unsaved terrain edits (save / discard /
+  stay).
+- **Script** is for the actors' scripts: click an actor, or double-click it in the **SCRIPT** tab's list of the actors in view,
+  to open its script window (right-click an actor in Build mode also offers *Edit Script...*, which switches to this mode).
+
+**Choosing what is open** is done with the **Scenes** menu: *Scenes > LBA2 (or LBA1) > Island > Area*, e.g. Scenes > LBA2 > White Leaf
+Desert > "Temple of Bú". Islands carry the game's own names (LBA2 reads them from the scene descriptions in `SCENE2.HQD`), and an
+area is listed without its island's name, which the menu already says. LBA2's islands list their outdoor areas (each one cube of
+the island), then their interiors, or "The whole island"; a **Demo** entry lists the demo reel's scenes separately (they are
+ordinary scenes of the game's islands and rooms, but the game runs them only in its attract mode). LBA1 lists the scenes of each
+island, or the joined areas when that is ticked. The one that is open is ticked, and the top bar shows the game, island and area.
+(The old game / island / scene boxes are still in the window, hidden, and do the actual opening, so every path that changes
+the open scene behaves the same.) Choosing an area while a scene is playing plays that area instead.
+
+**Play a scene** is part of the window, not a window of its own. The **PLAY** tab on the right holds the **▶ PLAY SCENE n**
+button (it names the scene it will start; **■ STOP** and **Restart** take its place while the game runs); Tools > LBA2: play
+scene... and Tools > LBA1: play scene... do the same. The game replaces the view (the side panel stays, so the other tabs can be
+used while it runs) until STOP or, for LBA2, the game's own quit: LBA2's engine (`lba2cc.exe`) runs with its window embedded in
+the editor (`EmbeddedGameHost`: the engine's SDL window is re-parented into the view and fitted to the largest 4:3 rectangle; click
+the game to give it the keyboard); LBA1 shows its play view (`Lba1PlayView`) there. The scene played is the one that is open: an
+interior on screen is its own scene; on an island it is the scene of the cube the camera is over (each outdoor scene is one cube
+of its island; picking an outdoor area moves the camera to its cube). Nothing else opens: the engine is a console program, so it
+is started without a console window, and its own window is created off screen (`LBA2_WINDOW_POS`, a small addition to the
+vendored engine's `WINDOW.CPP`) and taken over at once, so it is never seen as a window of its own.
+
+**Where Twinsen starts**: with *Choose where Twinsen starts* ticked (the default), pressing PLAY SCENE first shows the scene with a
+blue Twinsen marker on it, standing at the scene's own start; drag him anywhere on the ground (an island: the terrain under the
+pointer, found by following the pointer's ray through the native camera against the island's heights, so he can be dropped in any
+cube of the island and the scene of that cube is played; an interior: the highest floor under the pointer that Twinsen can stand on, from the native brick grid, so a walkway stays a
+walkway, the floor below it can be picked where it shows and walls are never chosen; an LBA1 scene: the floor under the pointer at
+his height) and release to start, or press START HERE (Esc / Cancel leaves without playing). LBA2 is started with the engine's
+console command `teleport x y z` (cube-local coordinates) after the scene loads (the run is given a long `--tick` budget: without
+one the engine's command harness disarms itself after the first tick and every `--exec-at` later than that is silently dropped);
+LBA1's `Lba1PlayView` places the hero directly.
+
+**Zone boxes and actor paths in the game.** Both games draw the layers of the Zones tab and the Paths button while they run. LBA1's
+play view draws the zone types that are ticked. LBA2's engine has an editor overlay of its own (`EDITOR_OVERLAY.CPP`, called at the
+end of `AffScene`): it reads the file named by the environment variable `LBA2_OVERLAY_FILE` (`zones=<bit mask of the zone types
+0..9> paths=<0|1>`, checked every 15 frames, so ticking a box acts within a moment) and draws the scene's zones as boxes in
+their type's colour and the actors' routes as lines with a marker at each point, projected with the engine's own camera.
+
+The **PLAY** tab holds the **sound balance, per game**: mute all sound, and separate levels for music, voices and effects (the
+games' own balance is off: the music drowns the speech, so the defaults are music 40 %, voices 90 %, effects 70 %; Reset balance
+restores them). They are saved with the settings. LBA2's engine reads its volumes when it starts, so the levels are written to
+`lba2.cfg` in its own folder (`WaveVolume` = effects, `VoiceVolume`, `MusicVolume` and `CDVolume` = music) before it is started
+and muting starts it with `--no-audio`; the LBA1 play view applies them at once (samples and speech are scaled, the music is
+scaled and started again at the new level, its MIDI channel volumes rewritten in `AudioLevels.cs`) and has the same controls in its
+own toolbar. For LBA2 the tab also has console commands that run once the scene has loaded (the game runs whether or not it has
+the keyboard focus, so it doesn't wait for a click). The game plays what is saved on disk; with unsaved terrain edits you are
+asked to save first.
 
 ## Minimap and the Zones tab
 
@@ -180,8 +263,10 @@ disk is what plays: the real game, with its renderer, scripts, combat, audio and
 engine is statically linked and embedded in the editor's exe like the renderer library (extracted to `native\` beside it
 on first use; a development checkout uses its build output). `Lba2Engine` / `Lba2Play` build the command line:
 `--game-dir` (the folder), `--user-dir` (saves, settings and log go in an `lba2-play` folder of their own), `--no-autosave`,
-`--resolution`, and `--exec-at 5 "cube N"` to enter the scene straight from the menu; anything typed in the dialog's
-console box runs once the scene has loaded (`give`, `vargame <n> <value>`, `behaviour`, `teleport`, `weapon` ...; *Every
+`--resolution`, and `--load EDITORPLAY` to enter the scene: the engine's own start is a new game whose opening dialogue blocks the
+tick that `--exec-at 5 "cube N"` would run on (the game then stayed in scene 0), so `Lba2Play.PrepareSceneSave` first runs the
+engine headless for a couple of seconds, enters the scene with `cube N` and writes a save there (`savebug`), and the visible run
+loads that save; anything typed in the PLAY tab's console box runs once the scene has loaded (`give`, `vargame <n> <value>`, `behaviour`, `teleport`, `weapon` ...; *Every
 item* fills in the inventory variables 0..40). It was chosen over a C# port because the engine is already a faithful,
 maintained game and only a launcher was needed; the parts worth porting (the data layer) are in C#.
 
@@ -200,12 +285,20 @@ running engine has one more object.
 
 ## LBA2: island terrain editor
 
-**Tools > LBA2: island terrain editor...** (`IslandEditorWindow`, over `Terrain/IslandFile`) edits an island (`.ILE`) from
-above: the textured terrain as the engine lights it, or a height, baked-light, *baked shadows*, game-code or water-depth view.
-Left button applies the current tool with a round brush (radius / hardness / strength), right or middle drag pans, the wheel
+The terrain editor is part of the main window: **Build mode > Terrain** (Tools > LBA2: island terrain editor... jumps there),
+and it edits **in the same 3D view as Explore, live**. `IslandEditorView` (over `Terrain/IslandFile`) supplies the tool panel of
+the BUILD tab and an optional top-down map; the window turns the mouse position into a point on the ground (`NativeCameraModel`
+fits a pinhole camera to the native renderer's own projection after every frame, and the ray of the pixel is followed down to the
+terrain) and the editor paints there. Each change is written to a preview copy of the island (`LiveDataRoot`: a folder inside the
+game folder holding hard links of every game file plus a real copy of the island, removed again afterwards) that the native
+renderer reads instead of the game folder, so the view shows the unsaved edits about every 140 ms; only Save writes the game
+folder (a `.bak` of the original). The *top-down map* option of the panel swaps the 3D view for the map, which can also show the
+height, baked-light, *baked shadows*, game-code or water-depth views.
+Left button applies the current tool with a round brush (radius / hardness / strength; the brush ring is drawn on the ground),
+right drag orbits and the middle button pans while a tool is chosen (on the map: right or middle drag pans), the wheel
 zooms, `[` `]` change the radius, Ctrl+Z / Ctrl+Y undo and redo (an undo step is one stroke; only the changed cubes are kept),
 Ctrl+S saves (a `.bak` of the original, only the records that changed are rewritten, the rest byte for byte; the game folder
-is in the title bar). A strip under the map plots the heights along the row under the pointer.
+is in the title bar). On the map a strip under it plots the heights along the row under the pointer. Tests: `dotnet run --project tools/ScriptRoundTrip -- liveisland` (the native renderer draws an island written into a live folder while the game folder's island is untouched).
 
 - **Height:** raise / lower / smooth / flatten to a level (Alt-click reads a level from the ground) / **level to plane** (fits a
   plane under the brush when the stroke starts and pulls the stroke onto it: the bumps go, the slope stays; tick *Horizontal*
@@ -295,7 +388,7 @@ colour error; `roundtrip` is body -> sheet -> generated body, ~75-80% silhouette
 
 ## LBA1 play mode (test a scene without DOSBox)
 
-**Tools > LBA1: play scene...** opens `Lba1PlayWindow`: the scene's isometric map with Twinsen and the actors animating on
+**Tools > LBA1: play scene...** (and the PLAY SCENE button, with LBA1 open) shows `Lba1PlayView` in the main window: the scene's isometric map with Twinsen and the actors animating on
 it, doors and other sprites drawn from `SPRITES.HQR`, and the zones over the top, running live. It is driven by
 `Lba1/Runtime`, a C# port of the LBA1 engine's game logic (`PERSO.C` main loop, `OBJECT.C`, `GERELIFE.C`, `GERETRAK.C`,
 `FICHE.C`, `GRILLE.C` collisions, `Lba1Trig` = the engine's sine table, angle and interpolation maths) that reads the files
@@ -386,3 +479,9 @@ The editor reads the original resources from `E:\GOG Games\Little Big Adventure 
 - `VIDEO\VIDEO.HQR` contains the CD video archive.
 
 The current viewer uses the root island archives and scene index. VOX playback, video playback, and full scene rendering are tracked as separate resource integrations because their formats and runtime behavior differ from the terrain HQR records.
+
+**Native crashes:** the map viewer's renderer (`liblba2_renderer.dll`) logs every hardware and C++ exception raised in the
+process, with module-relative return addresses, to the file named by the environment variable `LBA2_RENDERER_CRASHLOG`;
+resolve the addresses with `nm -C -n` on the DLL (the image base is added to each offset). That is how a sporadic crash when
+opening an interior scene was traced to the renderer's boot never setting up the engine's particle-flow tables
+(`InitPartFlow`), which the animations of some actors use while a scene loads.

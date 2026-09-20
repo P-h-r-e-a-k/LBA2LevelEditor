@@ -6,6 +6,7 @@
 
 #include <SDL3/SDL.h>
 #include <assert.h>
+#include <cstdio>
 #include <cstdlib>
 
 // -----------------------------------------------------------------------------
@@ -117,8 +118,18 @@ bool CreateWindowSurface(U32 resX, U32 resY, bool fullscreen) {
 
     SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, windowTitle);
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED);
+    /* An editor that embeds this window in its own (LBA2LevelEditor) takes it over as a child the moment it appears; asking for
+       an off-screen position with LBA2_WINDOW_POS="x,y" means the window is never seen as a window of its own. */
+    int startX = SDL_WINDOWPOS_CENTERED, startY = SDL_WINDOWPOS_CENTERED;
+    if (const char *placed = getenv("LBA2_WINDOW_POS")) {
+        int x, y;
+        if (sscanf(placed, "%d,%d", &x, &y) == 2) {
+            startX = x;
+            startY = y;
+        }
+    }
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, startX);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, startY);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, resX);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, resY);
     /* Resizable allows OS-driven window resizing on desktop. On Android,

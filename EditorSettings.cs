@@ -48,6 +48,10 @@ internal sealed class EditorSettings
     // Draw the yellow ring around the selected actor and the thick white outline on the selected zone.
     public bool HighlightSelection { get; set; } = true;
 
+    // The sound balance when a scene is played, per game (mute and music / speech / effects levels).
+    public AudioLevels Lba1Audio { get; set; } = new();
+    public AudioLevels Lba2Audio { get; set; } = new();
+
     // Script text prints function names in lowercase (set_track(...)) instead of the
     // engine's uppercase (SET_TRACK(...)). The compiler accepts either.
     public bool LowercaseScriptNames { get; set; } = true;

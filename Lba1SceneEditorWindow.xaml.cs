@@ -829,7 +829,7 @@ public partial class Lba1SceneEditorWindow : Window
         try
         {
             var played = new Lba1Game(directory);
-            new Lba1PlayWindow(played, new Lba1ActorImages(played), directory, sceneNumber) { Owner = this }.Show();
+            new Lba1PlayHostWindow(played, new Lba1ActorImages(played), directory, sceneNumber) { Owner = this }.Show();
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {

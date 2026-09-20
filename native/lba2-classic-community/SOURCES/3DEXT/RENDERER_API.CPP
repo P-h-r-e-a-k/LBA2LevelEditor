@@ -24,6 +24,7 @@ extern void AffGrilleExt(void);
 extern void Init3DExtView(void);
 extern void Init3DExtGame(void);
 extern int RendererBootAssets(void);
+extern unsigned int InitPartFlow(void);
 
 // Declared directly instead of pulling in C_EXTERN.H: that header (via
 // MEM.H) redeclares several enums/typedefs this file's own "MEM.H" include
@@ -54,6 +55,7 @@ extern int RendererGetZoneCount(void);
 extern int RendererGetZone(int index, int *x0, int *y0, int *z0, int *x1, int *y1, int *z1, int *type, int *num);
 extern int RendererGetZoneScene(int index);
 extern int RendererProjectInteriorPoint(int x, int y, int z, int *cx, int *cy);
+extern int RendererInteriorFloorY(int x, int fromY, int z);
 extern int RendererRenderSpritePreview(int sprite, int *x, int *y, int *w, int *h);
 extern int RendererGetActorFlags(int index, unsigned int *flags);
 extern int RendererSetActorFlags(int index, unsigned int flags);
@@ -77,8 +79,57 @@ int lba2_renderer_version(void)
     return 1;
 }
 
+#ifdef _WIN32
+#include <windows.h>
+#include <stdio.h>
+
+// Diagnostics for native faults: when LBA2_RENDERER_CRASHLOG names a file, every hardware exception and every C++ (GCC SEH)
+// exception raised on any thread is logged there with the module-relative return addresses of its stack, before the
+// runtime or the OS decides what to do with it.
+static const char *g_crashLogPath = NULL;
+static volatile LONG g_crashLogCount = 0;
+
+static LONG WINAPI RendererCrashLogHandler(EXCEPTION_POINTERS *info)
+{
+    DWORD code = info->ExceptionRecord->ExceptionCode;
+    if (code != 0xC0000005 && code != 0x20474343 && code != 0xE06D7363 && (code & 0xFFFF0000) != 0xC0000000) return EXCEPTION_CONTINUE_SEARCH;
+    if (InterlockedIncrement(&g_crashLogCount) > 400) return EXCEPTION_CONTINUE_SEARCH;
+    FILE *f = fopen(g_crashLogPath, "a");
+    if (!f) return EXCEPTION_CONTINUE_SEARCH;
+    void *frames[48];
+    USHORT n = RtlCaptureStackBackTrace(0, 48, frames, NULL);
+    fprintf(f, "thread %lu exception %08lx at %p flags %lx", GetCurrentThreadId(), code, info->ExceptionRecord->ExceptionAddress, info->ExceptionRecord->ExceptionFlags);
+    if (code == 0xC0000005 && info->ExceptionRecord->NumberParameters >= 2)
+        fprintf(f, " (%s address %p)", info->ExceptionRecord->ExceptionInformation[0] ? "write" : "read", (void *)info->ExceptionRecord->ExceptionInformation[1]);
+    fprintf(f, "\n");
+    for (USHORT i = 0; i < n; i++)
+    {
+        HMODULE module = NULL;
+        char name[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)frames[i], &module))
+            GetModuleFileNameA(module, name, MAX_PATH);
+        const char *slash = strrchr(name, '\\');
+        fprintf(f, "   %s+0x%llx\n", slash ? slash + 1 : name, (unsigned long long)((char *)frames[i] - (char *)module));
+    }
+    fclose(f);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void InstallCrashLog(void)
+{
+    static bool installed = false;
+    if (installed) return;
+    installed = true;
+    g_crashLogPath = getenv("LBA2_RENDERER_CRASHLOG");
+    if (g_crashLogPath && *g_crashLogPath) AddVectoredExceptionHandler(1, RendererCrashLogHandler);
+}
+#else
+static void InstallCrashLog(void) {}
+#endif
+
 int lba2_renderer_initialize(void)
 {
+    InstallCrashLog();
     // IsleMapIndex/GroundTexture/ObjTexture are reassigned via the engine's
     // own Malloc (NormMalloc) inside InitMemory() and LoadIsland(), and
     // ListTriExt via Init3DExt(); allocate with the same allocator here so
@@ -133,6 +184,12 @@ int lba2_renderer_initialize(void)
     if (!BoxInit(256)) return 0;
 
     if (!RendererBootAssets()) return 0;
+
+    // The flow table (RESS.HQR) and the per-slot dot pointers into ListFlowDots are set up by the game's boot (PERSO.CPP) and by
+    // nothing here: without them, loading an interior scene whose actor animations start a particle flow (StartInitAllObjs ->
+    // InitAnim -> GereAnimAction -> CreateParticleFlow) wrote through a NULL dot pointer whenever the uninitialised flow table
+    // happened to say "some dots" -- a native crash on roughly one scene load in ten.
+    InitPartFlow();
     if (!InitEvents()) return 0;
     if (!InitExternalView()) return 0;
 
@@ -536,6 +593,11 @@ int lba2_renderer_get_zone_scene(int index)
 int lba2_renderer_project_interior_point(int x, int y, int z, int *cx, int *cy)
 {
     return RendererProjectInteriorPoint(x, y, z, cx, cy);
+}
+
+int lba2_renderer_interior_floor_y(int x, int fromY, int z)
+{
+    return RendererInteriorFloorY(x, fromY, z);
 }
 
 int lba2_renderer_render_sprite_preview(int sprite, int *x, int *y, int *w, int *h)

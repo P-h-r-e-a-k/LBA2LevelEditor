@@ -18,6 +18,13 @@ internal static class Lba2PlayTests
         var failures = 0;
         try
         {
+            // the visible run's command line: spawn and console commands are --exec-at entries, which the engine drops after its first
+            // tick unless the run has a tick budget
+            var spawnArgs = new Lba2PlayOptions { Scene = 1, Sound = false, LoadSave = "X", Spawn = (10, 20, 30), Commands = "give 1" }.Arguments("g", "u");
+            var plainArgs = new Lba2PlayOptions { Scene = 1, Sound = false, LoadSave = "X" }.Arguments("g", "u");
+            var argsOk = spawnArgs.Contains("teleport 10 20 30") && spawnArgs.Contains("give 1") && spawnArgs.Contains("--tick") && !plainArgs.Contains("--tick") && !plainArgs.Contains("--exec-at");
+            Console.WriteLine($"  command line: spawn + commands come with a tick budget, a plain start has neither: {(argsOk ? "ok" : "FAILED")}");
+            if (!argsOk) failures++;
             foreach (var scene in new[] { 0, 5, 20, 40, 100, 150 })   // (some scenes, like 200, run a script that moves on at once)
             {
                 var options = new Lba2PlayOptions { Scene = scene, Sound = false, Commands = "behaviour 2\nteleport actor 1" };
@@ -33,9 +40,37 @@ internal static class Lba2PlayTests
             }
         }
         finally { try { Directory.Delete(user, true); } catch (IOException) { } }
+        failures += SavedStart(engine);
         failures += EditThenPlay(engine, user);
         Console.WriteLine(failures == 0 ? "lba2 play tests: all passed" : $"lba2 play tests: {failures} FAILED");
         return failures == 0 ? 0 : 1;
+    }
+
+    // The visible game is started from a save made in the scene (Lba2Play.PrepareSceneSave), because the engine's own new-game
+    // opening dialogue blocks the tick the `cube` command runs on. The save must put the game in that scene.
+    private static int SavedStart(string engine)
+    {
+        var user = Path.Combine(Path.GetTempPath(), "lba2play_save_" + Guid.NewGuid().ToString("N")[..8]);
+        var failures = 0;
+        try
+        {
+            Directory.CreateDirectory(user);
+            foreach (var scene in new[] { 12, 55, 61 })
+            {
+                var name = Lba2Play.PrepareSceneSave(engine, Lba2Dir, user, scene);
+                var start = new ProcessStartInfo(engine) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+                foreach (var a in new Lba2PlayOptions { Scene = scene, Sound = false, LoadSave = name }.Arguments(Lba2Dir, user)) start.ArgumentList.Add(a);
+                foreach (var a in new[] { "--headless", "--exec-at", "30", "status", "--tick", "40", "--exit" }) start.ArgumentList.Add(a);
+                using var process = Process.Start(start)!;
+                var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                process.WaitForExit(60000);
+                var ok = name is not null && output.Contains($"Cube: {scene}");
+                Console.WriteLine($"  start from a save made in scene {scene}: {(ok ? "entered" : "FAILED")}  {output.Split('\n').FirstOrDefault(l => l.Contains("Cube:"))?.Trim()}");
+                if (!ok) failures++;
+            }
+        }
+        finally { try { Directory.Delete(user, true); } catch (IOException) { } }
+        return failures;
     }
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
