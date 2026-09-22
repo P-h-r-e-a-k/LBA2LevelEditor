@@ -1,5 +1,6 @@
 using LBA2LevelEditor;
 using LBA2LevelEditor.LbaScript;
+using LBA2LevelEditor.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -47,6 +48,55 @@ internal static class Lba1Tests
         var entries = HqrArchive.CountEntries(path);
         var mode = args.Length > 1 ? args[1] : "all";
         if (mode == "selftest") return SelfTest();
+
+        // text <island> [id ...]: the game's dialogue texts of an island's bank (all of them without ids); TEXT.HQR beside the scene file
+        if (mode == "text")
+        {
+            var textPath = Path.Combine(Path.GetDirectoryName(path)!, "TEXT.HQR");
+            var bank = LBA2LevelEditor.Lba1.Runtime.Lba1TextBank.Load(HqrArchive.Open(textPath), 0, 3 + int.Parse(args[2]));
+            if (bank is null) { Console.WriteLine("no such bank"); return 1; }
+            var wanted = args.Skip(3).Select(int.Parse).ToList();
+            foreach (var id in wanted.Count > 0 ? wanted : bank.Ids.ToList())
+                Console.WriteLine($"{id,4}: {(bank.Get(id) ?? "(none)").Replace("\n", " / ")}");
+            Console.WriteLine($"{bank.Count} texts");
+            return 0;
+        }
+
+        // dumpall <folder>: every scene's actors with their life and track scripts as text, one file per scene (for searching)
+        if (mode == "dumpall")
+        {
+            var folder = args.Length > 2 ? args[2] : Path.Combine(Path.GetTempPath(), "lba1dump");
+            Directory.CreateDirectory(folder);
+            for (var scene = 0; scene < entries; scene++)
+            {
+                if (!archive.IsValid(scene)) continue;
+                var raw = archive.Read(scene);
+                var s = SceneScripts.Load(raw, scene, null, lba1: true);
+                var record = SceneRecord.ParseLba1(raw);
+                var writer = new StringWriter();
+                writer.WriteLine($"// scene {scene}: island {record.Island}, {s.ActorCount} actors");
+                var model = LBA2LevelEditor.Scenes.SceneSerializer.Parse(LBA2LevelEditor.Scenes.SceneGame.Lba1, raw);
+                for (var z = 0; z < model.Zones.Count; z++)
+                {
+                    var zone = model.Zones[z];
+                    writer.WriteLine($"// zone {z}: type {zone.Type} ({zone.X0},{zone.Y0},{zone.Z0})-({zone.X1},{zone.Y1},{zone.Z1}) info {string.Join(",", zone.Info)} snap {zone.Snap}");
+                }
+                for (var p = 0; p < model.TrackPoints.Count; p++)
+                    writer.WriteLine($"// point {p}: ({model.TrackPoints[p].X},{model.TrackPoints[p].Y},{model.TrackPoints[p].Z})");
+                for (var actor = 0; actor < s.ActorCount; actor++)
+                {
+                    var data = Lba1ActorRecord.Read(raw, actor);
+                    writer.WriteLine($"//==== actor {actor}: flags {data.Flags:X4} entity {data.Entity} body {data.Body} anim {data.Anim} sprite {data.Sprite} at ({data.X},{data.Y},{data.Z}) armor {data.Armor} life {data.LifePoints}");
+                    writer.WriteLine("// ---- life");
+                    writer.WriteLine(s.GetText(actor, ScriptKind.Life));
+                    writer.WriteLine("// ---- track");
+                    writer.WriteLine(s.GetText(actor, ScriptKind.Track));
+                }
+                File.WriteAllText(Path.Combine(folder, $"scene{scene:000}.txt"), writer.ToString());
+            }
+            Console.WriteLine($"wrote {folder}");
+            return 0;
+        }
 
         if (mode == "show")
         {

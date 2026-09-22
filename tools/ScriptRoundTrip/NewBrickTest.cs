@@ -95,7 +95,7 @@ internal static class NewBrickTest
             var image = new GphImage(48, 38);
             for (var y = 0; y < 25; y++) { var half = 24 - Math.Abs(12 - y) * 2; for (var x = 24 - half; x < 24 + half; x++) image.Set(x, y + 6, (byte)index); }
             var number = bricks.Add(image);
-            bricks.Save();
+            bricks.Save(new[] { number }, "Add a new brick");
             backend = new Lba2GridBackend(sandbox);
             var lib2 = backend.LoadLibrary(gridId);
             var grown = GridPaint.AppendBlock(lib2, 1, 1, 1, number);

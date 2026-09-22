@@ -16,7 +16,8 @@ namespace LBA2LevelEditor.Lba1;
 //     BODY.HQR index: the engine finds the entry through the entity's record (FICHE.C SearchBody);
 //   * actor: scene 61 gets an elf with that entity and body id, standing on the floor between the beds, that turns to
 //     face Twinsen when he comes within 2500 units and looks away again beyond 3000. Its text is drawn in the pink
-//     ramp (the speaker's colour, actor field CoulObj = ramp number).
+//     ramp (the speaker's colour, actor field CoulObj = ramp number), and greets him (a new text, below), once when he first comes near and again
+//     whenever he presses action beside it.
 // Limits checked against the engine source: a clone stays inside every renderer buffer the source body fits (24 of 30
 // bones, 132 of 500 points); the entry index stays below 32768 (bit 15 of a body reference marks "already loaded"); the
 // loader reads stored (method 0) entries.
@@ -32,8 +33,9 @@ internal static class Lba1PinkElf
     // Cell (57, 55) at floor level (layer 2's top): three cells in from where Twinsen arrives from Lupin Burg.
     private const int X = 57 * 512, Y = 768, Z = 55 * 512, Facing = 256 /* +x, towards the door */;
 
-    // What the tool writes, or nothing when the game files already hold the pink elf.
-    public sealed record Plan(int BodyIndex, IReadOnlyList<ExtraFile> Files)
+    // What the tool writes, or nothing when the game files already hold the pink elf. Texts names the new body
+    // in BODY.HQD (see HqdWriter), so it isn't just an unlabelled number the next time someone looks.
+    public sealed record Plan(int BodyIndex, IReadOnlyList<HqrEntryStore.Edit> Files, IReadOnlyList<HqrEntryStore.TextEdit> Texts)
     {
         public bool Changed => Files.Count > 0;
     }
@@ -131,30 +133,22 @@ internal static class Lba1PinkElf
         {
             if (existing.Hqr < 0 || existing.Hqr >= bodies.Count || bodies.IsEmpty(existing.Hqr) || !bodies.Read(existing.Hqr).AsSpan().SequenceEqual(pink))
                 throw new InvalidDataException($"The Elf entity already has a body with id {BodyId} that isn't the pink elf. Restore BODY.HQR and FILE3D.HQR from the .bak copies and run this again.");
-            return new Plan(existing.Hqr, Array.Empty<ExtraFile>());
+            return new Plan(existing.Hqr, Array.Empty<HqrEntryStore.Edit>(), Array.Empty<HqrEntryStore.TextEdit>());
         }
 
-        var index = bodies.Add(pink);
+        var index = bodies.Count;
         if (index >= 0x8000) throw new InvalidDataException("BODY.HQR has no room for another body (the engine keeps bit 15 of a body reference for its own use).");
         var record = new byte[] { 1, BodyId, 4, (byte)(index & 255), (byte)(index >> 8), 0 };   // BODY, id, size 4, HQR index, no extra data
         var last = bodyRecords[^1];
         var newEntity = entity[..last.End].Concat(record).Concat(entity[last.End..]).ToArray();
-        entities.SetStored(Entity, newEntity);
 
-        var files = new List<ExtraFile>
+        var files = new[]
         {
-            new(bodyPath, bodies.ToBytes(), written =>
-            {
-                var read = HqrFile.Parse(written);
-                return read.Count == index + 1 && read.Read(index).AsSpan().SequenceEqual(pink) ? null : "the new body read back differently.";
-            }),
-            new(entityPath, entities.ToBytes(), written =>
-            {
-                var read = HqrFile.Parse(written);
-                return read.Read(Entity).AsSpan().SequenceEqual(newEntity) ? null : "the Elf entity read back differently.";
-            }),
+            new HqrEntryStore.Edit("BODY.HQR", index, pink),
+            new HqrEntryStore.Edit("FILE3D.HQR", Entity, newEntity),
         };
-        return new Plan(index, files);
+        var texts = new[] { new HqrEntryStore.TextEdit(HqdWriter.SidecarName("BODY.HQR"), HqdWriter.Describe(directory, "BODY.HQR", SceneGame.Lba1, index, "Pink elf (Floppy), added by the level editor for the bedroom, scene 61")) };
+        return new Plan(index, files, texts);
     }
 
     // ---- scene 61 ------------------------------------------------------------------------------------------------
@@ -166,23 +160,54 @@ internal static class Lba1PinkElf
         var existing = room.Actors.Skip(1).FirstOrDefault(a => !a.IsSprite && a.Entity == Entity && a.Body == BodyId);
         if (existing is not null)
         {
-            if (existing.CoulObj == DialogueColour) return null;
-            existing.CoulObj = DialogueColour;
-            return $"scene {RoomScene}: the pink elf now speaks in pink (colour {DialogueColour})";
+            var did = new List<string>();
+            if (existing.CoulObj != DialogueColour)
+            {
+                existing.CoulObj = DialogueColour;
+                did.Add($"now speaks in pink (colour {DialogueColour})");
+            }
+            // the first version (no greeting) is brought up to date; a script anyone has changed since is left alone
+            var index = room.Actors.IndexOf(existing);
+            var built = Build(index);
+            if (!existing.Life.AsSpan().SequenceEqual(built.Life) && existing.Life.AsSpan().SequenceEqual(Build(index, greeting: false).Life))
+            {
+                existing.Life = built.Life;
+                did.Add("greets Twinsen");
+            }
+            return did.Count == 0 ? null : $"scene {RoomScene}: the pink elf " + string.Join(" and ", did);
         }
-        var index = SceneOps.AddActor(room, Build(room.Actors.Count));
-        return $"scene {RoomScene}: the pink elf added as actor {index}";
+        var added = SceneOps.AddActor(room, Build(room.Actors.Count));
+        return $"scene {RoomScene}: the pink elf added as actor {added}";
     }
 
     private const int RoomScene = 61;
 
-    public static SceneActorModel Build(int index)
+    // ---- what the elf says -----------------------------------------------------------------------------------------
+
+    // The elf's greeting: text 287 of Principal Island's dialogue (the last text of the bank, after the fisherman's question), said once, when Twinsen first comes near
+    // (game flag 226: nothing in the game's own scripts uses 220..254), and again whenever Twinsen presses action within 1500 units of him.
+    // Only English is written here: the other four languages hold it too until their translations are in Translations.
+    public const int GreetingId = 287, GreetingFlag = 226;
+    public const string GreetingEnglish = "Hi, I'm Floppy the third elf, after all these years somebody has finally found me. Please help yourself to anything you find here.";
+    private const int PressLatch = 13;      // a scene variable (var_cube) held while action is down, so that one press says it once
+
+    // The translations, by language (1 French, 2 German, 3 Spanish, 4 Italian), in the DOS code page of the game's text. None yet.
+    public static readonly IReadOnlyDictionary<int, string> Translations = new Dictionary<int, string>();
+
+    public static readonly Lba1DialogueText.AddedText Greeting = new(GreetingId, "the pink elf's greeting", GreetingEnglish,
+        (_, language) => Translations.TryGetValue(language, out var text) ? Lba1DialogueText.Bytes(text) : null, Own: true);
+
+    public static SceneActorModel Build(int index, bool greeting = true)
     {
         using var scope = Opcodes.Use(Opcodes.Lba1);
         var track = TrackText.Compile("label(0);\nanim(0);\nface_twinsen();\nlabel(10);\nstop();\n");
+        var says = greeting
+            ? $"    if (0 == var_game({GreetingFlag}))\n    {{\n        set_var_game({GreetingFlag}, 1);\n        message({GreetingId});\n    }}\n" +
+              $"    if (1 == action())\n    {{\n        if (0 == var_cube({PressLatch}))\n        {{\n            set_var_cube({PressLatch}, 1);\n            if (1500 > distance(0))\n            {{\n                message({GreetingId});\n            }}\n        }}\n    }}\n    else\n    {{\n        set_var_cube({PressLatch}, 0);\n    }}\n"
+            : "";
         var life = LifeText.Compile(
             "void comportement_0()\n{\n    if (2500 > distance(0))\n    {\n        set_track(label_0);\n        set_comportement(comportement_1);\n    }\n}\n\n" +
-            "void comportement_1()\n{\n    if (3000 < distance(0))\n    {\n        set_comportement(comportement_0);\n    }\n}\n",
+            "void comportement_1()\n{\n" + says + "    if (3000 < distance(0))\n    {\n        set_comportement(comportement_0);\n    }\n}\n",
             index, NoSymbols.Instance);
         // set_track(label_n) is the label's byte offset in this actor's own track script
         life.ResolveExternals(r => track.Symbols.TryGetValue(r.Symbol, out var offset) ? offset : null);

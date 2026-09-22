@@ -11,6 +11,9 @@ internal sealed partial class Lba1Runtime
     // Dialogue boxes freeze the game (the engine saves the timer, runs the box and restores it), so Frame() does nothing
     // while one is open. Headless runs (tests) close them at once; the play window shows them and calls CloseDialogue.
     public bool AutoCloseDialogues { get; set; } = true;
+
+    // What a headless run answers when a script asks a question: given the text ids offered, the one to take (the first when unset).
+    public Func<IReadOnlyList<int>, int>? ChoicePolicy { get; set; }
     private readonly Queue<Lba1Dialogue> dialogues = new();
     public Lba1Dialogue? Dialogue => dialogues.Count > 0 ? dialogues.Peek() : null;
     public List<Lba1Bubble> Bubbles { get; } = new();
@@ -64,7 +67,7 @@ internal sealed partial class Lba1Runtime
         gameListChoice.Clear();
         Log($"actor {speaker} asks: {Shorten(TextOf(textId))} [{string.Join(" | ", choices.Select(c => Shorten(c.Item2)))}]");
         if (choices.Count == 0) return;
-        if (AutoCloseDialogues) GameChoice = choices[0].id;
+        if (AutoCloseDialogues) GameChoice = ChoicePolicy?.Invoke(choices.Select(c => c.id).ToList()) ?? choices[0].id;
         else
         {
             SpeechRequested?.Invoke(StartFileIsland + Island, textId);

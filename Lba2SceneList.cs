@@ -17,7 +17,7 @@ internal static class Lba2SceneList
         for (var entry = 1; entry < count; entry++)
         {
             if (!archive.IsValid(entry)) continue;
-            var name = entry < names.Count ? names[entry] : null;
+            var name = (entry < names.Count ? names[entry] : null)?.Replace("White Leaf Desert", "Desert Island");      // (what LBA2 itself calls that island)
             result.Add((entry - 1, name is null ? $"{entry - 1}" : $"{entry - 1}: {name}"));
         }
         return result;

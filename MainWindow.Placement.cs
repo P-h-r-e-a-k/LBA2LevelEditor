@@ -28,6 +28,7 @@ public partial class MainWindow
     // Whether a placement has been started here (false: nothing to place him on, so the game just starts).
     private bool BeginLba2Placement()
     {
+        if (lba2JoinedView) return false;      // (a joined map has no engine picture to drop Twinsen on: the game starts at its first scene)
         if (currentGame != GameKind.Lba2 || terrainShown || !Lba2Configured) return false;
         var scene = Lba2SceneToPlay();
         SceneModel model;
@@ -62,12 +63,12 @@ public partial class MainWindow
         }
         placeScene = scene;
         placing = true;
-        PlayButton.Content = "▶  START HERE";
+        PlayButton.Content = "▶  Start here";
         PlayButton.ToolTip = "Start the game with Twinsen where he is now (or drop him to start at once)";
         StopPlayButton.Content = "✕  Cancel";
         RestartPlayButton.Visibility = Visibility.Collapsed;
         PlayRunningPanel.Visibility = Visibility.Visible; PlayRunningPanel.Margin = new Thickness(0, 8, 0, 0);
-        PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press START HERE for his own spot. Esc cancels.";
+        PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press Start here for his own spot. Esc cancels.";
         SideTabs.SelectedItem = PlayTab;
         BuildPlacementMarker();
         UpdatePlacementMarker();
@@ -209,7 +210,7 @@ public partial class MainWindow
         placementGround = null;
         PlacementCanvas.Children.Clear();
         placementMarker = null;
-        StopPlayButton.Content = "■  STOP";
+        StopPlayButton.Content = "■  Stop";
         RestartPlayButton.Visibility = Visibility.Visible;
         PlayRunningPanel.Visibility = Visibility.Collapsed; PlayRunningPanel.Margin = new Thickness(0);
         PlayButton.Visibility = Visibility.Visible;
@@ -263,12 +264,12 @@ public partial class MainWindow
         placeWorld = (hero.X, hero.Y, hero.Z);
         placeScene = tiles[0].Scene;
         placing = true;
-        PlayButton.Content = "▶  START HERE";
+        PlayButton.Content = "▶  Start here";
         PlayButton.ToolTip = "Start the game with Twinsen where he is now (or drop him to start at once)";
         StopPlayButton.Content = "✕  Cancel";
         RestartPlayButton.Visibility = Visibility.Collapsed;
         PlayRunningPanel.Visibility = Visibility.Visible; PlayRunningPanel.Margin = new Thickness(0, 8, 0, 0);
-        PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press START HERE for his own spot. Esc cancels.";
+        PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press Start here for his own spot. Esc cancels.";
         SideTabs.SelectedItem = PlayTab;
         BuildPlacementMarker();
         UpdatePlacementMarker();

@@ -19,8 +19,8 @@ internal sealed class ListPickWindow : Window
         Title = title;
         Width = 460; Height = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x1B, 0x19));
-        Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
+        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
+        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
         ShowInTaskbar = false;
 
         var panel = new DockPanel { Margin = new Thickness(12) };
@@ -33,7 +33,7 @@ internal sealed class ListPickWindow : Window
 
         if (note is not null)
         {
-            var text = new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8), Foreground = new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B)) };
+            var text = new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8), Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)) };
             DockPanel.SetDock(text, Dock.Top);
             panel.Children.Add(text);
         }
@@ -43,8 +43,8 @@ internal sealed class ListPickWindow : Window
         panel.Children.Add(filter);
 
         list.FontFamily = new FontFamily("Consolas");
-        list.Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11));
-        list.Foreground = new SolidColorBrush(Color.FromRgb(0xC5, 0xC6, 0xB9));
+        list.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+        list.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
         panel.Children.Add(list);
         Content = panel;
 

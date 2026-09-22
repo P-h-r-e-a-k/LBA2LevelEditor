@@ -227,18 +227,19 @@ internal sealed partial class Lba1Runtime
 
     private void ZoneGiveExtraBonus(SceneZoneModel z)
     {
-        if (z.Info[2] != 0) return;      // already taken
+        // (a zone's words: Info[0] is its number, then the engine's Info0 = which bonuses (Info[1]), Info1 = how many (Info[2]), Info2 = taken (Info[3]))
+        if (z.Info[3] != 0) return;      // already taken
         var choices = new List<int>();
-        for (var n = 0; n < 5; n++) if ((z.Info[0] & (1 << (n + 4))) != 0) choices.Add(n);
+        for (var n = 0; n < 5; n++) if ((z.Info[1] & (1 << (n + 4))) != 0) choices.Add(n);
         if (choices.Count == 0) return;
         var pick = choices[Rnd(choices.Count)];
         if (MagicLevel == 0 && pick == 2) pick = 1;
         int x = (z.X0 + z.X1) / 2, zz = (z.Z0 + z.Z1) / 2;
-        var p = ExtraBonus(x, z.Y1, zz, 180, Lba1Trig.GetAngle(x, zz, Hero.PosX, Hero.PosZ), pick + 3, z.Info[1]);
+        var p = ExtraBonus(x, z.Y1, zz, 180, Lba1Trig.GetAngle(x, zz, Hero.PosX, Hero.PosZ), pick + 3, z.Info[2]);
         if (p != -1)
         {
             Extras[p].Flags |= ExtraTimeIn;
-            z.Info[2] = 1;               // marked as taken (this run only)
+            z.Info[3] = 1;               // marked as taken (this run only)
         }
     }
 

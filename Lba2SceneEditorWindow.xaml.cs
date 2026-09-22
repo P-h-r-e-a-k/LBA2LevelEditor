@@ -434,7 +434,7 @@ public partial class Lba2SceneEditorWindow : Window
     {
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var row = grid.RowDefinitions.Count - 1;
-        var caption = new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B)), FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        var caption = new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
         var box = new TextBox { Text = get(), Margin = new Thickness(0, 1, 0, 1), ToolTip = hint };
         Grid.SetRow(caption, row); Grid.SetColumn(caption, 0);
         Grid.SetRow(box, row); Grid.SetColumn(box, 1);
@@ -687,7 +687,7 @@ public partial class Lba2SceneEditorWindow : Window
         HeaderPanel.Children.Add(new TextBlock
         {
             Text = $"{doc.Scene.Actors.Count} actors, {doc.Scene.Zones.Count} zones, {doc.Scene.TrackPoints.Count} track points.",
-            Foreground = new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B)), FontSize = 10.5, Margin = new Thickness(0, 10, 0, 0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), FontSize = 10.5, Margin = new Thickness(0, 10, 0, 0),
         });
     }
 

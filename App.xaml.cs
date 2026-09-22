@@ -24,8 +24,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
         // Point the native engine's own log at the same file (it stays silent without this).
-        if (DebugLog.LogFile is not null) Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
-        DebugLog.Log("App: startup");
+        Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
+        DebugLog.Log($"App: startup (version {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version})");
         DispatcherUnhandledException += (_, args) =>
         {
             DebugLog.Log($"App: DispatcherUnhandledException: {args.Exception}");

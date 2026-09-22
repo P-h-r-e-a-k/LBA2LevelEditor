@@ -510,6 +510,12 @@ int lba2_renderer_get_actor_attributes(int index, int *beta, int *body, int *ani
     return RendererGetActorAttributes(index, beta, body, anim, lifePoint, armor, hitForce, move);
 }
 
+extern int RendererGetActorScene(int index);
+int lba2_renderer_get_actor_scene(int index)
+{
+    return RendererGetActorScene(index);
+}
+
 int lba2_renderer_get_actor_script(int index, char *buffer, int bufferSize)
 {
     return RendererGetActorScript(index, buffer, bufferSize);

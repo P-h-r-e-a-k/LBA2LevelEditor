@@ -42,8 +42,9 @@ internal sealed class EditorSettings
 
     public string Lba1Directory { get; set; } = "";
 
-    // LBA1: show scenes that join edge to edge as one map (see Lba1Areas).
-    public bool Lba1JoinAreas { get; set; }
+    // LBA1: show scenes that join into one map as that map (see Lba1Areas). On until the user turns it off; kept between runs. (The setting this replaces,
+    // Lba1JoinAreas, started off, so its saved value says nothing about what was chosen.)
+    public bool Lba1JoinConnectedAreas { get; set; } = true;
 
     // Draw the yellow ring around the selected actor and the thick white outline on the selected zone.
     public bool HighlightSelection { get; set; } = true;
@@ -52,9 +53,21 @@ internal sealed class EditorSettings
     public AudioLevels Lba1Audio { get; set; } = new();
     public AudioLevels Lba2Audio { get; set; } = new();
 
+    // Where each kind of window last was (see WindowPlacement), keyed by a name for that kind ("MainWindow",
+    // "ActorAttributesWindow", ...) rather than per window instance: several windows of the same kind opened
+    // at once (one actor attributes window per actor, say) all restore to this one remembered spot and then
+    // cascade off each other and off it, so there is one remembered place per kind, not an ever-growing list.
+    public Dictionary<string, WindowBounds> WindowPositions { get; set; } = new();
+
     // Script text prints function names in lowercase (set_track(...)) instead of the
     // engine's uppercase (SET_TRACK(...)). The compiler accepts either.
     public bool LowercaseScriptNames { get; set; } = true;
+
+    // Undo history caps (see Scenes.SceneHistory): whichever of these two is reached first drops the oldest
+    // step. Applied to the live SceneHistory below whenever settings are loaded or saved, same as
+    // LowercaseScriptNames is applied to LbaScript.ScriptStyle, so Settings > Save takes effect immediately.
+    public int UndoMaxSteps { get; set; } = 100;
+    public int UndoMaxMegabytes { get; set; } = 50;
 
     private static EditorSettings? cached;
     public static EditorSettings Current => cached ??= Load();
@@ -70,6 +83,7 @@ internal sealed class EditorSettings
                 var loaded = JsonSerializer.Deserialize<EditorSettings>(File.ReadAllText(path));
                 if (loaded is null) continue;
                 LbaScript.ScriptStyle.LowercaseNames = loaded.LowercaseScriptNames;
+                ApplyUndoLimits(loaded);
                 // Settings found only in the old %AppData% location are copied next to the exe now.
                 if (directory == LegacySettingsDirectory)
                 {
@@ -100,6 +114,13 @@ internal sealed class EditorSettings
         }
         cached = this;
         LbaScript.ScriptStyle.LowercaseNames = LowercaseScriptNames;
+        ApplyUndoLimits(this);
+    }
+
+    private static void ApplyUndoLimits(EditorSettings settings)
+    {
+        Scenes.SceneHistory.MaxSteps = Math.Max(1, settings.UndoMaxSteps);
+        Scenes.SceneHistory.MaxBytes = Math.Max(1, settings.UndoMaxMegabytes) * 1024L * 1024L;
     }
 
     private static void Write(string directory, string json)
@@ -107,4 +128,15 @@ internal sealed class EditorSettings
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, SettingsFileName), json);
     }
+}
+
+// A window's last-known position and size (WPF device-independent units, i.e. Window.Left/Top/Width/Height
+// as WPF itself reports them). Plain get/set properties, like the rest of this file's settings, so
+// System.Text.Json's default reflection-based (de)serializer needs nothing extra to round-trip it.
+public sealed class WindowBounds
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
 }

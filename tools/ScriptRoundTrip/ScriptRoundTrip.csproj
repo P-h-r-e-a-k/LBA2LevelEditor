@@ -34,8 +34,19 @@
     <Compile Include="..\..\Lba1\Runtime\*.cs" Link="Lba1\Runtime\%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1ActorRecord.cs" Link="Lba1\Lba1ActorRecord.cs" />
     <Compile Include="..\..\Lba1\Lba1RoomDoorMod.cs" Link="Lba1\Lba1RoomDoorMod.cs" />
+    <Compile Include="..\..\Lba1\Lba1LampPost.cs" Link="Lba1\Lba1LampPost.cs" />
+    <Compile Include="..\..\Lba1\Lba1DoorLock.cs" Link="Lba1\Lba1DoorLock.cs" />
     <Compile Include="..\..\Lba1\Lba1PinkElf.cs" Link="Lba1\Lba1PinkElf.cs" />
+    <Compile Include="..\..\Lba1\Lba1DialogueText.cs" Link="Lba1\Lba1DialogueText.cs" />
+    <Compile Include="..\..\BodyStudio\Body.cs" Link="BodyStudio\Body.cs" />
+    <Compile Include="..\..\Lba1\Lba1SecretRoomExtras.cs" Link="Lba1\Lba1SecretRoomExtras.cs" />
     <Compile Include="..\..\Lba1\Lba1SurpriseChanges.cs" Link="Lba1\Lba1SurpriseChanges.cs" />
+    <Compile Include="..\..\Lba1\Lba1Fishermen.cs" Link="Lba1\Lba1Fishermen.cs" />
+    <Compile Include="..\..\Lba1\Lba1Areas.cs" Link="Lba1\Lba1Areas.cs" />
+    <Compile Include="..\..\Lba1\Lba1Game.cs" Link="Lba1\Lba1Game.cs" />
+    <Compile Include="..\..\HqdDescriptions.cs" Link="HqdDescriptions.cs" />
+    <Compile Include="..\..\HqdWriter.cs" Link="HqdWriter.cs" />
+    <Compile Include="..\..\SceneMenuNames.cs" Link="SceneMenuNames.cs" />
     <Compile Include="..\..\Lba1\Lba1BlankScene.cs" Link="Lba1\Lba1BlankScene.cs" />
     <Compile Include="..\..\Lba2Engine.cs" Link="Lba2Engine.cs" />
     <Compile Include="..\..\Terrain\**\*.cs" Link="Terrain\%(RecursiveDir)%(Filename)%(Extension)" />
@@ -45,6 +56,11 @@
     <Compile Include="..\..\Assets\**\*.cs" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Grids\**\*.cs" Link="Grids\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Lba1\Lba1GridRenderer.cs" Link="Lba1\Lba1GridRenderer.cs" />
+    <Compile Include="..\..\Lba2Areas.cs" Link="Lba2Areas.cs" />
+    <Compile Include="..\..\Lba2Interiors.cs" Link="Lba2Interiors.cs" />
+    <Compile Include="..\..\Lba2ActorPersistence.cs" Link="Lba2ActorPersistence.cs" />
+    <Compile Include="..\..\Lba2EntityTable.cs" Link="Lba2EntityTable.cs" />
+    <Compile Include="..\..\Lba2ScriptFixes.cs" Link="Lba2ScriptFixes.cs" />
   </ItemGroup>
 
 </Project>

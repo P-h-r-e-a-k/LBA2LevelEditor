@@ -1763,6 +1763,20 @@ int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount)
     return 1;
 }
 
+// Scene (numscene) an actor was read from, or -1. Mirrors RendererGetZoneScene above exactly, and for the same
+// reason (the editor's own attributes window needs to know which SCENE.HQR record an edit belongs to, to save it
+// there): both RendererScanIslandActors (the whole-island scan) and RendererLoadInteriorScene (one interior scene)
+// append a scene's own actors to g_actors contiguously, in the scene file's own ListObjet order (object 1, 2, ...
+// -- object 0 is always the hero and is never in this list), so a caller can recover an actor's position within
+// its own scene's actor list the same way MainWindow's own zone overlay already does for zones: count how many
+// earlier entries of this flat list share the same scene.
+int RendererGetActorScene(int index)
+{
+    if (index < 0 || index >= (int)g_actors.size()) return -1;
+    if (g_actors[(size_t)index].Removed) return -1;
+    return (int)g_actors[(size_t)index].SceneIndex;
+}
+
 int RendererGetActorWaypoint(int actorIndex, int waypointIndex, int *x, int *y, int *z)
 {
     if (actorIndex < 0 || actorIndex >= (int)g_actors.size()) return 0;

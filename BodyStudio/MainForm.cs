@@ -19,7 +19,7 @@ public sealed class MainForm : Form
     readonly CheckBox pairImage=new(){Text="The picture holds a front view (left) and a back view (right)",AutoSize=true},symmetric=new(){Text="Make the figure symmetric (copy the left half)",AutoSize=true},lit=new(){Text="Game lighting: shade the body like the game's own characters",Checked=true,AutoSize=true};
     readonly Dictionary<int,BodyStyleStats> styleStats=[];
     readonly ModelView preview=new(){Dock=DockStyle.Fill};
-    readonly PictureBox reference=new(){Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Color.FromArgb(25,30,39)};
+    readonly PictureBox reference=new(){Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Renderer.ViewBackground};
     readonly Label status=new(){Dock=DockStyle.Bottom,Height=52,Padding=new Padding(16,8,16,8),Text="Choose an image, generate, then inspect the preview before exporting."};
     readonly Button generate=new(){Text="Generate preview",AutoSize=true},export=new(){Text="Export selected games",AutoSize=true,Enabled=false};
     readonly ComboBox previewGame=Combo("LBA1","LBA2");

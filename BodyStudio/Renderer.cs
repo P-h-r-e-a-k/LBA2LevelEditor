@@ -41,11 +41,14 @@ public sealed class Lba1Shading
 
 public static class Renderer
 {
-    public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null)
+    // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
+    public static readonly Color KeyBackground=Color.FromArgb(25,30,39),KeyGrid=Color.FromArgb(44,52,64);
+    public static readonly Color ViewBackground=Color.FromArgb(232,240,250),ViewGrid=Color.FromArgb(203,221,240);
+    public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,Color? background=null,Color? gridLine=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);
         var bitmap=new Bitmap(Math.Max(1,width),Math.Max(1,height));using var g=Graphics.FromImage(bitmap);
-        g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Color.FromArgb(25,30,39));
+        g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(background??KeyBackground);
         var neutral=model.World();var world=pose??neutral;float h=Math.Max(1,neutral.Max(v=>v.Y)-neutral.Min(v=>v.Y));float minY=neutral.Min(v=>v.Y);
         if(headOnly){minY+=h*.82f;h*=.18f;}
         float visibleWidth=headOnly?h*.85f:neutral.Max(v=>v.X)-neutral.Min(v=>v.X);
@@ -53,7 +56,7 @@ public static class Renderer
         var focus=headOnly&&model.Bones.Count>14?new Vector3(world[model.Bones[14].Pivot].X,0,0):Vector3.Zero;
         var rotated=world.Select(v=>new Vector3((v.X-focus.X)*MathF.Cos(yaw)+(v.Z-focus.Z)*MathF.Sin(yaw),v.Y-minY,-(v.X-focus.X)*MathF.Sin(yaw)+(v.Z-focus.Z)*MathF.Cos(yaw))).ToArray();
         PointF Screen(Vector3 v)=>new(width/2f+v.X*scale,height*0.90f-v.Y*scale+v.Z*scale*0.08f);
-        using var grid=new Pen(Color.FromArgb(44,52,64));
+        using var grid=new Pen(gridLine??KeyGrid);
         for(int x=-5;x<=5;x++)g.DrawLine(grid,width/2f+x*h*scale/6,height*0.92f,width/2f+x*h*scale/6,height*0.97f);
         g.DrawLine(grid,20,height*0.92f,width-20,height*0.92f);
         // Polygon-average painter sorting loses narrow lettering at oblique angles.
@@ -164,12 +167,12 @@ public sealed class ModelView : Control
     public bool Wire,Bones;
     public bool HeadOnly;
     Point? drag;
-    public ModelView(){DoubleBuffered=true;BackColor=Color.FromArgb(25,30,39);SetStyle(ControlStyles.ResizeRedraw,true);}
+    public ModelView(){DoubleBuffered=true;BackColor=Renderer.ViewBackground;SetStyle(ControlStyles.ResizeRedraw,true);}
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
         if(Model==null){TextRenderer.DrawText(e.Graphics,"Generate a body to preview it here",Font,ClientRectangle,Color.Silver,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
-        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly);e.Graphics.DrawImageUnscaled(bitmap,0,0);
+        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);e.Graphics.DrawImageUnscaled(bitmap,0,0);
         TextRenderer.DrawText(e.Graphics,$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones",Font,new Point(16,16),Color.LightGray);
         TextRenderer.DrawText(e.Graphics,"Drag to rotate  |  Neutral pose  |  Palette colours",Font,new Point(16,Height-32),Color.LightGray);
     }

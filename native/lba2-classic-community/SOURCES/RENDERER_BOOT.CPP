@@ -90,6 +90,22 @@ int RendererBootAssets(void)
     HQRPtrAnim3DS = HQR_Init_Ressource(path, Anim3DSMem, 100);
     if (!HQRPtrAnim3DS) return 0;
 
+    // The description table of the 3D-sprite animations: PERSO.CPP's LoadListAnim3DS(), which this build leaves out. StartInitObj reads
+    // ListAnim3DS[num] for every ANIM_3DS sprite actor (Citadel scene 13 has one), and without the table that is a null read: the process
+    // died when such a scene was opened.
+    {
+        U32 first = 0;
+        S32 n = 0;
+        U32 handle = OpenRead(HQRPtrAnim3DS->Name);
+        if (handle) {
+            Read(handle, &first, 4);
+            Close(handle);
+            n = (S32)(first / 4) - 2;
+        }
+        ListAnim3DS = (T_ANIM_3DS *)LoadMalloc_HQR(path, n);
+        if (!ListAnim3DS) return 0;
+    }
+
     // PERSO.CPP normally owns this allocation; it is excluded from the
     // renderer-only build, so TERRAIN.CPP's animated water path would
     // otherwise write through a null PtrPolySea/PtrAniPoly whenever a

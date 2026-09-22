@@ -22,16 +22,16 @@ internal sealed class GridEditorWindow : Window
     private readonly List<IGridBackend> backends = new();
     private readonly ComboBox backendBox = new() { Width = 90 };
     private readonly TextBox filter = new() { Padding = new Thickness(3), ToolTip = "Filter the grids" };
-    private readonly ListBox grids = new() { Width = 190, Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), Foreground = new SolidColorBrush(Color.FromRgb(0xC5, 0xC6, 0xB9)), FontFamily = new FontFamily("Consolas") };
-    private readonly ListBox blocks = new() { Width = 200, Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), Foreground = new SolidColorBrush(Color.FromRgb(0xC5, 0xC6, 0xB9)) };
+    private readonly ListBox grids = new() { Width = 190, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontFamily = new FontFamily("Consolas") };
+    private readonly ListBox blocks = new() { Width = 200, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
     private readonly Image plan = new() { Width = 64 * Cell, Height = 64 * Cell, Cursor = Cursors.Cross };
-    private readonly Canvas planHost = new() { Width = 64 * Cell, Height = 64 * Cell, Background = Brushes.Black };
+    private readonly Canvas planHost = new() { Width = 64 * Cell, Height = 64 * Cell, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) };
     private readonly System.Windows.Shapes.Rectangle cursor = new() { Stroke = Brushes.Yellow, StrokeThickness = 2, IsHitTestVisible = false };
     private readonly Image iso = new() { Stretch = Stretch.Uniform };
     private readonly Slider layer = new() { Minimum = 0, Maximum = 24, Value = 0, Width = 200, IsSnapToTickEnabled = true, TickFrequency = 1 };
-    private readonly TextBlock layerText = new() { Foreground = Brushes.Gainsboro, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock cellInfo = new() { Foreground = Brushes.Gainsboro, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
-    private readonly TextBlock status = new() { Foreground = Brushes.Gainsboro, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock layerText = new() { Foreground = UiBrushes.Text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock cellInfo = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Button saveButton = new() { Content = "Save" }, undoButton = new() { Content = "Undo" }, redoButton = new() { Content = "Redo" };
     private readonly RadioButton paintTool = new() { Content = "Paint", IsChecked = true, GroupName = "gt" }, eraseTool = new() { Content = "Erase", GroupName = "gt" }, fillTool = new() { Content = "Fill rectangle", GroupName = "gt" };
     private readonly StackPanel libraryPanel = new();
@@ -56,8 +56,8 @@ internal sealed class GridEditorWindow : Window
         Title = "Interior grid editor";
         Width = 1500; Height = 900;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x1B, 0x19));
-        Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
+        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
+        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
         BuildLayout();
         try
         {
@@ -86,19 +86,19 @@ internal sealed class GridEditorWindow : Window
         var root = new DockPanel();
         var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 6, 8, 6) };
         DockPanel.SetDock(top, Dock.Top);
-        top.Children.Add(new TextBlock { Text = "Game", Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        top.Children.Add(new TextBlock { Text = "Game", Foreground = UiBrushes.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         top.Children.Add(backendBox); backendBox.Margin = new Thickness(0, 0, 14, 0);
         foreach (var t in new[] { paintTool, eraseTool, fillTool }) { t.Foreground = Foreground; t.Margin = new Thickness(0, 0, 10, 0); t.VerticalAlignment = VerticalAlignment.Center; top.Children.Add(t); }
         paintTool.ToolTip = "Click / drag: places the selected block, its origin at the cell";
         eraseTool.ToolTip = "Click: removes the whole block under the pointer";
         fillTool.ToolTip = "Drag a rectangle: fills the layer with the block, stepping by its size";
-        top.Children.Add(new TextBlock { Text = "Layer", Foreground = Brushes.Gray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 6, 0) });
+        top.Children.Add(new TextBlock { Text = "Layer", Foreground = UiBrushes.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 6, 0) });
         top.Children.Add(layer); top.Children.Add(layerText);
         layer.ValueChanged += (_, _) => { layerText.Text = $"y = {(int)layer.Value}"; RedrawPlan(); };
         foreach (var (b, handler) in new (Button, RoutedEventHandler)[] { (undoButton, (_, _) => Undo()), (redoButton, (_, _) => Redo()), (saveButton, (_, _) => Save()) })
         { b.Padding = new Thickness(12, 3, 12, 3); b.Margin = new Thickness(14, 0, 0, 0); b.Click += handler; top.Children.Add(b); }
         root.Children.Add(top);
-        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), Child = status };
+        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(bottom);
 
@@ -113,7 +113,7 @@ internal sealed class GridEditorWindow : Window
         var right = new DockPanel { Margin = new Thickness(8), Width = 250 };
         blocks.SelectionChanged += (_, _) => { if (blocks.SelectedItem is BlockItem b) { block = b.Number; ShowLibrary(); } };
         var rightTop = new StackPanel();
-        rightTop.Children.Add(new TextBlock { Text = "BLOCKS OF THE LIBRARY", FontSize = 10, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 4) });
+        rightTop.Children.Add(new TextBlock { Text = "Blocks of the library", FontSize = 10, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 0, 4) });
         DockPanel.SetDock(rightTop, Dock.Top);
         right.Children.Add(rightTop);
         DockPanel.SetDock(libraryPanel, Dock.Bottom);
@@ -132,9 +132,9 @@ internal sealed class GridEditorWindow : Window
         var centre = new Grid();
         centre.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         centre.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var planScroll = new ScrollViewer { Content = planHost, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Width = 64 * Cell + 24, Background = Brushes.Black };
+        var planScroll = new ScrollViewer { Content = planHost, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Width = 64 * Cell + 24, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) };
         Grid.SetColumn(planScroll, 0); centre.Children.Add(planScroll);
-        var isoHost = new Border { Background = Brushes.Black, Child = iso, Margin = new Thickness(8, 0, 0, 0) };
+        var isoHost = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = iso, Margin = new Thickness(8, 0, 0, 0) };
         Grid.SetColumn(isoHost, 1); centre.Children.Add(isoHost);
         root.Children.Add(centre);
         Content = root;
@@ -272,7 +272,7 @@ internal sealed class GridEditorWindow : Window
         blocks.ItemTemplate = new DataTemplate();
         var stack = new FrameworkElementFactory(typeof(StackPanel)); stack.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
         var image = new FrameworkElementFactory(typeof(Image)); image.SetBinding(Image.SourceProperty, new System.Windows.Data.Binding("Thumb")); image.SetValue(FrameworkElement.WidthProperty, 44.0); image.SetValue(FrameworkElement.HeightProperty, 34.0); image.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 8, 0));
-        var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Text")); text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center); text.SetValue(TextBlock.ForegroundProperty, Brushes.Gainsboro);
+        var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Text")); text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center); text.SetValue(TextBlock.ForegroundProperty, UiBrushes.Text);
         stack.AppendChild(image); stack.AppendChild(text);
         blocks.ItemTemplate.VisualTree = stack;
         if (blocks.Items.Count > 0) { block = Math.Clamp(block, 1, count); blocks.SelectedIndex = block - 1; }
@@ -304,13 +304,13 @@ internal sealed class GridEditorWindow : Window
     {
         libraryPanel.Children.Clear();
         if (GridPaint.Info(library, block) is not { } info) return;
-        libraryPanel.Children.Add(new TextBlock { Text = $"BLOCK {block}: {info.Dx} x {info.Dy} x {info.Dz}", FontSize = 10, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 0, 4) });
+        libraryPanel.Children.Add(new TextBlock { Text = $"Block {block}: {info.Dx} x {info.Dy} x {info.Dz}", FontSize = 10, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 0, 4) });
         var entryBox = new TextBox { Text = "0", Width = 44, Padding = new Thickness(2) }; var brickBox = new TextBox { Padding = new Thickness(2), Width = 60 }; var shapeBox = new TextBox { Padding = new Thickness(2), Width = 44 };
         var entries = GridPaint.Entries(library, block).ToList();
         void Load() { if (int.TryParse(entryBox.Text, out var p) && entries.FirstOrDefault(e => e.Pos == p) is { } e) { brickBox.Text = e.Brick.ToString(); shapeBox.Text = e.Shape.ToString(); } }
         entryBox.TextChanged += (_, _) => Load();
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
-        foreach (var (label, box) in new[] { ("entry", entryBox), ("brick", brickBox), ("shape", shapeBox) }) { row.Children.Add(new TextBlock { Text = label, Foreground = Brushes.Gray, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center }); box.Margin = new Thickness(0, 0, 8, 0); row.Children.Add(box); }
+        foreach (var (label, box) in new[] { ("entry", entryBox), ("brick", brickBox), ("shape", shapeBox) }) { row.Children.Add(new TextBlock { Text = label, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center }); box.Margin = new Thickness(0, 0, 8, 0); row.Children.Add(box); }
         libraryPanel.Children.Add(row);
         Load();
         var apply = new Button { Content = "Set entry", Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(0, 4, 6, 0), ToolTip = "Sets the brick and shape of one cell of the block (0 = a floor-like solid shape; the game uses the shape for collisions)" };
@@ -428,7 +428,7 @@ internal sealed class GridEditorWindow : Window
             for (var x = 0; x < 64; x++)
             {
                 // the highest drawn cell at or below the layer: bright when it is on the layer, dim when it lies below
-                byte r = 14, g = 20, b = 18; var dim = 1.0;
+                byte r = 243, g = 248, b = 255; var dim = 1.0; var empty = true;   // (an empty cell: the scheme's surface colour, with grid lines in its border colour)
                 for (var y = y0; y >= 0; y--)
                 {
                     var at = ((z * 64 + x) * 25 + y) * 2;
@@ -437,7 +437,7 @@ internal sealed class GridEditorWindow : Window
                     if (GridPaint.Info(library, blk) is { } info && pos < info.Dx * info.Dy * info.Dz)
                     {
                         var entry = GridPaint.Entries(library, blk).ElementAtOrDefault(pos);
-                        if (entry.Brick >= 0) { (r, g, b) = BrickColour(entry.Brick); dim = y == y0 ? 1.0 : 0.45; break; }
+                        if (entry.Brick >= 0) { (r, g, b) = BrickColour(entry.Brick); dim = y == y0 ? 1.0 : 0.45; empty = false; break; }
                     }
                 }
                 var edge = (x & 7) == 0 || (z & 7) == 0;
@@ -447,6 +447,7 @@ internal sealed class GridEditorWindow : Window
                         var line = px == 0 || py == 0;
                         var o = ((z * Cell + py) * 64 * Cell + x * Cell + px) * 4;
                         var k = line ? (edge ? 1.5 : 1.15) : 1.0;
+                        if (empty) { (byte, byte, byte) c = line ? (edge ? ((byte)0xA9, (byte)0xC3, (byte)0xE0) : ((byte)0xCB, (byte)0xDD, (byte)0xF0)) : (r, g, b); planPixels[o] = c.Item3; planPixels[o + 1] = c.Item2; planPixels[o + 2] = c.Item1; planPixels[o + 3] = 255; continue; }
                         planPixels[o] = (byte)Math.Min(255, b * dim * k); planPixels[o + 1] = (byte)Math.Min(255, g * dim * k); planPixels[o + 2] = (byte)Math.Min(255, r * dim * k); planPixels[o + 3] = 255;
                     }
             }

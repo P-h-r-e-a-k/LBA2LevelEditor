@@ -23,6 +23,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFn(int index, out int x, out int y, out int z, out int waypointCount);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorWaypointFn(int actorIndex, int waypointIndex, out int x, out int y, out int z);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorAttributesFn(int index, out int beta, out int body, out int anim, out int lifePoint, out int armor, out int hitForce, out int move);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorSceneFn(int index);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorScriptFn(int index, [Out] byte[]? buffer, int bufferSize);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorAttributesFn(int index, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int SetActorPositionFn(int index, int worldX, int worldY, int worldZ);
@@ -67,6 +68,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private GetActorFn? getActor;
     private GetActorWaypointFn? getActorWaypoint;
     private GetActorAttributesFn? getActorAttributes;
+    private GetActorSceneFn? getActorScene;
     private GetActorScriptFn? getActorScript;
     private SetActorAttributesFn? setActorAttributes;
     private SetActorPositionFn? setActorPosition;
@@ -139,6 +141,7 @@ internal sealed class RendererLibraryApi : IDisposable
         getActor = Get<GetActorFn>("lba2_renderer_get_actor");
         getActorWaypoint = Get<GetActorWaypointFn>("lba2_renderer_get_actor_waypoint");
         getActorAttributes = Get<GetActorAttributesFn>("lba2_renderer_get_actor_attributes");
+        getActorScene = Get<GetActorSceneFn>("lba2_renderer_get_actor_scene");
         getActorScript = Get<GetActorScriptFn>("lba2_renderer_get_actor_script");
         setActorAttributes = Get<SetActorAttributesFn>("lba2_renderer_set_actor_attributes");
         setActorPosition = Get<SetActorPositionFn>("lba2_renderer_set_actor_position");
@@ -286,6 +289,9 @@ internal sealed class RendererLibraryApi : IDisposable
         if (getActorAttributes is null) { beta = body = anim = lifePoint = armor = hitForce = move = 0; return false; }
         return getActorAttributes(index, out beta, out body, out anim, out lifePoint, out armor, out hitForce, out move) == 1;
     }
+    // The scene (SCENE.HQR record) this actor was read from, or -1. See Lba2ActorPersistence.Locate for how this
+    // finds an actor's own position within that scene's actor list.
+    public int GetActorScene(int index) => getActorScene?.Invoke(index) ?? -1;
     public string GetActorScript(int index)
     {
         if (getActorScript is null) return string.Empty;
@@ -441,6 +447,6 @@ internal sealed class RendererLibraryApi : IDisposable
         handle = IntPtr.Zero;
         version = null;
         initialize = null; setDataRoot = null; shutdown = null; loadIsland = null; loadCube = null; setViewTarget = null; renderFrame = null; renderFrameWide = null; setCamera = null; setDrawSky = null; setDrawSea = null; framebuffer = null;
-        getActorCount = null; getActor = null; getActorWaypoint = null; getActorAttributes = null; getActorScript = null; projectPoint = null;
+        getActorCount = null; getActor = null; getActorWaypoint = null; getActorAttributes = null; getActorScene = null; getActorScript = null; projectPoint = null;
     }
 }

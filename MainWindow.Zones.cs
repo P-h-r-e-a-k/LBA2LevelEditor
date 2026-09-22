@@ -110,7 +110,7 @@ public partial class MainWindow
                 row.Children.Add(new TextBlock { Text = text });
                 ZoneListBox.Items.Add(new ListBoxItem { Content = row, Tag = zone.Ref });
             }
-            ZoneListHeader.Text = zones.Count > ZoneListLimit ? $"ZONES IN VIEW ({ZoneListLimit} of {zones.Count})" : $"ZONES IN VIEW ({zones.Count})";
+            ZoneListHeader.Text = zones.Count > ZoneListLimit ? $"Zones in view ({ZoneListLimit} of {zones.Count})" : $"Zones in view ({zones.Count})";
         }
         finally { zoneListSyncing = false; }
         SyncZoneListSelection();
@@ -169,12 +169,12 @@ public partial class MainWindow
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 5) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(126) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                var label = new TextBlock { Text = field.Label, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(0xC5, 0xC6, 0xB9)), FontSize = 11, ToolTip = field.Hint };
+                var label = new TextBlock { Text = field.Label, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontSize = 11, ToolTip = field.Hint };
                 var box = new TextBox
                 {
                     Text = field.Get(zone).ToString(), Padding = new Thickness(4, 3, 4, 3), ToolTip = field.Hint,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0xDC, 0xE0, 0xC8)), Background = new SolidColorBrush(Color.FromRgb(0x15, 0x1B, 0x18)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x47, 0x40)),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0)),
                 };
                 System.Windows.Automation.AutomationProperties.SetName(box, field.Label);
                 box.TextChanged += ZoneBounds_TextChanged;

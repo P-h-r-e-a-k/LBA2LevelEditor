@@ -20,15 +20,15 @@ public partial class MainWindow
         {
             var audio = CurrentAudio;
             var name = currentGame == GameKind.Lba1 ? "LBA1" : "LBA2";
-            AudioHeading.Text = $"SOUND FOR {name}";
+            AudioHeading.Text = $"Sound for {name}";
             AudioMuteCheck.IsChecked = audio.Mute;
             AudioMusicSlider.Value = audio.Music; AudioVoicesSlider.Value = audio.Voices; AudioEffectsSlider.Value = audio.Effects;
             ShowAudioValues(audio);
             AudioMusicSlider.IsEnabled = AudioVoicesSlider.IsEnabled = AudioEffectsSlider.IsEnabled = !audio.Mute;
             PlayEngineOptions.Visibility = currentGame == GameKind.Lba2 ? Visibility.Visible : Visibility.Collapsed;
             PlayIntroText.Text = currentGame == GameKind.Lba2
-                ? "The PLAY SCENE button starts the scene that is open in the game (LBA2's own engine) inside this window. It plays what is saved on disk."
-                : "The PLAY SCENE button plays the scene that is open in the LBA1 play view inside this window. It plays what is saved on disk.";
+                ? "The Play scene button starts the scene that is open in the game (LBA2's own engine) inside this window. It plays what is saved on disk."
+                : "The Play scene button plays the scene that is open in the LBA1 play view inside this window. It plays what is saved on disk.";
             AudioNote.Text = currentGame == GameKind.Lba2
                 ? "The game reads its volumes when it starts: change them here, then play (or restart) the scene."
                 : "These change the sound at once while a scene is playing.";

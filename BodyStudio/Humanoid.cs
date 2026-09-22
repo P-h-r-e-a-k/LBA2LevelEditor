@@ -64,12 +64,17 @@ public static class Humanoid
             }
             return(left,right);
         }
-        void Loft(int bone,float[] rows,string part,int side=0,int segments=6)
+        // overrideFirst, when given, replaces the image-derived span for row 0 only (later rows still read the
+        // image normally): used to anchor a leg's own top ring to the torso's own hip ring (see HipAttach) so the
+        // two tubes always meet, rather than each independently re-scanning the image and risking a mismatch --
+        // a real bug this fixes: a wide stance (or anything else that makes one leg's own silhouette at the hip
+        // row read differently from the torso's) used to leave a visible hole between that leg and the torso.
+        (float left,float right) Loft(int bone,float[] rows,string part,int side=0,int segments=6,(float left,float right)? overrideFirst=null)
         {
-            var list=vertices[bone];int begin=list.Count;
+            var list=vertices[bone];int begin=list.Count;(float left,float right) last=default;
             for(int r=0;r<rows.Length;r++)
             {
-                float y=rows[r];var span=Span(y,part,side);float centre=(span.left+span.right)/2,radius=(span.right-span.left)/2;
+                float y=rows[r];var span=r==0&&overrideFirst is{}o?o:Span(y,part,side);last=span;float centre=(span.left+span.right)/2,radius=(span.right-span.left)/2;
                 if(part=="head")radius*=settings.HeadScale/.7f;
                 float depth=part switch{"head"=>radius*w*.90f,"torso"=>Math.Min(radius*w*.6f,h*.072f),"foot"=>h*.072f,_=>radius*w*.92f};
                 if(part=="head"&&r==0){radius*=.35f;depth*=.35f;}
@@ -94,26 +99,35 @@ public static class Humanoid
                 faces.Add((bone,[begin,begin+j+2,begin+j+1,begin+j],tone));
                 int b=begin+(rows.Length-1)*segments;faces.Add((bone,[b,b+j,b+j+1,b+j+2],tone));
             }
+            return last;
+        }
+        // A sub-span of the hip's own span for one leg to start from: the hip's own half on that side, less a
+        // small central gap for the crotch -- always inside the hip span by construction, so the leg's top ring
+        // can never land outside where the torso's own bottom ring actually reaches.
+        (float left,float right) HipAttach((float left,float right) hip,int side)
+        {
+            float mid=(hip.left+hip.right)/2,gap=(hip.right-hip.left)*.08f;
+            return side>0?(mid+gap/2,hip.right):(hip.left,mid-gap/2);
         }
         if(settings.HeadDetails)
         {
             // Reserve vertex capacity for actual facial geometry instead of subdividing clothing.
-            Loft(2,[.56f,.47f],"torso");Loft(3,[.845f,.815f,.76f,.56f],"torso");
+            var hip1=Loft(2,[.56f,.47f],"torso");Loft(3,[.845f,.815f,.76f,.56f],"torso");
             Loft(4,[.81f,.65f],"arm",1);Loft(5,[.65f,.46f,.435f],"arm",1);
             Loft(6,[.81f,.65f],"arm",-1);Loft(7,[.65f,.46f,.435f],"arm",-1);
-            Loft(8,[.51f,.29f],"leg",1);Loft(9,[.29f,.07f],"leg",1);Loft(10,[.07f,.003f],"foot",1);
-            Loft(11,[.51f,.29f],"leg",-1);Loft(12,[.29f,.07f],"leg",-1);Loft(13,[.07f,.003f],"foot",-1);
+            Loft(8,[.51f,.29f],"leg",1,overrideFirst:HipAttach(hip1,1));Loft(9,[.29f,.07f],"leg",1);Loft(10,[.07f,.003f],"foot",1);
+            Loft(11,[.51f,.29f],"leg",-1,overrideFirst:HipAttach(hip1,-1));Loft(12,[.29f,.07f],"leg",-1);Loft(13,[.07f,.003f],"foot",-1);
             Loft(14,[1f,.98f,.966f,.927f,.875f,.845f],"head",0,12);
             HeadDecoration.Add(vertices[14],(ids,tone)=>faces.Add((14,ids,tone)),h,settings);
         }
         else
         {
-        Loft(2,[.56f,.51f,.47f],"torso");
+        var hip=Loft(2,[.56f,.51f,.47f],"torso");
         Loft(3,[.845f,.815f,.76f,.66f,.56f],"torso");
         Loft(4,[.81f,.74f,.65f],"arm",1);Loft(5,[.65f,.55f,.46f,.435f],"arm",1);
         Loft(6,[.81f,.74f,.65f],"arm",-1);Loft(7,[.65f,.55f,.46f,.435f],"arm",-1);
-        Loft(8,[.51f,.39f,.29f],"leg",1);Loft(9,[.29f,.20f,.07f],"leg",1);Loft(10,[.07f,.025f,.003f],"foot",1);
-        Loft(11,[.51f,.39f,.29f],"leg",-1);Loft(12,[.29f,.20f,.07f],"leg",-1);Loft(13,[.07f,.025f,.003f],"foot",-1);
+        Loft(8,[.51f,.39f,.29f],"leg",1,overrideFirst:HipAttach(hip,1));Loft(9,[.29f,.20f,.07f],"leg",1);Loft(10,[.07f,.025f,.003f],"foot",1);
+        Loft(11,[.51f,.39f,.29f],"leg",-1,overrideFirst:HipAttach(hip,-1));Loft(12,[.29f,.20f,.07f],"leg",-1);Loft(13,[.07f,.025f,.003f],"foot",-1);
         Loft(14,[1f,.985f,.969f,.958f,.945f,.929f,.917f,.905f,.89f,.872f,.845f],"head",0,8);
         }
         // Empty accessory bones still have a point so all engine animation groups are valid.

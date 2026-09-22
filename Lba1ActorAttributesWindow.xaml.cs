@@ -79,7 +79,7 @@ public partial class Lba1ActorAttributesWindow : Window
         bodyFilter = new FilterableComboBox(BodyCombo, () => bodyOptions);
         animFilter = new FilterableComboBox(AnimCombo, () => animOptions);
         entityFilter.Committed += EntityCommitted;
-        bodyFilter.Committed += () => { bodyId = ParseIndex(BodyCombo.Text, bodyId); RefreshPreviewTarget(); };
+        bodyFilter.Committed += () => { bodyId = ParseIndex(BodyCombo.Text, bodyId); BodyChanged(); };
         animFilter.Committed += () => { animId = ParseIndex(AnimCombo.Text, animId); RefreshPreviewTarget(); };
         foreach (var (combo, ident) in new[] { (EntityCombo, 0), (BodyCombo, 1), (AnimCombo, 2) })
             combo.LostFocus += (_, _) => CommitTyped(ident);
@@ -134,9 +134,41 @@ public partial class Lba1ActorAttributesWindow : Window
         bodyOptions = options;
 
         var anims = game.EntityAnims(entity);
-        var animList = anims.OrderBy(a => a.Key).Select(a => new FilterableComboBox.Option(a.Key, $"{a.Key}: {game.AnimName(a.Value) ?? $"ANIM.HQR #{a.Value}"}")).ToList();
+        // (an animation with fewer bones than the chosen body can't move it: the preview shows the body still, so the list says so)
+        var animList = anims.OrderBy(a => a.Key).Select(a => new FilterableComboBox.Option(a.Key, $"{a.Key}: {game.AnimName(a.Value) ?? $"ANIM.HQR #{a.Value}"}{(FitsBody(a.Key) ? "" : "  (not for this body: too few bones)")}")).ToList();
         if (!anims.ContainsKey(animId)) animList.Add(new FilterableComboBox.Option(animId, $"{animId}"));
         animOptions = animList;
+    }
+
+    // Whether the entity's animation `anim` can play on the chosen body (it moves at least as many bones as the body has: what the preview needs); true when that can't be told.
+    private bool FitsBody(int anim)
+    {
+        if (data.IsHero || data.IsSprite || bodyId < 0) return true;
+        var body = game.BodyIndex(entity, bodyId) is { } index ? images.Body(index) : null;
+        return body is null || game.AnimIndex(entity, anim) is not { } animIndex || game.Animation(animIndex) is not { } animation || animation.BoneCount >= body.Bones.Count;
+    }
+
+    // Another body of the entity was picked: an animation that can't move it gives way to the entity's standing one (generic animation 0) or the first that can, and
+    // the list marks the ones that can't.
+    private void BodyChanged()
+    {
+        var anims = game.EntityAnims(entity);
+        if (!FitsBody(animId))
+        {
+            var playable = anims.Keys.Order().Where(FitsBody).ToList();
+            if (playable.Count > 0)
+            {
+                var was = animId;
+                animId = playable.Contains(0) ? 0 : playable[0];
+                StatusLabel.Text = $"Animation {was} has too few bones for this body; using {animId}.";
+            }
+        }
+        BuildBodyAndAnimOptions();
+        loading = true;
+        animFilter?.Refresh();
+        SetComboText();
+        loading = false;
+        RefreshPreviewTarget();
     }
 
     private void SetComboText()
@@ -169,7 +201,7 @@ public partial class Lba1ActorAttributesWindow : Window
             if (value != entity) { entity = Math.Max(0, value); EntityChanged(); }
             else SetComboText();
         }
-        else if (which == 1) { bodyId = value; RefreshPreviewTarget(); SetComboText(); }
+        else if (which == 1) { bodyId = value; BodyChanged(); }
         else { animId = value; RefreshPreviewTarget(); SetComboText(); }
     }
 
@@ -190,10 +222,9 @@ public partial class Lba1ActorAttributesWindow : Window
         if (!anims.ContainsKey(animId) && anims.Count > 0) animId = anims.Keys.Min();
         BuildBodyAndAnimOptions();
         loading = true;
-        bodyFilter?.Refresh(); animFilter?.Refresh();
-        SetComboText();
+        bodyFilter?.Refresh();
         loading = false;
-        RefreshPreviewTarget();
+        BodyChanged();      // (the animation has to fit the entity's body too; this also refreshes the animation list, the boxes and the preview)
     }
 
     // ---- kinds of actor ---------------------------------------------------------
@@ -316,8 +347,25 @@ public partial class Lba1ActorAttributesWindow : Window
 
     // ---- buttons ----------------------------------------------------------------
 
+    // Explore mode looks but doesn't change: the fields stay readable, the preview still plays, and Apply is off.
+    public void MakeViewOnly()
+    {
+        ApplyButton.IsEnabled = false;
+        ApplyButton.ToolTip = "Explore mode only looks; switch to Build mode to change the actor.";
+        Title += " (view only)";
+    }
+    // Ctrl+S applies, the same as every other window's own "save" shortcut.
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control || e.Key != Key.S || !ApplyButton.IsEnabled) return;
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase) return;
+        Apply_Click(sender, e);
+        e.Handled = true;
+    }
+
     private void Apply_Click(object sender, RoutedEventArgs e)
     {
+        using var busy = UiBusy.Cursor();
         var edited = data.Clone();
         bool Int(TextBox box, string what, out int value)
         {

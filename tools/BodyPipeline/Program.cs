@@ -11,6 +11,20 @@ namespace BodyPipeline;
 //   sheets <game> <outDir> [first] [count]   sheets of several bodies
 //   style <game> <in.png> <out.png> [k]      convert artwork to a game-style sheet
 //   roundtrip <game> <body>                  body -> sheet -> generated body -> sheet, with the overlap of the silhouettes
+//   render3d <game> <body> <outDir>          any retail body's own silhouette, regenerated onto the Twinsen rig, 3D-rendered
+//                                            at several angles (front/3-4/profile/back) -- a torso/limb join gap (see
+//                                            widestance below) shows as a background-coloured sliver from some angle even
+//                                            when a flat front sheet or a straight-on render hides it
+//   widestance <outDir> [bandana]            regression test for a real bug (2026-09-22): a hand-drawn wide-stance
+//                                            silhouette with an asymmetric accessory along one leg, run through New
+//                                            humanoid (add "bandana" for the HeadDetails branch too) and rendered
+//                                            including a zoomed, magenta-background hip closeup where any gap between a
+//                                            leg and the torso is unmissable. Humanoid.Build's Loft used to let each limb
+//                                            independently re-derive its own top ring from the source image, so a leg
+//                                            whose silhouette read differently from the torso's at the hip row could
+//                                            come out visibly detached; HipAttach now anchors each leg's own top ring to
+//                                            a sub-span of the torso's own hip ring instead, which cannot mismatch by
+//                                            construction. This command should show a clean join at every camera angle.
 internal static class Program
 {
     private static readonly string[] Folders =
@@ -30,6 +44,8 @@ internal static class Program
             "sheets" => Sheets(game, args[2], args.Length > 3 ? int.Parse(args[3]) : 0, args.Length > 4 ? int.Parse(args[4]) : 12),
             "style" => Style(game, args[2], args[3], args.Length > 4 ? int.Parse(args[4]) : 14),
             "roundtrip" => RoundTrip(game, args.Length > 2 ? int.Parse(args[2]) : 0),
+            "render3d" => Render3D(game, args.Length > 2 ? int.Parse(args[2]) : 0, args.Length > 3 ? args[3] : Path.GetTempPath()),
+            "widestance" => WideStance(args.Length > 1 ? args[1] : Path.GetTempPath(), args.Length > 2 && args[2] == "bandana"),
             "normals" => Normals(game, int.Parse(args[2])),
             "enginebody" => EngineBody(args[1], args[2], args.Skip(3).DefaultIfEmpty("humanoid unlit").ToArray()),
             "styletest" => StyleTest(game, args.Length > 2 ? int.Parse(args[2]) : 0),
@@ -507,6 +523,101 @@ internal static class Program
             }
             using var original = ToBitmap(sheet);
             original.Save(Path.Combine(Path.GetTempPath(), $"roundtrip_lba{game}_{body}_original.png"), ImageFormat.Png);
+        }
+        finally { try { Directory.Delete(work, true); } catch (IOException) { } }
+        return 0;
+    }
+
+    // Diagnostic for the reported torso/leg gap: a hand-drawn silhouette with a wide stance (the legs already visibly
+    // separated well above where the torso's own taper ends -- exactly what a stride, or legs apart around an object,
+    // looks like) and a thin diagonal "held object" along one leg only, the way a knife/weapon held at the side would
+    // read in a silhouette mask. Feeds it through the real New-humanoid generator and renders the result.
+    private static int WideStance(string outDir, bool headDetails = false)
+    {
+        Directory.CreateDirectory(outDir);
+        const int w = 300, h = 700;
+        using var bmp = new Bitmap(w, h);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.White);
+            using var black = new SolidBrush(Color.Black);
+            // head
+            g.FillEllipse(black, w / 2 - 30, 20, 60, 70);
+            // torso, tapering slightly to the hips
+            g.FillPolygon(black, new PointF[] { new(w / 2 - 45, 95), new(w / 2 + 45, 95), new(w / 2 + 55, 330), new(w / 2 - 55, 330) });
+            // arms, straight down at the sides
+            g.FillRectangle(black, w / 2 - 90, 100, 30, 220);
+            g.FillRectangle(black, w / 2 + 60, 100, 30, 220);
+            // legs: a wide stance -- already two separate silhouettes well above the torso's own bottom (y=330),
+            // splitting apart from as high as y=300 -- and asymmetric (the right leg planted further out).
+            g.FillPolygon(black, new PointF[] { new(w / 2 - 55, 300), new(w / 2 - 15, 300), new(w / 2 - 30, 650), new(w / 2 - 85, 650) });   // left leg
+            g.FillPolygon(black, new PointF[] { new(w / 2 + 15, 300), new(w / 2 + 65, 300), new(w / 2 + 110, 650), new(w / 2 + 40, 650) });  // right leg, wider stance
+            // a thin "held object" (knife/weapon) along the right leg only, from hip to knee
+            using var pen = new Pen(Color.Black, 6);
+            g.DrawLine(pen, w / 2 + 70, 310, w / 2 + 95, 470);
+            // feet
+            g.FillRectangle(black, w / 2 - 95, 650, 65, 30);
+            g.FillRectangle(black, w / 2 + 30, 650, 90, 30);
+        }
+        var path = Path.Combine(outDir, "widestance_source.png");
+        bmp.Save(path, ImageFormat.Png);
+
+        var settings = new Settings
+        {
+            ImagePath = path, Lba1Folder = Folders[0], Lba2Folder = Folders[1], Lba1Body = 0, Lba2Body = 0,
+            Mask = "Dark subject", Threshold = 128, Layout = "Single front", Method = "New humanoid", AutoCrop = true, DetailBudget = 300,
+            HeadDetails = headDetails, BandanaText = "Phreak",
+        };
+        var generated = Generator.Generate(settings, 2);
+        var suffix = headDetails ? "_bandana" : "";
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2) })
+        {
+            using var render = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+            render.Save(Path.Combine(outDir, $"widestance{suffix}_{name}.png"), ImageFormat.Png);
+            using var wire = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, true, background: Color.FromArgb(40, 60, 90));
+            wire.Save(Path.Combine(outDir, $"widestance{suffix}_{name}_wire.png"), ImageFormat.Png);
+        }
+        // A tight crop right around the hip/leg join, zoomed, so a gap of even a few pixels is unambiguous.
+        using (var close = Renderer.Render(generated.Body, generated.Palette, 1400, 1800, 0.5f, false, background: Color.FromArgb(230, 30, 200)))
+        {
+            var hipArea = new Rectangle(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5);
+            using var cropped = close.Clone(hipArea, close.PixelFormat);
+            cropped.Save(Path.Combine(outDir, $"widestance{suffix}_hip_closeup.png"), ImageFormat.Png);
+        }
+        Console.WriteLine($"  source + renders in {outDir}");
+        return 0;
+    }
+
+    // Diagnostic for the torso/leg attachment: body -> flat sheet -> New-humanoid generated body, rendered from several
+    // yaw angles (front, 3/4, near-profile, from slightly below) so a gap at a limb joint shows up visually rather than
+    // only in a flat orthographic silhouette (which a depth/side gap doesn't show at all).
+    private static int Render3D(int game, int body, string outDir)
+    {
+        var folder = Folder(game);
+        var palette = PaletteBytes(game);
+        var model = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(body), game);
+        var sheet = FlatSheet.Render(model, palette);
+        Directory.CreateDirectory(outDir);
+        var work = Path.Combine(Path.GetTempPath(), "bodypipe_" + Guid.NewGuid().ToString("N")[..6]);
+        Directory.CreateDirectory(work);
+        try
+        {
+            var path = Path.Combine(work, "sheet.png");
+            using (var bmp = ToBitmap(sheet)) bmp.Save(path, ImageFormat.Png);
+            var settings = new Settings
+            {
+                // New humanoid always needs the Twinsen-rig donor (body 0), regardless of which body's own silhouette
+                // (sheet.png, from `body`) is being fed through it as the reference image.
+                ImagePath = path, Lba1Folder = Folders[0], Lba2Folder = Folders[1], Lba1Body = 0, Lba2Body = 0,
+                Mask = "Transparent background", Layout = "Front + back", Method = "New humanoid", AutoCrop = true, DetailBudget = 300,
+            };
+            var generated = Generator.Generate(settings, game);
+            foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
+            {
+                using var bmp = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+                bmp.Save(Path.Combine(outDir, $"render3d_lba{game}_{body}_{name}.png"), ImageFormat.Png);
+            }
+            Console.WriteLine($"  rendered to {outDir}");
         }
         finally { try { Directory.Delete(work, true); } catch (IOException) { } }
         return 0;

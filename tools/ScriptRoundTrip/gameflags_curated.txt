@@ -1,0 +1,230 @@
+# Curated LBA2 game-flag (ListVarGame) knowledge, merged by `ScriptRoundTrip gameflags` with LBATrainer's quests.xml
+# and the data mined from every retail scene script. Format, one flag per line:
+#   id|symbol|kind|name|values|notes
+# - symbol: COMMON.H constant, or empty.
+# - kind: inventory, count, quest, flag, track, bits, decor, engine, unused.
+# - name / values empty: inherit LBATrainer's. values "-" clears trainer values. values format  0=text;1=text
+# - notes: free text, never contains a pipe.
+# Scene numbers are SCENE.HQR numbers (entry - 1); "s27" = scene 27. Demo scenes are 193 and up.
+#
+# ---- inventory (0-39). TabInv slots; FOUND_OBJECT / STATE_INVENTORY / USE_INVENTORY take the slot number as the var. ----
+0|FLAG_HOLOMAP|inventory|Holomap||Found in Twinsen's secret room (s1); sold for 10 kashes in the Citadel shop (s14) and the Desert bazaar (s36). The engine only opens the holomap when this is 1 (PERSO.CPP) and SET_HOLO_POS pops the inventory icon up.
+1|FLAG_BALLE_MAGIQUE|inventory|Magic ball||Found in Twinsen's secret room (s1). Its power/model follows MagicLevel, not this value (INVENT.CPP).
+2|FLAG_DART|count|Darts||Quantity, capped at 99 (MAX_DARTS). Sold three for 4 kashes (s14, s36, s67); the engine subtracts one per throw (FICHE.CPP) and adds pickups (DART.CPP).
+3|FLAG_BOULE_SENDELL|inventory|Sendell's ball||Taken in Sendell's ball room (s34). The school/desert scenes read it to know the ball was recovered.
+4|FLAG_TUNIQUE|inventory|Tunic and Sendell's medallion||Taken in Miss Bloop's museum (s15). While 0 the hero uses the no-tunic body (OBJECT.CPP). STATE_INVENTORY(4,1) turns the icon into the wizard's tunic when the wizard outfit is bought (var 109).
+5|FLAG_PERLE|inventory|Pearl of Incandescence / Itinerary token (one shared slot)||TabInv[5] holds model 5 (pearl) and model 24 (itinerary token, "FLAG_DISQUE_ROUTE"). Pearl: taken in the pearl cave (s113), handed to the Weather Wizard (s21). Token: picked up in the Esmer base (s12) and the Otringal control tower (s85), consumed by the Esmer shuttles (s41, s114, s182). See also 169 and 170.
+6|FLAG_CLEF_PYRAMID|inventory|Pyramid-shaped key||Given by the neighbour after the gallic-acid quest (s9, var 54); used on the sewer door (s17).
+7|FLAG_VOLANT|inventory|Part for the car (steering wheel)||Found in Baldino's house (s38); consumed at the Dino-Fly (s49). Doubles as the translator's slot (see 29).
+8|FLAG_MONEY|count|Kashes (Twinsun) / Zlitos (Zeelich)||Quantity. Mirrored into NbGoldPieces or NbZlitosPieces (chosen by Planet: Zlitos from Planet 2, the Zeelich islands such as Otringal; the Emerald Moon still pays in Kashes) whenever a script writes it, and copied back by InitTabIndir. Scripts spend it with SUB_VAR_GAME(8, n) and GIVE_GOLD_PIECES; amounts seen 1 to 10000.
+9|FLAG_PISTOLASER|inventory|Pisto-Laser||1 when owned; the icon's 3D model is switched with STATE_INVENTORY: 1 = crystal, 2 = laser pistol (only model 2 is usable, PERSO.CPP). Quest stage lives in var 130. One decor (Citadel cube 7) is hidden when this is set.
+10|FLAG_SABRE|inventory|Emperor's sabre||Found in the emperor's room on Island CX (s181, needs a little key).
+11|FLAG_GANT|inventory|Wannie's glove||Reward from the injured Wannie at the ferryman landing (s97).
+12|FLAG_PROTOPACK|inventory|Proto-Pack||Taken in the baggage claim building (s5); STATE_INVENTORY(12,1) upgrades it to the super jet-pack when Baldino gives it (s138, var 117).
+13|FLAG_TICKET_FERRY|inventory|Ferry ticket||Bought at the Citadel (s8, 10 kashes) and Desert (s40, 12 kashes) ticket offices and at the Otringal souvenir shop (s147); consumed with SET_USED_INVENTORY when boarding (s43, s65). See 59.
+14|FLAG_MECA_PINGOUIN|count|Nitro-Meca-Penguins||Quantity, max 10 (the debug cheat code adds 5; the "all objects" cheat sets 9). +1 from each penguin pickup; the engine decrements it per throw (OBJECT.CPP).
+15|FLAG_GAZOGEM|inventory|Can of GazoGem||Taken in the Francos gazogem factory (s143), handed to Baldino (s138, var 127).
+16|FLAG_DEMI_MEDAILLON|inventory|Dissidents' ring (half medallion)||Given by the dissident in the emperor's palace room (s79, var 124 = 3); lost in the souvenir shop (s147).
+17|FLAG_ACIDE_GALLIQUE|inventory|Gallic acid||Borrowed from Ker'aooc's helper (s35) or bought for 50 kashes at the Desert bazaar (s36); used on the neighbour's map (s9, var 54).
+18|FLAG_CHANSON|inventory|Ferryman's song||Learned in the monk's house (s116, var 64). Read by the ferryman landings.
+19|FLAG_ANNEAU_FOUDRE|inventory|Ring of lightning||Given by the Weather Wizard (s21). The engine also needs MagicLevel and MagicPoint to fire it (PERSO.CPP).
+20|FLAG_PARAPLUIE|inventory|Customer's umbrella||Picked up in the sewers (s48) after the theft (var 57); handed over at Ker'aooc's (s35) or on the Citadel (s48); also for sale in the Otringal souvenir shop (s147).
+21|FLAG_GEMME|count|Gems||Quantity, +1 per gem (s97, s100, s105, s111, s112, s129, s131, s132...), spent as ferry fares (-4 at s97/s105). Used as the currency of the mosquibee/wannie ferrymen.
+22|FLAG_CONQUE|inventory|Horn of the Blue Triton||Given by the rector for the Garden Balsam (s27, var 61 = 4). Owning it enables the horn behaviour (C_CONQUE, weapon key 4, PERSO.CPP); the horn keeps its own life refill (TabInv PtMagie), topped up by FULL_POINT and by leftover clover bonuses (GERELIFE.CPP, EXTRA.CPP).
+23|FLAG_SARBACANE|inventory|Blowgun||Awarded after the blowgun test (s27, var 63 = 2); STATE_INVENTORY(23,1) makes it the blowtron in s128.
+24|FLAG_DISQUE_ROUTE / FLAG_VISIONNEUSE|inventory|Memory viewer (ACF viewer)||Picked up at Baldino's house (s38) or bought in the Otringal shop for 30 zlitos (s147). Opens the replay list of the movies flagged in vars 235-237 (PlayAllAcf). COMMON.H also names this index FLAG_DISQUE_ROUTE (itinerary disc).
+25|FLAG_TART_LUCI|inventory|Slice of firefly tart||Picked up in the tart-giving family's house (s101); handed over in the city (s118, var 64 = 2).
+26|FLAG_RADIO|inventory|Portable radio||Given by Baldino at his house (s38, var 74 = 2).
+27|FLAG_FLEUR|inventory|Garden Balsam||Picked up near the car jump (s62); handed to the rector (s27).
+28|FLAG_ARDOISE|inventory|Magic slate||Awarded outside the Dome of the Slate (s44, var 61 = 5). MEMO_ARDOISE only stores plans while this is 1.
+29|FLAG_TRADUCTEUR|inventory|Translator||Picked up in the Esmer shuttles (s41, s114, s115), Baldino's cell (s54), the Otringal prison (s84) and the control tower (s85). Shares its slot with the car part (7).
+30|FLAG_DIPLOME|inventory|Wizard's diploma||Awarded by the rector (s27, var 61 = 7); confiscated in the emperor's palace (s80); sold in the Otringal souvenir shop (s147).
+31|FLAG_DMKEY_KNARTA|inventory|Key fragment of the Francos||Taken in the Francos village (s109). All four fragments together (31-34) set var 55 and STATE_INVENTORY turns them into the full key.
+32|FLAG_DMKEY_SUP|inventory|Key fragment of the Sups||Taken in the emperor's palace last room (s80, var 148 = 3).
+33|FLAG_DMKEY_MOSQUI|inventory|Key fragment of the Mosquibees||Taken on top of the mosquibee mountain (s103).
+34|FLAG_DMKEY_BLAFARD|inventory|Key fragment of the Wannies||Taken in the wannies' mine temple (s117).
+35|FLAG_CLE_REINE|inventory|Key to the queen's passage||Taken in the Building Company (s125); used at the throne (s104, var 48). Shares its slot with the flower (27).
+36|FLAG_PIOCHE|inventory|Pick-axe||Bought in the Francos shop (s171). Shares its slot with the gallic acid (17).
+37|FLAG_CLEF_BOURGMESTRE|inventory|Burgomaster's key||Taken in the Francos village (s109), used in the burgomaster's house (s175).
+38|FLAG_NOTE_BOURGMESTRE|inventory|Burgomaster's notes||Taken in the burgomaster's house (s175, var 147).
+39|FLAG_PROTECTION|inventory|Protective spell||Taken in the protection-spell cave (s184). Needs MagicPoint to cast (PERSO.CPP).
+#
+# ---- 40 and up ----
+40|FLAG_SCAPHANDRE (unused)|track|Zoe position (track label)||COMMON.H calls index 40 FLAG_SCAPHANDRE ("the space suit is not in the inventory, so a scenario var"), but no code reads that constant; the shipped scripts use it as Zoe's position. Its value is a track label: TRACK_TO_VAR_GAME copies Zoe's current label in and VAR_GAME_TO_TRACK sends her to it, which is why the trainer's list reads like waypoints.
+41||quest|Hacienda women's steam room||Written by the Grobo in the hacienda scenes (s24, s25, s30, s32, s72); cleared when you leave.
+42||flag|Dino-Fly injured status||Set to 1 (cured) by the Dino-Fly in s49 when Twinsen brings the cure.
+43||quest|Package centre||Package-centre conveyor / box state (s5, s6). 5 = paid the porter 102 kashes.
+44||flag|Waiter in tavern cellar||Toggled by the waiter in s3 and s4.
+45||quest|Citadel shop keeper status||Set to 1 by the shopkeeper (s14) and to 2 when he comes back (s42).
+46||flag|Citadel shop cash register||
+47||quest|Injured Wannie|0=Wannie lying injured;1=Twinsen reached him ("Help me...");2=Twinsen helped him and asked about the Queen|Both writers are in the ferryman landing scene (s97).
+48||flag|Throne door||Set when Twinsen uses the queen's key (item 35) at the throne room door (s104).
+49||flag|Package centre lower door||Set when Twinsen uses a little key on the lower door (s6).
+50||quest|Package centre hidden money box|0=not collected;1=collected (chest in the secret room, s16);2=guard lets Twinsen through to his own parcel (s5)|
+51||quest|Stopping the rain||The chapter-2 storm plot; tested by nearly every Citadel scene to decide whether the rain, Tralu's lighthouse and the aliens are active.
+52||decor|Citadel decor hidden by a flag nothing sets|-|Only the island decor uses it: Citadel cube 7 (bodies 70, 71) and CITABAU cube 5 (body 35) are hidden when it is non-zero. No script writes it. The trainer's "Unknown".
+53||flag|Tralu: first door / switch|0=closed;1=open|Set by actor 4 in Tralu's first scene (s2), toggled between tracks 100 and 101.
+54||quest|Pyramid key quest||
+55||flag|All four key fragments combined|0=no;1=combined|Set by whichever island scene finishes the combination (s80, s103, s109, s117); read by the celebration temple (s93) and many islands. STATE_INVENTORY turns fragment slots 31-34 into the assembled key.
+56||quest|Lighthouse keeper / alien landing progress||1 is set by the hero in s2 when talking to the keeper (actor 2) while the storm plot is still open.
+57||quest|Stolen umbrella||
+58||unused|Unused|-|No script or engine references.
+59||quest|Ferry ticket / crossing||1 bought (Citadel office, s8), 5 bought (Desert office, s40), 3 boarded at the Citadel harbour (s43), 7 boarded at the Desert harbour (s65), 4 arrived Desert (s65), 8 arrived Citadel (s43).
+60||quest|Tralu boss fight||1 set on entering his zone (s2), 2 when Tralu's life reaches 0, 3 after the key opens the lighthouse-keeper's door.
+61||quest|Becoming a wizard||3 paid 120 kashes, 4 gave the flower, 5 got the slate (s44), 7 got the diploma (s27). 1, 2 and 6 are tested but never set.
+62||quest|Cure Dino-Fly||Set from the pharmacy (s22), the harbour (s43), the Dino-Fly (s49), the sewers (s48), Ker'aooc's house (s35) and the school (s27).
+63||quest|School of Magic: blowgun test||1 hit all targets (training room s33), 2 blowgun awarded (s27).
+64||quest|Ferryman's song||1 fainted after the tart (s101), 2 gave the tart and got the key (s118), 3 opened the chapel (s118), 4 monk says to call the ferryman (s121).
+65||decor|School of magic entrance doors||Also swaps decor in the desert island cube 9: bodies 54 hidden and 61-63 shown when set.
+66||quest|Map in neighbour's house||Written by the neighbour (s9): 1 map readable after the acid, 2 read.
+67|-|quest|Wannies island: hiding in a transport box|0=not in box;1=inside the box;2=inside with the lid closed|Renamed: the scenes are the wannies' warehouse and box building (s99, s124, s126), not Otringal.
+68||flag|Left Twinsen's house: Zoe cut scene||Set by the Citadel Dino-Fly scene (s49) once Zoe has left.
+69||quest|Mosquibee rebellion progress||2, 5 throne room (s104); 3 arrival (s105, needs gems); 1 blowtron test (s128); 4 hide-out (s129). Also toggles two decors in the Mosquibee cube 3.
+70||flag|Alien cut scene after the rain||Set by the alien in s42.
+71||quest|Citadel taxi (Lupin-Bourg bike)|0=not on the bike;1=on the bike;2=other destination chosen (s46, choice 415)|Set by the taxi driver (actor 3 in s45, s46, s50 and actor 13 in s48) after the 8 kashes fare.
+72||quest|Attacked children in the school||Value = which of the three kids Twinsen hit (assigned per combination, 1-7).
+73||flag|Mosquibee blowtron||Set when the blowtron is grabbed in the bee test room (s128).
+74||quest|Fix the car / get the horn||1 got the car part (s38), 2 gave it to Zoe (s49), 3 Zoe calls (s60), 4 Zoe says try the race track (s65), 5 horn traded for the flower (s27).
+75||unused|Unused|-|No script or engine references.
+76||flag|Door to fragment in the mine||Set by a little key at the door (s112).
+77||quest|Grobo brother waypoint||
+78||flag|Grobo brother spawned||Cleared by five Citadel scenes on entry, set to 1 by the Grobo in s48.
+79||quest|Funfrock pizza scene||1 set in the celebration temple (s93) when the combined key is used, 2 set at the track label 31 in s95.
+80||track|Wizard pedlar position (track label)||The pedlar's track label, saved and restored across the desert scenes (TRACK_TO_VAR_GAME / VAR_GAME_TO_TRACK in 30 scenes). Tested against about 100 labels.
+81||quest|Wizard to Otringal||1 diploma received and the wizards vanish (s27), 2 accepted Sup's invitation (s29).
+82||flag|Ferryman taxi ride||1 while the ferry cut scene runs (paying gems, s97, s105, s132).
+83||quest|Main story sub-stage (wizard, Baldino, return to Citadel, Sendell)|0=new;1=as a wizard going to the spaceship;2=leaving spaceship, attacked;3=attacked leaving spaceship;4=entered Otringal spaceport as a wizard (Joe scene);5=escaped the cell, Joe gone;6=used the itinerary token to go home;7=landed on the Citadel: Zoe calls;8=Zoe says to go to the school of magic;9=Dino-Fly lands in the desert oasis;10=rector: lightning spell, get Sendell's ball, the clam;11=got the pearl of incandescence;12=used the lightning spell to get Sendell's ball;13=Baldino calls from the Emerald Moon|Also drives the CITABAU decors of Citadel cubes 2, 5 and 7 (about 30 objects shown when set). The Otringal control tower scene (s85) temporarily adds 50 to this var as a marker and subtracts it again on the next load (SUB when the value is >= 50), so a saved value of stage + 50 is possible there.
+84||quest|Otringal prison: mosquibee cell|0=cell locked;1=cell unlocked;2=mosquibee escaped|
+85||quest|Emerald Moon / Baldino escape|3=used token in the Desert shuttle;4=landed on the Emerald Moon;5=wrong password;6=right password;7=Baldino's cell unlocked;8=after the cut scene;9=after Baldino and the CX guy;10=unlocked the door to the spaceship;11=crash-landed with Baldino|
+86||flag|Killed the green alien on the spaceship / guards triggered||
+87||flag|Otringal prison: Joe status|0=Joe there;1=Joe gone|
+88||bits|Otringal prison: guards killed (bitmask)|0=none;1=guard 1 (actor 2);2=guard 2 (actor 13);4=guard 3 (actor 14);8=guard 4 (actor 21);15=all|Each bit is ADDed when the matching actor's life reaches 0 (s84). The trainer's list of values is a different observation of this same mask.
+89||flag|On the moving platform in the Temple of Bu|0=not on it;1=on it|Follows CARRY_BY / CARRY_OBJ_BY == 2 in s10 and s11.
+90||flag|Emerald Moon: entrance panel toggle|0=off;1=on|Flips 0/1 each time zone 6 is triggered in the Emerald Moon entrance scenes (s13, s23, s52, s53, s167, s168).
+91||flag|Wannies mine: object on the plate|0=no;1=yes|1 while Twinsen carries the crate (actor 17 in s100, actor 7 in s122) inside the trigger zone.
+92||bits|Otringal control tower: people killed (bitmask)|0=nobody;1=left scientist;2=right scientist;4=soldier;8=Sup;15=everybody|ADDed in the control tower scene (s85) as each actor's life reaches 0.
+93||flag|Emerald Moon: yellow/black doors||Set when the door switch is hit (s23, s54).
+94||quest|Dino-Fly location|1=start (Zoe cut scene);2=landed at the Dome of the Slate;3=landed on the Desert island;4=landed on the island across from the hacienda;5=at the Dome of the Slate (take-off);6=Desert island from the Citadel|Set by the Dino-Fly in s0, s44, s47, s49, s55, s73.
+95||flag|Read the wizard's note about finishing the spell||
+96||unused|Unused|-|No script or engine references.
+97||flag|Emerald Moon: circle door||Set 1/0 by the diamond-building scene (s31); also swaps two door decors in the Emerald Moon cube 3.
+98||flag|Emerald Moon: triangle door||Same scene and decor pair as 97.
+99||flag|Emerald Moon: square door||Set in s31; decor pair in the Emerald Moon cube 4.
+100||flag|Emerald Moon: spaceship landed||Set in the shuttle scene (s115); shows two ship decors in the Emerald Moon cube 3.
+101||decor|Otringal fence panel 4 destroyed||Set in the prison exit scene (s90); swaps panel body 138 for the broken body 140 in Otringal cube 6.
+102||decor|Otringal fence panel 2 destroyed||As 101.
+103||decor|Otringal fence panel 1 destroyed||As 101.
+104||decor|Otringal fence panel 5 destroyed||As 101.
+105||decor|Otringal fence panel 6 destroyed||As 101.
+106||decor|Otringal fence panel 3 destroyed||As 101.
+107||quest|Undergas elevator||Written in the elevator scenes (s120, s123); read by the scene next to it (s98).
+108||quest|Harbour boat animation state (Citadel and Desert)|0=idle;1-3=boat positions;4-6=next positions|Renamed: it is only written by the harbour scenes (s43 and s60), which choose the next state at random (RND(2)) when their boat reaches the end of a track; not a single cut scene.
+109||flag|Wizard's outfit|0=not owned;1=bought|Bought for 50 kashes in the desert scenes (s62-s68); cleared in the men's bath (s30) when var 83 = 1. STATE_INVENTORY(4,1) makes the tunic the wizard's.
+110||decor|Otringal decor hidden outside chapters 6-8|0=decor shown;1=decor hidden|1 when CHAPTER < 6 or > 8 (s90, s138), 0 during chapters 6 to 8; hides four bodies (101-104) in Otringal cube 5.
+111||flag|Bu poster in the Citadel ticket office||
+112||flag|Otringal: guards recognise Twinsen and attack|0=guards ignore Twinsen;1=guards attack|Set by the Otringal harbour (s87, when var 124 = 1) and the celebration island guard (s95). Also toggles decors in Otringal cubes 3 and 4.
+113||flag|Otringal casino: jackpot room state|0=no;1=jackpot hit|Set 1 in the jackpot room (s133, VAR_CUBE(2) > 5), cleared in the casino entrance (s135) and lower city (s89).
+114||unused|Unused|-|No script or engine references.
+115||track|Otringal lowest elevators: which platform carries Twinsen|1-4=carried by platform 3-6;5=none|Written from zone 100 in s139, read by the elevator scene above it (s82).
+116||quest|Otringal lift / safari giraffe position|0=new;1=outside;2=inside;3=other stop;4=other stop|Written by moving actors in s82, s89, s90, s139. Values 3 and 4 are missing from the trainer's list.
+117||flag|Baldino gave the super jet-pack||Set at the crash site (s138).
+118||flag|Desert island: healed the petanque player||Set by the player in s60.
+119||flag|Zoe by the car: Citadel cube 9 decor|0=decor shown;1=decor hidden|Set by the Dino-Fly scene (s49) once var 74 >= 3; hides the decor bodies 85 (CITADEL) and 114 (CITABAU) in cube 9.
+120||flag|Francos gazogem factory: life container taken|0=in place;1=taken|Set by the pickup in the first secret room (s145).
+121||flag|Used the telescope on the hacienda roof||
+122||flag|Leontine taxi||Set to 1 when boarding at the Otringal harbour (s87), reset on arrival at the celebration island (s95) and the Francos village (s109).
+123||flag|Taxi to the Francos island available||Set at the lower city (s89).
+124||quest|Path to the Otringal rebels||
+125||flag|Yellow taxi: Celebration island to Francos||
+126||flag|Yellow taxi: Francos to Otringal||
+127||flag|Gave the gazogem to Baldino||Set at the crash site (s138); the value 2 in the trainer's list is only tested, never set.
+128||flag|Mosquibee arrival scene: actor 10 reached track 11|-|Written once (s105, plus demo s216); never read. Unknown purpose.
+129||flag|Boarded the boat to the elevator||Toggled in the Francos platform scene (s107) and elevator island (s120); two decors in KNARTAS cube 1 and ASCENCE cube 1 are hidden when set.
+130||quest|Laser pistol quest||1 has the crystal (s95), 2 broken pistol (s148), 3 working pistol (s95). Matches inventory slot 9's model states.
+131||quest|Otringal bar show|0=kiss on stage;1=singer about to come on stage;2=singer on stage;3=kiss about to come on stage|Written by the bar actors (s134) and by the harbour/bar entrance (s87, s136), which reset it with RND(2).
+132||flag|Johnny Rocket position|0=by the swimming pool;1=in his room|
+133||decor|Otringal decor hidden before chapter 6|0=decor shown;1=decor hidden|1 when CHAPTER < 6 (s90, s138); hides body 105 in Otringal cube 5. Renamed: the trainer's "left cell block" is only an observation.
+134||bits|Wannies mine, 2nd room: gems collected (bitmask 1, 2, 4)|0=none;1=gem A;2=gem B;4=gem C;7=all three|ADDs 1, 2 or 4 as each gem is taken (s100). Reset to 0 when the ferryman is paid in gems (s97).
+135||flag|Wannies mine, 3rd room: gem|0=in place;1=taken|Set in s111; reset with the other gem flags at the ferryman (s97).
+136||bits|Wannies island near the temple: gems collected (bitmask 1, 2)|0=none;1=gem A;2=gem B;3=both|s112; reset at the ferryman (s97).
+137||bits|Mosquibee island arrival: gems (bitmask 1, 2)|0=none;1=gem A;2=gem B;3=both|s105.
+138||bits|Mosquibee island arrival: gems near the bridge (bitmask 1, 2)|0=none;1=gem A;2=gem B;3=both|s105.
+139||flag|Mosquibee gem in the spider area|0=in place;1=taken|Set in the passage to the fragment (s149); reset in s105.
+140||bits|Island under Celebration arrival: gems (bitmask 1, 2)|0=none;1=gem A;2=gem B;3=both|s132.
+141||bits|Island under Celebration upper scene: gems (bitmask 1, 2, 4)|0=none;1=gem A;2=gem B;4=gem C;7=all three|s131.
+142||flag|Island under Celebration hide-out gem|0=in place;1=taken|s129.
+143||flag|Carried by the turtle|0=no;1=riding the turtle|1 while CARRY_BY == 3 (s64) or 2 (s113).
+144||flag|Otringal souvenir shop: wizard diploma sold|0=on sale;1=sold|
+145||flag|Otringal souvenir shop: ferry ticket sold|0=on sale;1=sold|
+146||flag|Otringal souvenir shop: umbrella sold|0=on sale;1=sold|
+147||flag|Burgomaster's notes found||Set in the burgomaster's house (s175); read by the village (s109).
+148||quest|Sup fragment / emperor's palace||3 got the Sup fragment (s80), 4 broke the window above it; tested 2 to 4 in the palace rooms s151-s166.
+149||decor|Desert island: extra props from chapter 4|0=props hidden;1=props shown|Set to 1 by about 60 desert actors (bodies 15-17) when CHAPTER == 4; shown when set in desert cubes 4, 8, 9 and 10 (24 decors). Renamed: not "Landed with Dino-Fly".
+150||flag|Mosquibee island: Twinsen climbing the rope||1 during the cut scene (s105), cleared in the maze (s106).
+151||flag|Francos arrival flag|0=not set;1=set on arrival|Set by the Francos arrival scene (s110), cleared by the mosquibee passage to CX (s176). Unknown purpose.
+152||quest|Emperor's shuttle|0=new;1=taking the shuttle to the final fragment (s182);2=landed at the palace (s189)|
+153||flag|Told the grand rector about the pearl and Sendell's ball||All three of 153-155 are set by the rector in the school (s27).
+154||flag|Asked where the pearl was and was told: in the clam||
+155||flag|Told the rector about the pearl of incandescence||Set when Twinsen brings the pearl to the rector (s27, track 211).
+156||decor|Otringal upper city: emperor's shuttle decor|0=decor hidden;1=shuttle decor shown|1 once var 152 >= 2 (s88); shows body 31 in Otringal cube 1. Renamed from "Left emperor shuttle".
+157|PLAY_THE_END|quest|The End: Dark Monk destroyed|0=game running;1=ending: the Dark Monk is dead (s188);2=set in the sewer scene (s48), Twinsen/Dino-Fly cut scene|COMMON.H: PLAY_THE_END = (ListVarGame[157] > 0). While set the engine keeps the ending music (LM_PLAY_MUSIC), skips voice transfers in the desert (MESSAGE.CPP), blocks saving (SAVEGAME.CPP) and 57 CITABAU decors in cube 5 appear.
+158||flag|Looked at the alien spaceship (cut scene)||Set in s42 (Citadel) and s65 (Desert) when Twinsen uses the viewing zone.
+159||quest|Funfrock button and the children|1=Funfrock pushed the button (s186);2=children fall through the first scene (s185);3=children fall through scene 3 and Funfrock teleports (s187)|
+160||flag|Emperor triggered the Moon|0=no;1=triggered (s181)|GameOver() plays the DELUGE cinematic instead of the normal game over when this is > 0 (GAMEMENU.CPP).
+161||quest|Joe's shell|1=conversation in the Tralu dungeon (s20);2=freed from the shell (s61)|
+162||bits|Dark Monk statue 1st scene: teleporters destroyed (bitmask)|1=teleporter 1 (actor 45);2=teleporter 2 (actor 46);3=both|ADDed when the statue boss's life reaches 0 (s185).
+163||flag|Dark Monk statue: top teleporter destroyed||s186.
+164||decor|Citadel sewer cover A (cube 5)|0=hidden;1=shown|Set 1 by s42, s47, s49, cleared by s48; shows body 47 (CITADEL) or 64 (CITABAU) in cube 5. The demo build force-sets 164 and 165 to hide the sewer covers (EXTFUNC.CPP).
+165||decor|Citadel sewer cover B (cube 7)|0=hidden;1=shown|Set 1 by s48 and s49, cleared by s42; shows body 47 / 64 in cube 7.
+166||decor|Citadel cube 6: alien prop during chapter 2|0=hidden;1=shown|1 when CHAPTER == 2 in s42, s43 and s46; shows body 56 (CITADEL) or 86 (CITABAU) in cube 6.
+167||decor|Desert cube 6: harbour ferry prop|0=hidden;1=shown|0 while the ferry ride runs (var 59 = 3) or in chapter 4, 1 otherwise (s47-s71); shows body 48 in desert cube 6.
+168||flag|Desert: tour / car-jump gate|0=off;1=on|Set by the car-jump actor in s62 (zone 5), cleared when bought back at the tour (s57, 40 zlitos). Unknown purpose.
+169||flag|Pearl of Incandescence found|0=no;1=cave found (s113)|Cleared when the pearl is handed to the Weather Wizard (s21).
+170||flag|Itinerary token held (Esmer shuttle ticket)|0=no;1=holding it|Set with inventory slot 5's token model (s12, s85, s177), cleared by the Esmer shuttles (s41, s114, s182).
+171||flag|As a wizard, alien asks to visit their planet||Set at the hacienda (s29), read at the school (s27).
+172||flag|Read only by two desert actors|-|Read by actors 7 and 8 of s62 (together with var 27) but never written by any script. Unknown.
+173||decor|Citadel cube 3 decor|0=hidden;1=shown|1 in s47, 0 in s50; shows body 20 (CITADEL) or 28 (CITABAU) in cube 3.
+174||flag|Attacked the guard in the Otringal tower on returning to the Citadel||1 when the guard is hit (s85).
+175||quest|Temple of Bu puzzle stage|0=reset;1=set;2 and 3=other steps|Set by the temple actors (s10, s11).
+176||flag|Bu Meca-Penguin taken from the statue plinth||s11.
+177||flag|Dark Monk statue 3rd scene: switch 1|0=not triggered;1=triggered|Set in s187 (all of 177-181); each is tested > 0 there.
+178||flag|Dark Monk statue 3rd scene: switch 2|0=not triggered;1=triggered|
+179||flag|Dark Monk statue 3rd scene: switch 3|0=not triggered;1=triggered|
+180||flag|Dark Monk statue 3rd scene: teleporter destroyed|0=not triggered;1=triggered|
+181||flag|Dark Monk statue 3rd scene: switch 5|0=not triggered;1=triggered|
+182||decor|Desert cube 4: coast decor|0=hidden;1=shown|Set to 1 by the desert scenes (s56, s59-s61) and 0 in s55; shows body 1 in desert cube 4. All of 182-190 are the desert "neighbouring cube" toggles; scene 94 (empty water) turns them all on.
+183||decor|Desert cube 12: coast decor|0=hidden;1=shown|Body 1 in desert cube 12.
+184||decor|Desert cube 16: coast decor|0=hidden;1=shown|Body 1 in desert cube 16.
+185||decor|Desert cube 1: coast decor|0=hidden;1=shown|Body 1 in desert cube 1.
+186||decor|Desert cube 17: coast decor|0=hidden;1=shown|Body 1 (two decors) in desert cube 17.
+187||decor|Desert cube 2: coast decor|0=hidden;1=shown|Body 1 in desert cube 2.
+188||decor|Desert cube 3: coast decor|0=hidden;1=shown|Body 1 in desert cube 3.
+189||decor|Desert cube 7: coast decor|0=hidden;1=shown|Body 1 in desert cube 7.
+190||decor|Desert cube 13: decor|0=hidden;1=shown|Body 74 in desert cube 13.
+191||flag|Wannies mine: gem near the clover box|0=in place;1=taken|Set in s100; reset at the ferryman (s97).
+192||flag|Wannies mine: gem|0=in place;1=taken|Set in s100; reset at the ferryman (s97).
+193||count|Wannies island temple gems taken|-|Set 1 then +1 in s112, reset at the ferryman (s97).
+194||flag|Citadel: spaceship / Joe scene at the Sendell sign||Set at track 101 in s47.
+195||flag|Dark Monk statue: wizards hole||s185.
+196-234|-|unused|Unused|-|No script, engine or decor references (in the trainer's list all are "Unknown").
+235|FLAG_ACF|engine|Movies seen: bits 0-15 of the ACF list|-|Bit n of 235 + n / 16 is set by PlayAcf when the n-th ACF movie is played (PLAYACF.CPP); PlayAllAcf and the memory viewer (item 24) use it to replay movies (the INTRO is skipped). The trainer's per-value descriptions are movie combinations, not stages.
+236|FLAG_ACF2|engine|Movies seen: bits 16-31|-|As 235.
+237|FLAG_ACF3|engine|Movies seen: bits 32-47|-|As 235.
+238|-|unused|Unused|-|
+239|-|unused|Unused|-|
+240||flag|Clover box: Citadel sewers|0=in place;1=taken|The box actor tests it on entry and removes itself when set.
+241||flag|Clover box: Dome of the Slate|0=in place;1=taken|
+242||flag|Clover box: Wannies mine 2nd room (read only)|0=in place;1=taken|Only read (s100 actor 5) and never set by any script.
+243||flag|Clover box: Desert island (via the turtle)|0=in place;1=taken|
+244||flag|Clover box: Island under Celebration and Island CX|0=in place;1=taken|Set from the hide-out (s129) and the CX secret passage (s180).
+245||flag|Clover box: Emerald Moon|0=in place;1=taken|
+246||flag|Clover box: island across from the hacienda|0=in place;1=taken|
+247|-|unused|Unused|-|
+248||flag|Demo only|-|Only written in the demo scene 193.
+249|FLAG_ESC|engine|Scenario signal: cut scene skipped with ESC|0=normal;1=the player pressed ESC in a cinema scene|The engine sets it in ResetCinemaMode (OBJECT.CPP) and clears it when CinemaMode switches on (GERELIFE.CPP). Scripts test it after a cut scene to jump to its end. Scripts also reset it to 0 (15 writers). The trainer's "took ferry" descriptions came from watching this.
+250|-|unused|Unused|-|
+251|FLAG_CLOVER|count|Clover leaves (current life boxes)|-|Quantity of clover leaves the hero has; capped at NbCloverBox and refilled by the engine (COMPORTE.CPP, OBJECT.CPP, EXTRA.CPP). Scripts only read it (== 0 in 8 places) and grow the cap with INC_CLOVER_BOX. The trainer's "Number of lives" is this.
+252|FLAG_VEHICULE_PRIS|engine|Vehicle taken|-|Named in COMMON.H and the console ("vehicletaken") but nothing in the engine or scripts reads or writes it.
+253|FLAG_CHAPTER|engine|Chapter|0=initial;1=new game (s0);2=aliens land (s46, lighthouse);3=wizard to Otringal (s41);4=returned to the Citadel (s47);5=going to the Emerald Moon (s114);6=Emerald Moon, X-symbol building (s53);7=Wannies elevator scene (s98);8=mosquibee passage to CX (s176);9=Island CX shuttle (s182);10=key fragments used in the Celebration temple (s93)|Each value is set by the scene named after it (SET_VAR_GAME(253, n); INC_CHAPTER is never used). The trainer's labels for 6 to 10 describe the same moments. LF_CHAPTER reads it. MAX_CHAPTER = 20: the engine indexes NecessaryChapterMoney[] (money bonus cap, 150 in chapter 4) and MessChapitreTwinsen[][] (hero's chapter idle chatter) with it; TEMPETE_ACTIVE is chapter < 2 or rain.
+254|FLAG_PLANETE_ESMER|engine|Esmer rails (mine wagon uses Esmer rail bricks)|0=Twinsun rails;1=Esmer rails|GetNumBrickWagon (WAGON.CPP) swaps every RAIL_E_* brick for the plain rail when set. Written by the mine scenes: 1 in the Wannies mine (s100, s122), 0 in the Temple of Bu (s10, s11). The trainer's "entered mine" is wrong.
+255|FLAG_DONT_USE|engine|Reserved (inventory sentinel)|-|Used as the "empty" marker in TabIndir; never a real variable.

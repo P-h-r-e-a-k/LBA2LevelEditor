@@ -20,9 +20,12 @@ that is available).
 
 Everything the editor keeps lives next to the executable, so the app is portable (copy the folder, keep everything):
 `settings.json` (game folders and options), `native\` (the renderer DLL, unpacked from the exe on first launch and
-replaced when the exe changes) and `Body Exports\` (Body Studio's default output folder). If the folder isn't writable
-it falls back to `%AppData%\LBA2LevelEditor` / `%LOCALAPPDATA%\LBA2LevelEditor`; a `settings.json` found only in
-`%AppData%` from an earlier version is copied next to the exe on first run.
+replaced when the exe changes), `Body Exports\` (Body Studio's default output folder) and `editor.log` (a running
+trace of what the UI and the native engine are each doing, timestamped and interleaved, rotated to `editor.log.old`
+past 5 MB; `DebugLog`/`NativeDebugLog`, on in every build **while this is under test** - see that file's own comment
+for turning it off before a formal release). If the folder isn't writable it falls back to
+`%AppData%\LBA2LevelEditor` / `%LOCALAPPDATA%\LBA2LevelEditor`; a `settings.json` found only in `%AppData%` from an
+earlier version is copied next to the exe on first run.
 
 The one thing outside the folder is not ours: a single-file .NET app unpacks WPF's own native libraries to
 `%TEMP%\.net\LBA2LevelEditor` on launch (a disposable cache the .NET host manages). To redirect it, set the
@@ -87,16 +90,44 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   (interiors, single scenes) stays a separate scene. A zone and its arrival point are the same spot of the world, so
   the join also carries a height offset (e.g. the Citadel town floor is 15 layers below the prison yard's).
   Scenes that don't touch along an edge can be joined by hand in `Lba1Areas.ManualLinks`: the Citadel harbour comes
-  from a west-edge link; Principal Island's water tower is placed so its motorbike actor sits on Peg Leg Street's;
+  from a west-edge link; Principal Island's water tower sits directly west of Peg Leg Street (64 cells, three layers up, 48
+  rows north) so its ochre path arrives on the street's path, burying none of the street (`areatests` checks that the path rows
+  meet and that no two scenes of a joined map share a brick cell; `overlaps <folder>` lists any);
   Port Belooga lies north of the military camp (the camp's north exit and Port Belooga's south gate share their columns
   and both scenes start Twinsen there); White Leaf Desert's Maze is placed from its only exit into the desert, slid
   east until it no longer shares columns with the military camp; Proxima's sea scenes (north of the city and the two
-  rune stones) and Hamalayi Mountains (2) (village, sacred carrot, bunker and lake) are joined from their zones.
+  rune stones) and Hamalayi Mountains (2) (village, sacred carrot, bunker and lake) are joined from their zones, and so are
+  Hamalayi Mountains (1)'s prison (outside the prison, the entrance hall through its gate, the prison up the hall's stairs, and
+  the backdoor's path at the prison's north end) and the transporter's inside (the building at the top of the outside scene's
+  snowfield), and Tippet Island's village (74) with the bar (76) and the Twinsun Cafe (80) off the bar are one map (the shop, 101, is left out of it),
+  `Village`, and its three secret passage scenes (75 in the middle, 77 below it, 79 above it) another, `Secret passage`: all from
+  the zones, placed where the zones put them and then separated from the village (see below). Citadel Island's tavern (14) with its cellar (33), `Tavern`, and the sewer of the first scene (34) with
+  the secret sewer (55), `Sewer`, are two more small maps from their zones (the sewers' zones back agree to a cell), and so is Brundle
+  Island's inside of the teleportation building (95) with its secret room (98) and the telepods (99), `Teleportation` and Fortress Island's swimming pool (88) with the first secret
+  passage scene (85) and the corridor near Zoe's cell (87) off it, `Underground Fortress passage`; the fortress's inside (83) with the cloning centre (89) from
+  the zones and the rune stone (90) beyond the cloning centre's west wall, `Fortress`. The rune stone has no zone, the cloning centre's script
+  changes to it (`change_cube(90)` in its scenaric zone number 1), so it is placed by hand with its start point inside that zone
+  (`areatests` checks it). **No joined map has scenes inside one another**: the zones put some scenes on top of their neighbours
+  (a room docks into the footprint of its town), so once a map is placed `Lba1Areas.Separations` moves those scenes by the smallest number of
+  cells (found by `separate <folder> 60 columns`: along x and z) that leaves no shared plan column (a brick in the same x, z at any height); the doorways then no longer
+  meet exactly. `areatests` requires zero overlap and checks the zone-derived placements without those moves. The Principal Island harbour (11)
+  meets the fortress's outside (12) at a grid edge but is not part of that map (`NotJoined`). The two end sequence scenes (116, 117: the data
+  says Polar Island) are filed under Citadel Island (`MapIsland`, editor lists only) and joined as `End Credits`. A joined map is listed by its
+  name alone, with no scene numbers. `links <folder>` lists every pair of same-island scenes whose zones lead into each other with the offset each side
+  gives (the pairs that agree are the candidates: mostly doors into interiors, which would overlap the town they belong to) and
+  `arearender <folder> <png> <area|none> [scene=dx,dy,dz ...]` draws a candidate placement with each grid outlined before it is put
+  into `ManualLinks`.
   On Proxima the rune-stone scenes (45 lower, 46 upper) are placed by eye rather than by a zone, so the two
   motorbikes line up (45) and the upper stone follows on from scene 47, "before the upper rune stone" (46).
-  Every map is listed as `Outside (scenes ...)` unless `Lba1Areas.AreaNames` names it (`Temple of Bú`, `Mutation centre`).
+  Every map is called `Outside` unless `Lba1Areas.AreaNames` names it (`Temple of Bú`, `Mutation centre`; the top bar adds its
+  scene numbers). **Join connected areas** is on by default and kept in `settings.json` (`Lba1JoinConnectedAreas`; the old
+  `Lba1JoinAreas` started off, so its value is ignored). Turning it off opens the scene the map was looking at
+  (`Lba1Areas.FocusScene`: the scene with most ground in the middle half of the view, so the one zoomed in on, else the most
+  central; equally central: the lower-numbered) instead of the island's first scene, and an island opens on its biggest outside map
+  (`MainArea`) or, with joining off, on that map's most central scene (`CentralScene`).
 - **Tools > LBA1: Make surprise changes** (`Lba1SurpriseChanges`; the door part is `Lba1RoomDoorMod`, the elf part
-  `Lba1PinkElf`) edits the game files in two ways, saved together as one all-or-nothing transaction. First, so the
+  `Lba1PinkElf`, the fishermen part `Lba1Fishermen`) edits the game files in three ways, saved together as one all-or-nothing
+  transaction. First, so the
   otherwise unreachable "Some room (cut-out ?)" (scene 61) can be entered: Scene 13 (Lupin Burg) has a bricked-up arch on the east side of a
   house (cells x 51, z 11-15); the tool does to it what the game does for the Rabbibunny house next door (scene 28),
   moved to the new arch. In `LBA_GRI.HQR` (grid 13) the bricks become an open arch with a recess floor, copied from
@@ -107,8 +138,26 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   actor changes number. A cube-change zone in the recess (scene 13 -> 61) and one in the room's doorway
   (scene 61 -> 13) do the transition; the hero arrives at the destination corner plus his offset inside the zone. The
   first change to each file keeps a `.bak`, Edit > Undo takes the whole change back in one step; running it again does nothing (an older, faulty version of the edit is
-  refused with instructions to restore the `.bak` files). The joined map already shows scene 61 docked behind the wall
+  refused with instructions to restore the `.bak` files). Later versions of the edit are completed in place: the recess is lined
+  with grey stone (block 2) so no black shows when the door opens, the door's clip rectangle is taller (Info[3] + 28, the whole
+  140-pixel sprite), and the arch's legs are the smooth arch stones from the floor up (blocks 150 north at z = 11 and 149 south at
+  z = 15, layers 1..9, as the bricked arch and house 58's entrance have them: the Rabbibunny doorway that is copied has stone / no
+  lower legs because that house stands on raised ground, which left this arch's south leg showing the wall behind it). The street in
+  front of the door stays the game's own ochre dirt (x 52..55, curb at 56; an earlier version paved it with a doorstep slab and
+  cobbles, and the edit puts that back cell for cell). Look at it with `doorrender <folder> 13 28 <png>` (an emulation of OBJECT.C's
+  door drawing; house 58's door is actor 8, `doorapron` renders candidate grounds).  The joined map already shows scene 61 docked behind the wall
   (`Lba1Areas.ManualLinks`) with or without the edit. The room has no camera zone or scripts of its own.
+  What the door looks like in the game was checked by compositing the scene the way the engine does (`doorrender`, in
+  `tools/ScriptRoundTrip`: the bricks in painter order, the sprite cut to its Info rectangle, then `DrawOverBrick3` putting the
+  bricks in front of the door back over it). Two things showed, both fixed and both repaired in place on files an earlier
+  version of the tool changed: (1) the retail clip rectangle stops 8 pixels below the door's base point, which the Rabbibunny
+  house hides with raised ground, but beside this level street the door's lower left end (it runs down and left along z) was
+  cut off and floated above the floor, so this door's rectangle is 28 pixels taller (the sprite is 140 pixels tall and reaches 36
+  below its base point); (2) the recess was only 3 cells wide, so through the open door, and beside the closed one, the
+  empty cells drew as black. The whole doorway (x 33-37, z 52-56: pillars, floor, invisible side walls) is now copied, the floor
+  is carried to the far pillar (the reference is bare there) and grey stone (block 2, a 1 x 2 x 1 cobble block, layers 1-6) lines
+  the back (x 46) and the north side (z 11) of the recess. Tools for that: `doorstudy`, `doorrender`, `doorvariant`, `blocksheet`
+  (a contact sheet of a scene's block library), `blockinfo`, `surpriseapply <folder>` and `scenetext <folder> <scene> <actor>`.
   Edits follow what the engine relies on, taken from the LBA1 source: every grid column keeps all 25 cells; the grid
   entry's last 32 bytes stay the bitmap of blocks in use (the engine reads it from the end of the entry to decide which
   bricks to load; a grid that lost it loads the wrong bricks and runs slowly); and a door is a SPRITE_3D + SPRITE_CLIP
@@ -129,6 +178,88 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   renderer's fixed buffers (30 bones, 500 points, 500 normals) and the 400,000-byte scene memory holds one copy of the
   body per elf actor. Tests: `store surprise` (temp copies, undo/redo, repair, refusals) and `runtime doors` (the
   elf's body resolves and it turns to face the hero).
+  The elf, Floppy the third elf, greets Twinsen (`Lba1DialogueText`, `Lba1PinkElf.Greeting`): text 287 of Principal Island's dialogue ("Hi, I'm Floppy the third elf, after
+  all these years somebody has finally found me. Please help yourself to anything you find here."), appended after the fisherman's question (286) to the bank of all five
+  languages (English, French, German, Spanish, Italian; the four others hold the English until translated, and a translation later replaces it in place). The elf's script
+  says it with `message(287)` once, the first time Twinsen is within 2500 units (game flag 226; nothing in the game's own scripts uses 220..254), and again whenever action is
+  pressed within 1500 units, one press one greeting (a scene variable, 13, is held while the button is down). The game's text is in the DOS code page (CP 850, an
+  e-acute is 0x82), which `Lba1DialogueText.Bytes` writes. The tool `elfxliff <folder>` writes the greeting as XLIFF 1.2, one file per language, with empty targets and notes
+  for the translator (`translations/lba1-floppy-greeting.{fr,de,es,it}.xlf`); translations go into `Lba1PinkElf.Translations` (language number: 1 French, 2 German, 3 Spanish,
+  4 Italian). Tests: `store surprise` (text banks, the elf's script, upgrade of a first-version elf, a translation replacing the placeholder) and `runtime doors`
+  (the greeting once, again on action, not on a held button, not from far away).
+  Third, the boat trips of the three fishermen are opened up for chapter 6. How a trip works: the fisherman asks where to go
+  (`add_choice` / `ask_choice`), takes 10 Kashes and sets the scene variable 0 (`var_cube(0)`) to the destination; his boat
+  sails, and the hero's script then plays the trip on the holomap (`holomap_traj`) and puts Twinsen on a scene point
+  (`pos_point`) that lies inside a cube-change zone: standing in it carries him to the other island. The scripts tested that
+  variable for 1 and "anything else", so a third destination is 2, and every destination text already exists in each island's
+  dialogue file. Port Belooga (scene 24, actor 1) offered only the desert in chapter 5; in chapter 6 he now offers the Citadel
+  (2), the desert (1) and Proxima Island (0), asking a new question (below). The military camp (scene 39, actor 2) and Proxima City
+  (scene 42, actor 10) already offered the Citadel and Principal Island; in chapter 6 the camp also offers Proxima Island (2) and
+  Proxima City the White Leaf Desert (2). Where each new trip lands matters: the game's zones for its chapter-6 ferry (Port Belooga
+  -> the Citadel's second harbour, the camp -> Proxima's edge, Proxima -> the desert's east edge) start arrival scenes that wait for
+  a boat that only exists while `var_game(68)` is set, which hides Twinsen and freezes him (the reported desert softlock). So Port
+  Belooga and the camp get a landing of their own - a cube-change zone high above the scene (y 4096..5631, overlapping nothing, so
+  nobody can walk into it) plus a track point in it, appended as the scene's last zone and point - whose destination values give the
+  same arrival as the game's own zone into that quay (the Citadel's scene 6 zone 14, Proxima's scene 42 zone 7), which is what starts
+  the fisherman's boat sailing in; Proxima City's trip ends with `change_cube(39)`, entering the desert at its start position, where the
+  boat sails in and the fisherman steps out. Two more fixes: the new Principal Island question is a new text, "For 10 Kashes, where do
+  you want to go, Twinsen?" (id 286, appended as the last text of island 1's `TEXT.HQR` dialogue file in all five languages - English
+  as written, the others copy the island-3 fisherman's price line - so its position is past every voice file's table and no voice
+  shifts; the chapter-5 speech, text 45, is unchanged), and Proxima's fisherman used to walk off his pier: after sitting down facing
+  the water (`angle(0)`, ~250 units from the edge) he stands up (anim 55) and starts the walk cycle (anim 1, whose first steps are 335
+  and 225 units forward) while `goto_point` is still turning him, so he steps into the sea; his track now turns first
+  (`label(2); angle(704); anim(1); goto_point(3);`). The edit is text patches of the decompiled C scripts, recompiled through
+  `SceneScripts` (so references between scripts are re-pointed), each refused unless the script is what it expects; earlier versions of
+  the patches are recognised and brought up to date. Tests: `store surprise` (scripts, texts in every language and the bank limits,
+  landing points and arrivals, recompile to the same bytes, upgrade from the first version, refusals) and `runtime fishermen`, which
+  plays all nine chapter-6 trips in the C# simulation (talk, choose, pay, board, holomap trip, arrival scene, and that Twinsen is then
+  visible and can walk: the check does see the old Proxima -> desert softlock; `Lba1Runtime.ChoicePolicy` answers a headless run's
+  questions). The simulation turns instantly and doesn't reproduce the fall itself; the pier geometry comes from `scenemap`,
+  `stacks` and `animsteps`.  Fourth, a street lamp at the west corner of Lupin Burg (`Lba1LampPost`): block 117, the column of ten cells Lupin Burg's own six lamps
+  are, on the curb cap of the platform at grid cell x 0, z 63 (layers 9..18 in `LBA_GRI` entry 13), with a bonus zone (zone type 4, the
+  engine's "giver": `ZoneGiveExtraBonus` in `EXTRA.C`) that gives a little key: Info0 128 (one bit from bit 4 per bonus: money, life,
+  magic, key, clover), Info1 1. While Twinsen stands in it and presses action a key pops out of the middle of the zone at its top and
+  flies (about a thousand units) towards him, so the zone is centred on the lamp's foot (the key can only fly out over the cobbles, never
+  off the corner); the engine clears the zone's "taken" flag on every entry to the scene, so it gives one key per visit. The key check
+  is in `store surprise` (the cells, the zone, the upgrade of the first version's zone) and `runtime doors` (pressing action in the zone
+  in the simulation: the key lands on the platform and picking it up makes `NbLittleKeys` one more).
+  Fifth, the door needs that key the first time (`Lba1DoorLock`): its `comportement_1` opens only when game flag 220 ("Door unlocked") is
+  set, and if it isn't and Twinsen has a little key (`nb_little_keys()`), spends it (`use_one_little_key()`) and sets the flag
+  (`set_var_game(220, 1)`); without one the door stays shut (silent, like the game's own key doors; keys are lost on entering a scene, so
+  the lamp's key has to be used in Lupin Burg). The game saves all 255 flags in every save game, so the door stays unlocked in later saves.
+  Flag 220: `var_game(n)` is read by the game's scripts for n = 0..219 (except 27, the clover, and 148), and never for 159..199 or
+  220..254 (scanned in the decompiled scripts of all 120 scenes and in the engine's sources, which only touch 30, 90 and 134 by number), so
+  any of those is free; 220 is the first of the untouched tail and is above the inventory range (0..27, which the "consigne" flag hides),
+  with 221 and 222 left free. An installed door that opens for anyone is patched in place (the script text is replaced when it is the
+  standard door's, anything else is refused). Tests: `store surprise` (script text, upgrade, refusal) and `runtime doors` (`DoorLock`: no key,
+  door stays shut; one key, it opens, the key is spent and the flag set; later, with no key, it opens).
+  The confirmation of Tools > LBA1 > *Make surprise changes* deliberately says nothing about what it changes.
+  Sixth, the bedroom's extras (`Lba1SecretRoomExtras`): a **meca penguin** that walks between two track points (along x 56) and is taken on touch (scene 60's own penguin
+  actor, entity 9, with its scripts; the hero's life script does what the rebel village's does: `set_var_game(14, 1); kill_obj; found_object(14)`, game flag 14
+  being the penguin item), and **twelve mushrooms**, for which LBA1 has no model: BODY.HQR gets a new body built from points and polygons (a stem under a red cap with white
+  spots, one bone, lit like the retail bodies, its cap's box 420 wide so that Twinsen fits between two of them; header and bone record from the ID card body 78, whose entity 42
+  has the one-bone, one-frame animation such a body needs) and entity 42 a record for it (body id 1; an earlier shape of the mushroom is replaced in place). They stand as **two
+  smiley faces**, five cells square, either side of the door lane (z 54..56 stays free; the elf is at 57, 55): two eyes, a nose and a mouth of five that curves up at both ends (two cells apart, so Twinsen can walk between them).
+  The eyes are **kash coins worth 50** (see below). The left face (larger z, as the picture shows it) gives **clovers** with a **heart worth 50** for its nose, the right face **clover boxes** with the **magic bottle worth 80** for
+  its nose. The rewards come from the actors' own scripts, not from bonus zones: the hero's life script sets a scene variable (`var_cube`, one per mushroom) for the nearest mushroom
+  within 700 units (`distance` can only be compared with a constant, so it tries the mushrooms at 500, 550 ... 700 in turn), once per press of action (a variable of its own is held
+  until action is let go). A clover, heart or bottle mushroom then does `give_bonus(1)` (the actor's `OptionFlags` say which bonus, `NbBonus` how much, the popped extra rises from the
+  actor's top; with no magic yet the engine turns the bottle into a heart, `EXTRA.C`) and `suicide()`: the mushroom is gone for that visit and back on the next. A bonus cannot be a
+  clover box, so those work like the game's own clover boxes (scene 25's sprite 41 actor, in the mushroom's own place: the mushroom is used up as the box shows): the box stays hidden (`invisible(1)`) until its
+  mushroom is asked, the mushroom suicides, the box appears, and touching it does `inc_clover_box()` and sets one game flag (**221..225**, one per box) so each is given once, ever; a
+  mushroom whose flag is set suicides as the scene starts, and so does its box. Game flags: the engine keeps 255 (`MAX_FLAGS_GAME`), saves and loads them all and clears them all for a
+  new game, and none of the 120 scenes' own scripts touches 159..199 or 220..254 (checked by `store surprise`), so 220 (the door's "Door unlocked") and 221..225 are free. The same
+  **The coins** (the eyes): a bonus the game pops out is taken away again after 20 seconds (`EXTRA.C`: `TimeOut = 50 * 20`, only the key, sprite 6, is exempt), so a coin that just lies
+  there can't be a bonus. Each is a sprite actor (a clone of the clover box, sprite 3 = the game's kash) that stays; when Twinsen touches it (`col_obj(0)`) it does `give_bonus(1)`
+  with `OptionFlags` 16 and `NbBonus` 50, the engine pops out a real coin worth 50 that flies to him (and respects the 999 limit), and `suicide()`. No game flag: like the clovers they
+  are back on the next visit. (`give_gold_pieces` can only take kashes away; a negative amount would rely on the unsigned wrap of `NbGoldPieces`, which no retail script does.)
+  **The doorway:** an earlier layout put a clover box one cell towards the door lane from its mushroom, which was exactly where Twinsen arrives when he walks in along the lane's
+  north edge (the zone in the street arrives at destination + offset, so the recess's five lines of z map onto the room); the box pushed him east into the room's doorway zone
+  and he was sent straight back out, over and over. Nothing stands within 512 units of those rows now (a `runtime doors` check walks in along every line of the doorway).
+  tool fills the **hole in the bedroom's floor** (one column of the floor at x 59, z 62 had no brick: the cell gets block 1 position 6 like its neighbours). Tests: `store surprise`
+  (actors, faces, scripts, files, flags, grid, undo/redo) and `runtime doors` (`SecretRoom`: the penguin walks and is taken, every reward pops out and its mushroom is gone, one
+  press asks one mushroom, a box appears and is given once and its mushroom is gone next time). Tools: `mushroom <folder>` (the body's winding and size), `lba1entities` /
+  `lba1onebone` / `lba1entity` (FILE3D records), `lba1sprites <folder> <png>` (a contact sheet of SPRITES.HQR), `lba1plan`, `lba1bodywinding`, `hqrcmp` (entries that differ).
 - Actor bodies come from `FILE3D.HQR` (entity, body variant) -> `BODY.HQR`, rendered through Body Studio's renderer.
   Double-clicking an actor (or right-click > Edit Attributes) opens `Lba1ActorAttributesWindow`, laid out like the LBA2
   one: position and facing, entity / body / animation (listed as `index: description`, from the LBAPackageManager
@@ -136,6 +267,53 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   chosen animation (pause and rotation speed as in LBA2). LBA1 has no live renderer to hold session edits, so *Apply*
   writes the actor's header in `SCENE.HQR` (first save keeps `SCENE.HQR.bak`), like the zone inspector. *Edit Script...*
   opens the same C script editor as LBA2 (see below) on the LBA1 scripts.
+  An animation only moves the bones of the body it was made for, so picking a body keeps the animation in step. LBA1: the list is the entity's; an animation with fewer bones
+  than the chosen body (14 of 1832 pairs: entities 18, 19, 23, 45, 47, 48, 57, 81) is marked "not for this body" in the list and, when it is the current one, gives way to the
+  entity's standing animation or the first that fits (`lba1bodyanim <folder>` lists them). LBA2: the window's body box takes any BODY.HQR entry, so picking one now rebuilds the
+  animation list from the entities that have that body (`Lba2EntityTable`, RESS.HQR entry 44: F_BODY / F_ANIM records) - only those with as many groups as the body has bones
+  (an entity can hold bodies of several skeletons, each with its own animations), then a separator and the other named animations with that many groups - and an animation that
+  isn't one of them is replaced by the body's standing animation (generic animation 0) or the first; a body no entity has (one made with Body Studio) leaves the list alone.
+  The native preview only refuses animations of more than 31 groups, so before this a mismatched pair drew the body with the wrong skeleton's motion.
+
+**Saving an LBA2 actor edit (2026-09-22):** Apply always updates the live native session first, then also writes the edit into the actor's own scene record in
+`SCENE.HQR` (`Lba2ActorPersistence`), through the same `SceneStore`/`SceneHistory` path every other saved LBA2 edit uses (zones, the door tool, LBA1's own actor
+window) - one validated, `.bak`-kept save, one Undo/Redo entry, for free. Finding which scene record to patch, and where in it, starts from the native actor's
+flat scan index (`lba2_renderer_get_actor_scene`, a new export mirroring `lba2_renderer_get_zone_scene`): both the whole-island scan and one interior scene's own
+scan list a scene's actors contiguously and in the scene file's own order, so counting how many earlier flat-list entries share the same scene gives that actor's
+position in `SceneModel.Actors` (the hero is `Actors[0]`, so add one). Checked empirically, not just from the native source, by `lba2actorlocate` in
+ScriptRoundTrip: all 714 exterior actors of 5 islands and 98 interior actors of 7 scenes, cross-checked position/facing/life/armour/hit force/move against
+`SceneStore`'s own parse, zero mismatches. Only the fields that actually *changed* (compared with what the window loaded, not with what the file has right now)
+are written, everything else is left exactly as the file already has it - not just the fields this window doesn't expose, but any hidden gap between the file's
+own convention and what the live session reports: LBA2's `LifePoints`/`Armor`/`HitForce`/`Move` are signed bytes (`S8`) on disk, so 255 there reads back as -1 (and
+has to go back in as -1 for the same byte to come out again), and the file's own `LifePoints` for an interior scene's first actor was found to read -1 while the
+live session already reports 0 for it (an engine-side normalisation, not a bug in this) - writing back "whatever the session currently shows" for a field nobody
+touched would have quietly corrupted it. Body/animation are the one exception that can't always be saved: the file stores a small id relative to the actor's own
+kind of actor (FILE3D entity), not the raw `BODY.HQR`/`ANIM.HQR` index the picker shows, so a raw index is only written when it is already one of that entity's own
+(switching between a character's own body/animation variants); anything else stays session-only, and the status line says so rather than guessing. An exterior
+(island) scene stores a position relative to its own cube, while the live session reports the world-absolute one (the cube's offset added in, `SceneModel.CubeX`/
+`CubeY * 32768`); `Lba2ActorPersistence.Save` subtracts that back out before writing (a real bug this feature's own UI testing found: only visible for a scene
+whose cube isn't `(0, 0)`, where the offset is zero regardless, so a plain byte-range check on save can't be trusted to catch every case). Tools:
+`lba2actorlocate <folder> <ISLAND | interior <scene>...>`, `lba2actordump <folder> <scene> <indexInScene>`.
+
+**Add Actor Here can now be saved too (2026-09-22):** a brand-new actor has no "kind of actor" yet (the file needs one to give it a body/animation at all, being
+small ids relative to an entity, not raw archive indices), so `ActorAttributesWindow` gained an Entity picker (`EntityPanel`/`EntityCombo`, the same
+`FilterableComboBox` as Body/Animation, shown only for a new actor and named after its first body's own `BODY2.HQD` name, e.g. "14: Nitro-meca-penguin" - there is
+no separate LBA2 entity-name file to read instead) that narrows Body to the chosen entity's own bodies and re-syncs Animation the same way changing an existing
+actor's body already did. Apply then adds the actor to the scene file (`SceneOps.AddActor`, appended - the file only has one to diff against once it already
+exists, so a new actor's every field is written fresh) instead of refusing forever; the picker disappears once the actor is saved, since it isn't "new" any more.
+
+**Window habits (2026-09-22):** `WindowLifecycle`/`WindowPlacement` give every substantial secondary window (both actor-attributes windows, the script editor, the
+grid/object/asset editors, both scene editors, the LBA1 play window) the same two things, in one shared implementation rather than each window its own copy: it
+remembers its own kind's last position and size (`EditorSettings.WindowPositions`, keyed by window kind so several open at once - one per actor, say - cascade off
+that one remembered spot instead of landing on top of each other) and falls back to its ordinary centred placement when that spot is no longer on any currently
+connected monitor (`Screen.AllScreens`, not just "somewhere in the combined virtual desktop", which would still say yes for a spot a since-unplugged monitor
+happened to overlap); and closing the main window closes every one of them first, each running its own Closing handler (an unsaved script edit still asks before
+it is lost) - if any refuses, the main window's own close is cancelled too rather than orphaning the rest. `UiBusy` (`MainWindow`'s new `BusyPanel`/`BusyLabel` in
+the status strip) gives a slow-looking operation two tiers of feedback with one call: `UiBusy.Cursor()` (a short one, just the wait cursor: Apply in either actor
+window) or `UiBusy.Progress(panel, label, text)` (also a small indeterminate strip: loading an island, drawing a joined map) - a `using` scope that forces one
+render frame through before the blocking work starts, so the cursor/strip really do paint first, and disappear the instant the operation returns or throws.
+`ActorAttributesWindow`'s own Body/Animation combos are the shared `FilterableComboBox` now (see the main window's Island/Scene pickers, or LBA1's own actor
+window), not a second, separately-maintained implementation of the same type-to-filter behaviour.
 
 ## Modes: Explore, Build, Script
 
@@ -143,8 +321,9 @@ The main window has three modes, chosen with the buttons at the top of the right
 the View menu). The window title shows the game folder the editor is working in.
 
 - **Explore** only looks: orbit (left drag), pan (middle drag or the scroll bars / arrow keys) and zoom (wheel) the scene, toggle
-  zone / path layers, select actors and zones. Nothing can be changed (no add-actor menu, no double-click editing, the zone
-  fields are read-only).
+  zone / path layers, select actors and zones. Nothing can be changed (no add-actor menu, the zone fields are
+  read-only); double-clicking an actor opens its attributes window to look at, with Apply off (in Build mode the same double-click
+  edits, and the context menu's Edit Attributes always does).
 - **Build** makes the changes. The **BUILD** tab offers two sets of tools. *Terrain* sculpts an LBA2 island **in the same 3D view
   as Explore, live**: pick a tool (`IslandEditorView`, see "LBA2: island terrain editor"), paint on the ground under the mouse
   and the view shows the edit as you make it; "Move the view" is the tool that just orbits. While a terrain tool is chosen the
@@ -157,12 +336,54 @@ the View menu). The window title shows the game folder the editor is working in.
 - **Script** is for the actors' scripts: click an actor, or double-click it in the **SCRIPT** tab's list of the actors in view,
   to open its script window (right-click an actor in Build mode also offers *Edit Script...*, which switches to this mode).
 
+**Colours and text.** The interface uses a light blue scheme shared with a sister project (windows #E8F0FA, surfaces #F3F8FF, inputs and
+lists #FFFFFF, alternate rows #EAF3FD, buttons #D6E6F7 with hover #C3DBF5 and border #9FBEE0, headers #D2E3F6, menus #DCEAFA, borders
+#A9C3E0, text #10243E, muted text #4E6B8A, disabled #7C93AC, selection and accent #1B6EC2 with white text). Windows' own title bars stay the
+system's. Body and object views are drawn on the window colour; the actor markers keep the darker key colours their transparency is cut
+from (`Renderer.KeyBackground`). The window XAML files carry those values inline; `Theme.xaml`
+(merged in `App.xaml`) themes what they leave to the system: the system colours the default controls draw with, buttons, combo boxes
+and their lists, scroll bars, tabs, tool tips and menus (`MenuItem` templates without a tick / icon column, so no menu shows check
+marks or an empty border for them). Labels are sentence case ("Zones in view", "Play scene"), never all capitals.
+
+**Joined LBA2 interiors.** LBA2's interior scenes that lead into one another through cube-change zones are drawn as one map too (`Lba2Areas`), 24 maps
+in all (`lba2groups <folder>` lists every group of interiors whose zones lead into one another both ways): on Citadel Island Twinsen's house, Tralu, the tavern,
+the baggage claim building and the sewer with the rooms off it; on the White Leaf Desert the Esmer base, the Turkish baths with the hacienda, the School of
+Magic and the protection spell cave; Emerald Moon's Inside Base (Baldino's cell and the buildings around it); on Otringal the Imperial Hotel, the elevators, the prison, the casino, the bar, the souvenir
+shop and the Emperor's palace (the sixteen rooms of the maze and the last room); Wannies Island's mine (its first three rooms and the entrance: the mine's temple and the box transport building do not fit with them and stay scenes of their own) and city; the Mosquibee queen's throne; Celebration Island's
+Dark Monk Statue (five scenes really stacked one above another where their zones put them in the plan, each lifted so far above the one below (`Lba2Areas.Separations` Dy: 187 +87, 192 +107, 185 +162, 186 +194; `lba2screenlift <folder>` finds them from the scenes' screen silhouettes) that its picture stands clear of the lower one's, with black space between the levels; only shared cells could count there, not shared plan columns: `Lba2Areas.IsStacked`; the Celebration Island and Desert Island menu names are fixed in `Lba2IslandNames`; LBA2's scene descriptions say "White Leaf Desert" and are shown as "Desert Island", as the game itself calls it); Francos Island's Gazogem factory; and Island CX's control tower as two maps, the upper level (the stairs, the tower and the only outside scene)
+and the lower level (the room in the emperor's palace and the secret passage: put in one picture the levels lay over one another). Links whose two zones
+disagree (the temple's first two scenes, the Esmer shuttle, the departure room's space port) are left out. LBA2's scenes say nothing about which interiors
+belong together, so the links are written down (`Lba2Areas.Links`: the second scene of a link sits where the first one's cube-change zone to it puts it, zone
+corner minus arrival point). **No two scenes of a map share a plan column** (a brick in the same x, z at any height: one floor stood over another's rooms is an
+overlap on the picture as much as one in the same cells): `lba2overlaps` lists the pairs, `lba2separate` finds the smallest sideways move of one scene of each
+pair (`Lba2Areas.Separations`), and `areatests` requires none. The LBA1 maps follow the same rule now (`overlaps <folder> columns`, `separate <folder> 60 columns`).
+A scene with two separate areas can be drawn in two pieces (`Lba2Areas.Parts`, a `CellWindow` of cell columns moved by some cells): Island CX's stairs scene
+(177) is a tower at one corner of its grid and, at the other, the small room the top of the stairs leads into (the top zone arrives there at cell (56, 8, 54) from
+(9, 25, 0)), so the room is drawn 17 layers up on top of the tower. The Emperor's palace rooms overlap their neighbours' walls by up to four cells where the zones put
+them 13 cells apart, so that square is drawn 17 cells apart (`lba2pitch` finds the least pitch). The picture is drawn by the managed grid renderer (`Lba2Interiors`:
+LBA2's grids, blocks and bricks are laid out like LBA1's, drawn with `RESS.HQR`'s palette; a single scene still goes through the native engine) with every actor's own body
+(the entity's body from FILE3D, entry 44 of RESS.HQR, then BODY.HQR: `Lba2Interiors.BodyIndex`, drawn through the same renderer as LBA1's markers; a dummy figure (the placeholder body, `Assets/DummyBody.lm2`, rendered through the same marker code as every body: at its real size, its ground grid line made transparent) with a
+pale glow where the actor has none; an actor goes with the piece of a split scene it stands in) and every zone on top, on a black background (all the scene pictures and the
+minimap are on black, for contrast). The maps are listed under *Connected interiors* in an island's menu and first in its scene list; the same **Join connected areas** box turns
+them on and off (one setting for both games) and an interior on screen becomes its map or its own scene. A joined LBA2 map is view only (Build and Script are refused in it,
+Play starts at its first scene); double-clicking an actor opens that actor's scene on its own, where it can be edited. Commands: `lba2links <folder> <text>...` (the
+cube-change zones of the scenes whose description has the text, with the offset each zone gives and the zone back), `lba2groups`, `lba2areas`, `lba2overlaps`,
+`lba2separate`, `lba2pitch`, `lba2bodies <folder> <scene>...` (each actor's resolved body), `lba2actors`, `lba2footprint`, `lba2plan` (a scene's plan in text) and
+`lba2render <folder> <png> <map> [outline]`; `areatests` checks the scenes, the offsets, that the maps never overlap and that they draw.
+
+**Native renderer crash fixed (2026-09-21).** Opening a scene with a 3D-sprite animation (Citadel scene 13 has one: actor 12, `ANIM_3DS`) killed the editor: the renderer-only boot
+never loaded `ListAnim3DS` (PERSO.CPP's `LoadListAnim3DS`), so `StartInitObj` read through a null table (Windows event 1000, `coreclr.dll` 0xc0000005, managed top
+frame `RendererLibraryApi.LoadInteriorScene`; `LBA2_RENDERER_CRASHLOG` + `nm` named `StartInitObj`). `SOURCES/RENDERER_BOOT.CPP` (not the stale
+`SOURCES/3DEXT/RENDERER_BOOT.CPP`) now loads the table. `interiorall <sandbox> [first] [last] [rounds]` loads and draws every interior scene through the native renderer
+(after a first exterior frame, as the editor does) and names the scene it dies on: all 148 interiors survive three rounds. Use a hard-linked sandbox of the game files.
 **Choosing what is open** is done with the **Scenes** menu: *Scenes > LBA2 (or LBA1) > Island > Area*, e.g. Scenes > LBA2 > White Leaf
 Desert > "Temple of Bú". Islands carry the game's own names (LBA2 reads them from the scene descriptions in `SCENE2.HQD`), and an
-area is listed without its island's name, which the menu already says. LBA2's islands list their outdoor areas (each one cube of
+area is listed as its description without the scene number, "(room #n)" or any island name (`SceneMenuNames`), first letter
+capitalised. LBA2's islands list their outdoor areas (each one cube of
 the island), then their interiors, or "The whole island"; a **Demo** entry lists the demo reel's scenes separately (they are
-ordinary scenes of the game's islands and rooms, but the game runs them only in its attract mode). LBA1 lists the scenes of each
-island, or the joined areas when that is ticked. The one that is open is ticked, and the top bar shows the game, island and area.
+ordinary scenes of the game's islands and rooms, but the game runs them only in its attract mode). LBA1 lists each island's
+connected outside maps first (the joined maps, or with joining off their scenes), a line, then its other scenes. Nothing in a
+list is ticked (the menus have no tick column at all); the top bar shows the game, island and area.
 (The old game / island / scene boxes are still in the window, hidden, and do the actual opening, so every path that changes
 the open scene behaves the same.) Choosing an area while a scene is playing plays that area instead.
 
@@ -242,11 +463,47 @@ edited as data rather than patched byte by byte:
   brick buffer (retail's largest scene uses 351,894). Retail data has no errors, so an error is a real problem; a save
   with errors is refused.
 - **`SceneStore`**: loads and saves scenes (and LBA1 grids) as one verified `FileTransaction` (one-time `.bak`, written
-  beside, read back, swapped in; all files or none). The zone editor, the LBA1 actor dialog, the script editor and the
-  door tool all save through it.
-- **Edit > Undo / Redo** (Ctrl+Z / Ctrl+Y) walks `SceneHistory`, the log of those saves; each step names what it did and
-  restores the exact previous bytes. `SceneDocument` is the in-memory counterpart for upcoming editors: copy-on-edit
-  with merged undo steps, dirty tracking, save / revert / save as, and an auto-save mode.
+  beside, read back, swapped in; all files or none). The zone editor, both actor-attributes windows (see above), the
+  script editor and the door tool all save through it.
+- **Edit > Undo / Redo** (Ctrl+Z / Ctrl+Y, from anywhere in the main window - a focused text box keeps its own undo
+  instead) walks `SceneHistory`, the log of those saves; each step names what it did (the Edit menu shows it, e.g.
+  "Undo Edit actor 3 of scene 93") and restores the exact previous bytes, for every game (an LBA2 actor save is on the
+  same log as an LBA1 one). Before writing a step's recorded bytes back, it re-checks the game files still match what
+  that step expects; if something else changed them since (another tool, or a step loaded from a previous session
+  whose files were then edited outside the app), it refuses with a clear message rather than overwriting that change.
+  `SceneDocument` is the in-memory counterpart for upcoming editors: copy-on-edit with merged undo steps, dirty
+  tracking, save / revert / save as, and an auto-save mode.
+- **Everything that edits a game file is on that one log now (2026-09-22, `HqrEntryStore`).** Grid and block-library
+  edits (both games), the brick and sprite editor, the object browser's Replace, and the extra files a scene save
+  bundles alongside it (`Lba1SurpriseChanges`/`Lba1RoomDoorMod`: a new body, a FILE3D record, new dialogue text) used
+  to write straight through a `FileTransaction` with only a one-time `.bak` for safety - Undo could take a scene back
+  but left those other files as they were (a real gap: undoing the pink elf used to leave its body sitting unused,
+  harmlessly, in `BODY.HQR`/`FILE3D.HQR`/`TEXT.HQR`). `HqrEntryStore.Save` gives these the same one undo step and the
+  same all-or-nothing transaction as a scene save, while only ever keeping the entries that actually changed for the
+  log - never a copy of the archive they live in (`BODY.HQR`, `LBA_BKG.HQR` and `SPRITES.HQR` can run to several
+  megabytes; a replaced entry is a few KB). The one exception, kept as a whole-file undo step instead: adding a brick
+  to LBA2's palette inserts its slot before the table that follows the brick range, shifting every later entry's
+  number by one - a real change to the archive's own layout that a plain replace-or-append can't express, so
+  `GphLibrary.Save` falls back to `HqrEntryStore.SaveWholeFile` for that one operation only (`tools/ScriptRoundTrip
+  newbrick` proves it end to end against the real engine, adding a brick and confirming Undo/Redo of it too).
+- **A new HQR entry can be named too, not just added (`HqdWriter`).** LBAPackageManager's own `.HQD` text sidecars
+  (`HqdDescriptions`, one description per line, seeded into the embedded `Assets/FileDesc/*.HQD` reference copies) are
+  read-only there; `HqdWriter.Describe` writes a game folder's *own* sidecar (`BODY.HQD` next to `BODY.HQR`, etc.),
+  seeded from the reference file the first time so retail entries keep their known names, and lands in the same
+  transaction and undo step as the entry it names. Wired into the two places that already add a body of their own:
+  the pink elf and the mushroom (`Lba1PinkElf`/`Lba1SecretRoomExtras`) - `BODY.HQD` gains "Pink elf (Floppy), added by
+  the level editor..." and "Mushroom, added by the level editor..." lines for their new entries.
+- **Undo history settings** (File > Settings): how many steps to remember and a total storage limit in MB, both
+  configurable (defaults 100 steps / 50 MB). The log is kept on disk (`undo_history.dat`, next to the exe, same
+  portable-path rules as `settings.json`) so it survives an app restart. Reaching the step limit drops the oldest step,
+  same as it always did at a fixed 100; reaching the byte limit first asks whether to clear the whole log to make room
+  or just trim the oldest steps one at a time (declining does the latter). "Clear undo history now" in Settings empties
+  it on demand. `tools/ScriptRoundTrip` never sets a disk path for its own runs, so its thousands of test saves stay
+  in memory only and never touch disk for this.
+- **File > Save / Open** (Ctrl+S / Ctrl+O) run the same menu commands as clicking them; every window with its own
+  meaningful "save" (both actor-attributes windows' Apply, the script editor, the grid/asset/scene editors) binds
+  Ctrl+S to that instead while it has focus. Every menu item has its own access-key letter (Alt, then the underlined
+  letter, opens or picks it), unique within its own menu.
 - **`ActorPrefabs`**: ready-made actors modelled on retail ones (today the two LBA1 sliding doors), each tested to
   reproduce the actor it was measured from.
 - **HQR layer**: `HqrFile` (slots: replace, add, clear, remove; rebuilds all 32 retail HQRs byte for byte), `HqrLz`

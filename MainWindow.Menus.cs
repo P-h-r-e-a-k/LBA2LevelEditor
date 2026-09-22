@@ -6,7 +6,9 @@ using LBA2LevelEditor.Lba1;
 namespace LBA2LevelEditor;
 
 // Choosing what is open through the menus: Scenes > LBA1 / LBA2 > Island > Area. An island's areas are its scenes (LBA2: the outdoor
-// scenes, each one cube of the island, then its interiors; LBA1: the scenes, or the joined areas when that is ticked). The
+// scenes, each one cube of the island, then its interiors; LBA1: the connected outside maps first (as joined maps, or with joining off as
+// their scenes), then the other scenes). Names are the game's descriptions without numbers or island names, capitalised (SceneMenuNames);
+// nothing in a scene list is ticked (the top bar says where you are). The
 // island / scene boxes of the top bar are still what does the opening (they stay in the window, hidden), so every path that
 // changes the open scene works the same whether it came from a menu or from the code.
 public partial class MainWindow
@@ -41,16 +43,23 @@ public partial class MainWindow
         var colon = display.IndexOf(": ", StringComparison.Ordinal);
         var head = colon is >= 0 and < 6 ? display[..(colon + 2)] : "";
         var text = display[head.Length..];
-        if (text.StartsWith(island + ", ", StringComparison.OrdinalIgnoreCase)) text = text[(island.Length + 2)..];
+        // (the island's own name, or what the descriptions call it: "White Leaf Desert, ..." on Desert Island)
+        foreach (var name in new[] { island }.Concat(SceneMenuNames.IslandNames).OrderByDescending(n => n.Length))
+            if (text.StartsWith(name + ", ", StringComparison.OrdinalIgnoreCase)) { text = text[(name.Length + 2)..]; break; }
         return head + text;
     }
 
     private Dictionary<string, string?> islandNameCache = new(StringComparer.OrdinalIgnoreCase);
 
     // What the game calls an island: the words most of its areas' descriptions start with ("White Leaf Desert", "Emerald Moon", ...).
+    // (islands whose scenes' descriptions would give the wrong name: Celebration Island's interiors are mostly the Dark Monk's statue)
+    // (and the desert: its scenes are described as "White Leaf Desert, ..." but the game itself calls the island Desert Island)
+    private static readonly Dictionary<string, string> Lba2IslandNames = new(StringComparer.OrdinalIgnoreCase) { ["CELEBRAT"] = "Celebration Island", ["DESERT"] = "Desert Island" };
+
     private string? Lba2IslandName(string? islandFile)
     {
         if (islandFile is null) return null;
+        if (Lba2IslandNames.TryGetValue(islandFile, out var fixedName)) return fixedName;
         if (islandNameCache.TryGetValue(islandFile, out var known)) return known;
         var scenes = allSceneEntries.Where(s => string.Equals(s.IslandFile, islandFile, StringComparison.OrdinalIgnoreCase) && !IsDemoScene(s)).ToList();
         string? name = null;
@@ -75,13 +84,11 @@ public partial class MainWindow
         var entries = allSceneEntries.Count > 0 ? allSceneEntries : BuildSceneEntries();
         if (allSceneEntries.Count == 0) allSceneEntries = entries;
         islandNameCache.Clear();
-        var openIsland = currentGame == GameKind.Lba2 ? Path.GetFileNameWithoutExtension(activeFile) : null;
-        var openScene = currentGame == GameKind.Lba2 ? Lba2SceneToPlay() : -1;
 
-        MenuItem AreaItem(SceneEntry scene, string label, string islandDisplay, bool ticked)
+        MenuItem AreaItem(SceneEntry scene, string label, string islandDisplay)
         {
             var index = scene.Option.Index;
-            var item = new MenuItem { Header = label.Replace("_", "__"), IsChecked = ticked };
+            var item = new MenuItem { Header = label.Replace("_", "__") };
             item.Click += (_, _) => OpenLba2Area(islandDisplay, index);
             return item;
         }
@@ -92,13 +99,13 @@ public partial class MainWindow
         var others = entries.Where(s => s.IslandFile is null && !IsDemoScene(s)).ToList();
         if (others.Count > 0) groups.Add((OtherIslandLabel, OtherIslandLabel, OtherIslandLabel, others));
 
+        var islandNames = groups.Select(g => Lba2IslandName(g.Name)).Where(n => n is not null).Select(n => n!).ToList();
         foreach (var (name, label, display, scenes) in groups.OrderBy(g => g.Name == OtherIslandLabel).ThenBy(g => g.Label, StringComparer.OrdinalIgnoreCase))
         {
-            var island = new MenuItem { Header = label.Replace("_", "__"), ToolTip = display, IsChecked = string.Equals(openIsland, name, StringComparison.OrdinalIgnoreCase) };
+            var island = new MenuItem { Header = label.Replace("_", "__"), ToolTip = display };
             var whole = new MenuItem { Header = "The whole island" };
             whole.Click += (_, _) => OpenLba2Area(display, null);
             island.Items.Add(whole);
-            var prefix = Lba2IslandName(name);
             void Add(IEnumerable<SceneEntry> list, string heading)
             {
                 var chosen = list.ToList();
@@ -106,10 +113,25 @@ public partial class MainWindow
                 island.Items.Add(new Separator());
                 island.Items.Add(Note(heading));
                 foreach (var scene in chosen)
-                    island.Items.Add(AreaItem(scene, StripIsland(scene.Option.Display, prefix), display, scene.Option.Index == openScene && string.Equals(openIsland, name, StringComparison.OrdinalIgnoreCase)));
+                    island.Items.Add(AreaItem(scene, SceneMenuNames.Clean(scene.Option.Display, islandNames), display));
             }
-            Add(scenes.Where(s => !s.IsInterior), "AREAS (OUTDOORS)");
-            Add(scenes.Where(s => s.IsInterior), "INTERIORS");
+            // the joined maps of interiors (Lba2Areas) come first, and their scenes are not listed again
+            var joined = Lba2AreasOfIsland(name == OtherIslandLabel ? null : name);
+            if (joined.Count > 0)
+            {
+                island.Items.Add(new Separator());
+                island.Items.Add(Note("Connected interiors"));
+                foreach (var (area, areaIndex) in joined)
+                {
+                    var joinedItem = new MenuItem { Header = area.Name.Replace("_", "__") };
+                    var option = Lba2AreaOption(areaIndex);
+                    joinedItem.Click += (_, _) => OpenLba2Area(display, option);
+                    island.Items.Add(joinedItem);
+                }
+            }
+            var joinedScenes = joined.SelectMany(j => j.Area.Tiles.Select(t => t.Scene)).ToHashSet();
+            Add(scenes.Where(s => !s.IsInterior), "Areas (outdoors)");
+            Add(scenes.Where(s => s.IsInterior && !joinedScenes.Contains(s.Option.Index)), "Interiors");
             Lba2Menu.Items.Add(island);
         }
 
@@ -122,8 +144,7 @@ public partial class MainWindow
             {
                 var description = DescriptionOf(scene.Option.Display);
                 var dash = description.IndexOf(" - ", StringComparison.Ordinal);
-                var shown = $"{scene.Option.Index}: " + (dash >= 0 ? description[(dash + 3)..] : description);
-                demo.Items.Add(AreaItem(scene, shown, IslandDisplayOf(scene), scene.Option.Index == openScene));
+                demo.Items.Add(AreaItem(scene, SceneMenuNames.Clean(dash >= 0 ? description[(dash + 3)..] : description, islandNames), IslandDisplayOf(scene)));
             }
             Lba2Menu.Items.Add(demo);
         }
@@ -146,7 +167,7 @@ public partial class MainWindow
         var already = IslandCombo.SelectedItem is FilterableComboBox.Option current && current.Index == island.Index;
         if (!already) IslandCombo.SelectedItem = island;          // (unsaved terrain edits may keep it where it was)
         else if (scene is null && island.Display != OtherIslandLabel) LoadIsland(Path.Combine(gameRoot, island.Display));
-        if (scene is { } wanted && IslandCombo.SelectedItem is FilterableComboBox.Option now && now.Index == island.Index && sceneOptions.FirstOrDefault(o => o.Index == wanted) is { } option)
+        if (scene is { } wanted && IslandCombo.SelectedItem is FilterableComboBox.Option now && now.Index == island.Index && (sceneOptions.FirstOrDefault(o => o.Index == wanted) ?? Lba2OptionForScene(wanted)) is { } option)
         {
             SceneCombo.SelectedItem = null;                        // so choosing the same scene again shows it again
             SceneCombo.SelectedItem = option;
@@ -168,20 +189,25 @@ public partial class MainWindow
             return;
         }
         var game = lba1Game;
-        var openIsland = currentGame == GameKind.Lba1 && IslandCombo.SelectedItem is FilterableComboBox.Option selected ? selected.Index : -1;
-        var openScene = currentGame == GameKind.Lba1 && SceneCombo.SelectedItem is FilterableComboBox.Option scene ? scene.Index : int.MinValue;
         foreach (var id in game.Scenes.Select(s => s.Island).Distinct().Order())
         {
             var name = Lba1Game.IslandNames.ElementAtOrDefault(id) ?? $"Island {id}";
-            var island = new MenuItem { Header = name.Replace("_", "__"), IsChecked = openIsland == id };
+            var island = new MenuItem { Header = name.Replace("_", "__") };
             var islandId = id;
-            foreach (var area in Lba1SceneOptionsFor(game, id))
+            var (connected, others) = Lba1SceneGroups(game, id);
+            void Add(IEnumerable<Lba1SceneEntry> list)
             {
-                var option = area.Index;
-                var item = new MenuItem { Header = StripIsland(area.Display, name).Replace("_", "__"), IsChecked = openIsland == id && openScene == option };
-                item.Click += (_, _) => OpenLba1Area(islandId, option);
-                island.Items.Add(item);
+                foreach (var entry in list)
+                {
+                    var option = entry.Option.Index;
+                    var item = new MenuItem { Header = entry.MenuName.Replace("_", "__") };
+                    item.Click += (_, _) => OpenLba1Area(islandId, option);
+                    island.Items.Add(item);
+                }
             }
+            Add(connected);
+            if (connected.Count > 0 && others.Count > 0) island.Items.Add(new Separator());
+            Add(others);
             Lba1Menu.Items.Add(island);
         }
     }
@@ -215,22 +241,28 @@ public partial class MainWindow
         if (currentGame == GameKind.Lba1)
         {
             var island = IslandCombo.SelectedItem?.ToString() ?? "";
-            LocationGame.Text = "LBA1  ›  " + island.ToUpperInvariant();
+            LocationGame.Text = "LBA1  ›  " + island;
             LocationArea.Text = StripIsland(SceneCombo.SelectedItem?.ToString() ?? "", island);
+            return;
+        }
+        if (lba2JoinedView && lba2AreaName is not null)
+        {
+            LocationGame.Text = "LBA2  ›  " + Lba2IslandLabel(Path.GetFileNameWithoutExtension(activeFile));
+            LocationArea.Text = lba2AreaName;
             return;
         }
         var scene = Lba2SceneToPlay();
         var entry = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene);
         if (entry is not null && IsDemoScene(entry))
         {
-            LocationGame.Text = "LBA2  ›  " + DemoLabel.ToUpperInvariant();
+            LocationGame.Text = "LBA2  ›  " + DemoLabel;
             var description = DescriptionOf(entry.Option.Display);
             var dash = description.IndexOf(" - ", StringComparison.Ordinal);
             LocationArea.Text = $"{scene}: " + (dash >= 0 ? description[(dash + 3)..] : description);
             return;
         }
         var file = Path.GetFileNameWithoutExtension(activeFile);
-        LocationGame.Text = "LBA2  ›  " + Lba2IslandLabel(file).ToUpperInvariant();
+        LocationGame.Text = "LBA2  ›  " + Lba2IslandLabel(file);
         LocationArea.Text = entry is null ? "" : StripIsland(entry.Option.Display, Lba2IslandName(entry.IslandFile));
     }
 }

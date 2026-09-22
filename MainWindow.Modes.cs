@@ -51,6 +51,11 @@ public partial class MainWindow
 
     private void SetMode(EditMode next)
     {
+        if (lba2JoinedView && next != EditMode.Explore)
+        {
+            next = EditMode.Explore;      // (a joined LBA2 map is drawn by the editor, not the engine: nothing in it can be edited)
+            FileLabel.Text = "A joined map is view only. Double-click an actor to open its scene on its own, or pick a single scene, to edit.";
+        }
         var changed = next != editMode;
         editMode = next;
         modeSyncing = true;
@@ -65,8 +70,8 @@ public partial class MainWindow
         if (changed) FileLabel.Text = next switch
         {
             EditMode.Explore => "Explore: move around the scene. Nothing is changed in this mode.",
-            EditMode.Build => terrainToolsActive ? "Build: pick a terrain tool in the BUILD tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under DETAILS.",
-            _ => "Script: click an actor (or pick one in the SCRIPT tab) to open its script.",
+            EditMode.Build => terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under Details.",
+            _ => "Script: click an actor (or pick one in the Script tab) to open its script.",
         };
         Keyboard.Focus(this);
     }
@@ -107,10 +112,10 @@ public partial class MainWindow
     private string BuildHelpText()
     {
         if (currentGame == GameKind.Lba1)
-            return "Right-click an actor for its attributes; double-click it to edit. Change zones under DETAILS. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Scripts are edited in Script mode.";
+            return "Right-click an actor for its attributes; double-click it to edit. Change zones under Details. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Scripts are edited in Script mode.";
         if (interiorSceneActive)
-            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under DETAILS. The interior's map (its bricks and blocks) is edited in the grid editor. Scripts are edited in Script mode.";
-        return "Right-click the view and choose Add Actor Here to place an actor; double-click an actor to change it; change zones under DETAILS. Scripts are edited in Script mode. Pick 'Terrain' above to sculpt the island itself.";
+            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under Details. The interior's map (its bricks and blocks) is edited in the grid editor. Scripts are edited in Script mode.";
+        return "Right-click the view and choose Add Actor Here to place an actor; double-click an actor to change it; change zones under Details. Scripts are edited in Script mode. Pick 'Terrain' above to sculpt the island itself.";
     }
 
     // ---- the terrain editor, hosted -------------------------------------------------------------------------------------------------------------
@@ -243,7 +248,7 @@ public partial class MainWindow
                 var text = currentGame == GameKind.Lba1 && index >= 1000 ? $"Scene {index / 1000}, actor #{index % 1000}" : $"Actor #{index}";
                 ScriptActorList.Items.Add(new ListBoxItem { Content = text, Tag = index, IsSelected = selectedActorIndex == index });
             }
-            ScriptActorsHeader.Text = $"ACTORS IN VIEW ({indexes.Count})";
+            ScriptActorsHeader.Text = $"Actors in view ({indexes.Count})";
         }
         finally { scriptListSyncing = false; }
     }
@@ -333,9 +338,9 @@ public partial class MainWindow
     {
         UpdateLocation();
         if (placing) return;
-        if (currentGame != GameKind.Lba2 || !Lba2Configured) { PlayButton.Content = "▶  PLAY SCENE"; PlayButton.ToolTip = "Play the selected scene in the LBA1 play mode"; return; }
+        if (currentGame != GameKind.Lba2 || !Lba2Configured) { PlayButton.Content = "▶  Play scene"; PlayButton.ToolTip = "Play the selected scene in the LBA1 play mode"; return; }
         var scene = Lba2SceneToPlay();
-        PlayButton.Content = $"▶  PLAY SCENE {scene}";
+        PlayButton.Content = $"▶  Play scene {scene}";
         PlayButton.ToolTip = (allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"Scene {scene}") + "\nThe scene that is open (for an island: the cube the camera is over). Plays what is saved on disk.";
     }
 }

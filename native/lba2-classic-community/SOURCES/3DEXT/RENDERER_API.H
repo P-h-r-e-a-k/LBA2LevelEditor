@@ -89,6 +89,13 @@ LBA2_RENDERER_API int lba2_renderer_get_actor_waypoint(int actorIndex, int waypo
    out of range, 1 on success; any out pointer may be NULL. */
 LBA2_RENDERER_API int lba2_renderer_get_actor_attributes(int index, int *beta, int *body, int *anim, int *lifePoint, int *armor, int *hitForce, int *move);
 
+/* Scene (numscene) this actor was read from, or -1 (out of range, or removed). Mirrors
+   lba2_renderer_get_zone_scene above: both the whole-island actor scan and an interior scene's own scan list a
+   scene's actors contiguously and in the scene file's own order, so a caller can recover an actor's position in
+   its own scene's actor list (needed to save an edit back into the right place in SCENE.HQR) the same way that
+   already works for zones -- count how many earlier entries of the flat list share the same scene. */
+LBA2_RENDERER_API int lba2_renderer_get_actor_scene(int index);
+
 /* Read-only decoded life+track script text for one actor (see RENDERER_ACTORS.CPP's
    DecodeLifeScript/DecodeTrackScript for exactly which opcodes are covered --
    decoding stops and says so at the first opcode it doesn't recognize, rather

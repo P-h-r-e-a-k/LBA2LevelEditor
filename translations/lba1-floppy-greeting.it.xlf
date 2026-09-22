@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="Little Big Adventure 1, TEXT.HQR: Principal Island dialogue, text 287" source-language="en" target-language="it" datatype="plaintext">
+    <header>
+      <note>Little Big Adventure (1994), the original game: one line of dialogue to translate into Italian. It is spoken by Floppy, a pink elf who lives in a hidden room (the game's other elves are Joe and Raymond), to Twinsen, the hero, the first time Twinsen walks into that room, and again whenever Twinsen talks to him. The tone is friendly and a little wistful: he has been alone in there for a very long time.</note>
+    </header>
+    <body>
+      <trans-unit id="lba1-island1-287" resname="floppy-greeting">
+        <source xml:lang="en">Hi, I'm Floppy the third elf, after all these years somebody has finally found me. Please help yourself to anything you find here.</source>
+        <target xml:lang="it" state="needs-translation" />
+        <note from="developer" priority="1">Keep the names Floppy and Twinsen as they are. "Floppy the third elf" means the third of the elves (after Joe and Raymond). Please keep it about as long as the English (under 200 characters) and as ONE line: no line breaks, and no @ character (the game reads it as a line or page break). The game's font only has the letters of the old DOS Western European code page (CP 850): use the normal accented letters of the language, but write quotation marks and apostrophes as plain straight ' and ", and avoid typographic dashes, the ellipsis character, the euro sign and emoji.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

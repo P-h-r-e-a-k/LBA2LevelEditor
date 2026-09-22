@@ -13,20 +13,24 @@ internal sealed class Lba1ActorImages
     // with its feet at 90% down, so its real height in world units is HeightUnits.
     public sealed record Marker(BitmapSource Image, double HeightUnits);
 
-    private const int MarkerSize = 128;
+    internal const int MarkerSize = 128;
     // Renderer.Render clears to this colour; it is made transparent for markers.
     private static readonly (byte B, byte G, byte R) Background = (39, 30, 25);
 
-    private readonly Lba1Game game;
+    private readonly Func<int, byte[]?> readBody;
+    private readonly int version;
     private readonly System.Drawing.Color[] palette;
     private readonly Dictionary<int, Marker?> markers = new();
     private readonly Dictionary<int, LbaBodyStudio.Body?> bodies = new();
 
-    public Lba1ActorImages(Lba1Game game)
+    public Lba1ActorImages(Lba1Game game) : this(game.Palette, game.ReadBody, 1) { }
+
+    // Bodies from any source: the 768-byte palette, a reader of BODY.HQR entries and the game (1 or 2) they are laid out for (LBA2's joined maps).
+    public Lba1ActorImages(byte[] rawPalette, Func<int, byte[]?> readBody, int version)
     {
-        this.game = game;
-        var raw = game.Palette;
-        palette = Enumerable.Range(0, 256).Select(i => System.Drawing.Color.FromArgb(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2])).ToArray();
+        this.readBody = readBody;
+        this.version = version;
+        palette = Enumerable.Range(0, 256).Select(i => System.Drawing.Color.FromArgb(rawPalette[i * 3], rawPalette[i * 3 + 1], rawPalette[i * 3 + 2])).ToArray();
     }
 
     public LbaBodyStudio.Body? Body(int bodyIndex)
@@ -35,7 +39,7 @@ internal sealed class Lba1ActorImages
         LbaBodyStudio.Body? body = null;
         try
         {
-            if (game.ReadBody(bodyIndex) is { } bytes) body = LbaBodyStudio.Body.Read(bytes, 1);
+            if (readBody(bodyIndex) is { } bytes) body = LbaBodyStudio.Body.Read(bytes, version);
         }
         catch (Exception error)
         {
@@ -91,7 +95,7 @@ internal sealed class Lba1ActorImages
     public BitmapSource? RenderPreview(int bodyIndex, int width, int height, float yaw, System.Numerics.Vector3[]? pose = null)
     {
         if (Body(bodyIndex) is not { } body || width < 1 || height < 1) return null;
-        using var bitmap = LbaBodyStudio.Renderer.Render(body, palette, width, height, yaw, wire: false, pose: pose);
+        using var bitmap = LbaBodyStudio.Renderer.Render(body, palette, width, height, yaw, wire: false, pose: pose, background: LbaBodyStudio.Renderer.ViewBackground, gridLine: LbaBodyStudio.Renderer.ViewGrid);
         var handle = bitmap.GetHbitmap();
         try
         {
@@ -107,7 +111,7 @@ internal sealed class Lba1ActorImages
 
     [System.Runtime.InteropServices.DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr hObject);
 
-    private static BitmapSource Transparent(System.Drawing.Bitmap bitmap)
+    internal static BitmapSource Transparent(System.Drawing.Bitmap bitmap)
     {
         using var argb = new System.Drawing.Bitmap(bitmap.Width, bitmap.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = System.Drawing.Graphics.FromImage(argb)) g.DrawImage(bitmap, 0, 0, bitmap.Width, bitmap.Height);

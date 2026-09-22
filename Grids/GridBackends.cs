@@ -63,7 +63,7 @@ internal sealed class Lba1GridBackend : IGridBackend
     public void SaveLibrary(int id, byte[] library)
     {
         libraries.SetStored(id, library);
-        new FileTransaction().Write(System.IO.Path.Combine(directory, "LBA_BLL.HQR"), libraries.ToBytes(), saved => HqrFile.Parse(saved).Read(id).AsSpan().SequenceEqual(library) ? null : "the library differs after the save").Commit();
+        HqrEntryStore.Save(SceneGame.Lba1, directory, $"Edit block library {id}", new[] { new HqrEntryStore.Edit("LBA_BLL.HQR", id, library) });
     }
 }
 
@@ -132,14 +132,14 @@ internal sealed class Lba2GridBackend : IGridBackend
     {
         var entry = FromLba1Shape(file.Read(griStart + id), grid);
         file.SetStored(griStart + id, entry);
-        new FileTransaction().Write(path, file.ToBytes(), saved => HqrFile.Parse(saved).Read(griStart + id).AsSpan().SequenceEqual(entry) ? null : "the grid differs after the save").Commit();
+        HqrEntryStore.Save(SceneGame.Lba2, Folder, $"Edit grid {id}", new[] { new HqrEntryStore.Edit("LBA_BKG.HQR", griStart + id, entry) });
     }
 
     public void SaveLibrary(int id, byte[] library)
     {
         var index = bllStart + StyleOf(id);
         file.SetStored(index, library);
-        new FileTransaction().Write(path, file.ToBytes(), saved => HqrFile.Parse(saved).Read(index).AsSpan().SequenceEqual(library) ? null : "the library differs after the save").Commit();
+        HqrEntryStore.Save(SceneGame.Lba2, Folder, $"Edit block library {StyleOf(id)}", new[] { new HqrEntryStore.Edit("LBA_BKG.HQR", index, library) });
     }
 }
 

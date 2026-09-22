@@ -1,38 +1,38 @@
 <UserControl x:Class="LBA2LevelEditor.Lba1PlayView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Background="#101418" Foreground="#E8E6DA" FontFamily="Segoe UI" Focusable="True"
+        Background="#FFFFFF" Foreground="#10243E" FontFamily="Segoe UI" Focusable="True"
         PreviewKeyDown="Window_PreviewKeyDown" PreviewKeyUp="Window_PreviewKeyUp">
     <UserControl.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Foreground" Value="#C5C6B9"/>
-            <Setter Property="Background" Value="#182019"/>
-            <Setter Property="BorderBrush" Value="#3B4740"/>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Foreground" Value="#10243E"/>
+            <Setter Property="Background" Value="#D6E6F7"/>
+            <Setter Property="BorderBrush" Value="#A9C3E0"/>
             <Setter Property="Padding" Value="12,5"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Focusable" Value="False"/>
         </Style>
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#C5C6B9"/>
+            <Setter Property="Foreground" Value="#10243E"/>
             <Setter Property="Margin" Value="0,0,14,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Focusable" Value="False"/>
         </Style>
-        <Style TargetType="ComboBox">
+        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
             <Setter Property="Margin" Value="0,0,10,0"/>
             <Setter Property="Focusable" Value="False"/>
         </Style>
     </UserControl.Resources>
     <DockPanel>
-        <Border DockPanel.Dock="Top" Background="#182019" BorderBrush="#344039" BorderThickness="0,0,0,1" Padding="12,8">
+        <Border DockPanel.Dock="Top" Background="#D6E6F7" BorderBrush="#A9C3E0" BorderThickness="0,0,0,1" Padding="12,8">
             <WrapPanel Orientation="Horizontal">
-                <TextBlock Text="SCENE" Foreground="#89958B" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="Scene" Foreground="#4E6B8A" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <ComboBox x:Name="SceneCombo" Width="330" SelectionChanged="SceneCombo_SelectionChanged"/>
                 <Button x:Name="RestartButton" Content="Restart scene" Click="Restart_Click"/>
                 <Button x:Name="PauseButton" Content="Pause" Click="Pause_Click"/>
                 <Button x:Name="LoadoutButton" Content="Twinsen's state…" Click="Loadout_Click"/>
                 <Button x:Name="FilmsButton" Content="Films…" Click="Films_Click"/>
-                <TextBlock Text="TWINSEN" Foreground="#89958B" FontSize="10" VerticalAlignment="Center" Margin="6,0,8,0"/>
+                <TextBlock Text="Twinsen" Foreground="#4E6B8A" FontSize="10" VerticalAlignment="Center" Margin="6,0,8,0"/>
                 <ComboBox x:Name="BehaviourCombo" Width="110" SelectionChanged="Behaviour_SelectionChanged">
                     <ComboBoxItem Content="Normal" IsSelected="True"/>
                     <ComboBoxItem Content="Sporty"/>
@@ -48,28 +48,28 @@
                 <CheckBox x:Name="ShadowsCheck" Content="Shadows" IsChecked="True"/>
                 <CheckBox x:Name="BoxesCheck" Content="Boxes" IsChecked="False"/>
                 <CheckBox x:Name="LabelsCheck" Content="Numbers" IsChecked="True"/>
-                <TextBlock Text="ZOOM" Foreground="#89958B" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="Zoom" Foreground="#4E6B8A" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <Slider x:Name="ZoomSlider" Minimum="0.4" Maximum="2.5" Value="1" Width="110" VerticalAlignment="Center" Focusable="False" ValueChanged="Zoom_ValueChanged"/>
                 <CheckBox x:Name="MuteAllCheck" Content="Mute all" Click="MuteAll_Click" ToolTip="Silence music, speech and effects (the balance is saved per game)"/>
-                <TextBlock Text="MUSIC" Foreground="#89958B" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="Music" Foreground="#4E6B8A" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <Slider x:Name="MusicSlider" Minimum="0" Maximum="100" Value="40" Width="70" VerticalAlignment="Center" Focusable="False" Margin="0,0,10,0" ValueChanged="AudioSlider_Changed"/>
-                <TextBlock Text="VOICES" Foreground="#89958B" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="Voices" Foreground="#4E6B8A" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <Slider x:Name="VoicesSlider" Minimum="0" Maximum="100" Value="90" Width="70" VerticalAlignment="Center" Focusable="False" Margin="0,0,10,0" ValueChanged="AudioSlider_Changed"/>
-                <TextBlock Text="EFFECTS" Foreground="#89958B" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock Text="Effects" Foreground="#4E6B8A" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <Slider x:Name="EffectsSlider" Minimum="0" Maximum="100" Value="70" Width="70" VerticalAlignment="Center" Focusable="False" Margin="0,0,10,0" ValueChanged="AudioSlider_Changed"/>
             </WrapPanel>
         </Border>
-        <Border DockPanel.Dock="Right" Width="330" Background="#141B19" BorderBrush="#344039" BorderThickness="1,0,0,0" Padding="12,10">
+        <Border DockPanel.Dock="Right" Width="330" Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1,0,0,0" Padding="12,10">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" x:Name="StatusText" FontFamily="Consolas" FontSize="11" Foreground="#C5C6B9" TextWrapping="Wrap"/>
-                <TextBlock DockPanel.Dock="Top" Text="ARROWS walk and turn   SPACE action   F1-F4 behaviour   P pause" TextWrapping="Wrap" FontSize="10" Foreground="#89958B" Margin="0,8,0,8"/>
-                <TextBlock DockPanel.Dock="Top" Text="WHAT THE SCRIPTS DID" FontSize="10" Foreground="#89958B" Margin="0,0,0,4"/>
-                <ListBox x:Name="EventList" Background="#101418" BorderBrush="#344039" Foreground="#C5C6B9" FontFamily="Consolas" FontSize="10.5" Focusable="False"/>
+                <TextBlock DockPanel.Dock="Top" x:Name="StatusText" FontFamily="Consolas" FontSize="11" Foreground="#10243E" TextWrapping="Wrap"/>
+                <TextBlock DockPanel.Dock="Top" Text="Arrows walk and turn   Space action   F1-F4 behaviour   P pause" TextWrapping="Wrap" FontSize="10" Foreground="#4E6B8A" Margin="0,8,0,8"/>
+                <TextBlock DockPanel.Dock="Top" Text="What the scripts did" FontSize="10" Foreground="#4E6B8A" Margin="0,0,0,4"/>
+                <ListBox x:Name="EventList" Background="#FFFFFF" BorderBrush="#A9C3E0" Foreground="#10243E" FontFamily="Consolas" FontSize="10.5" Focusable="False"/>
             </DockPanel>
         </Border>
         <Grid>
-            <ScrollViewer x:Name="MapScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="#0B0F12" Focusable="False">
-                <Grid x:Name="MapHost" MouseLeftButtonDown="Map_MouseLeftButtonDown" Background="#0B0F12">
+            <ScrollViewer x:Name="MapScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Background="#FFFFFF" Focusable="False">
+                <Grid x:Name="MapHost" MouseLeftButtonDown="Map_MouseLeftButtonDown" Background="#FFFFFF">
                     <Grid.LayoutTransform>
                         <ScaleTransform x:Name="MapScale" ScaleX="1" ScaleY="1"/>
                     </Grid.LayoutTransform>
@@ -82,12 +82,12 @@
             <Border x:Name="FilmBox" Visibility="Collapsed" Background="Black" Panel.ZIndex="20">
                 <Grid>
                     <Image x:Name="FilmImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="Linear" Margin="10"/>
-                    <TextBlock x:Name="FilmHint" Text="ESC skips" Foreground="#89958B" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,10"/>
+                    <TextBlock x:Name="FilmHint" Text="ESC skips" Foreground="#4E6B8A" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,10"/>
                 </Grid>
             </Border>
             <!-- the game's status: life, magic, money, keys, clover -->
             <Border x:Name="Hud" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12,10" Padding="10,7" CornerRadius="5"
-                    Background="#CC0B0F12" BorderBrush="#344039" BorderThickness="1" IsHitTestVisible="False">
+                    Background="#CCF3F8FF" BorderBrush="#A9C3E0" BorderThickness="1" IsHitTestVisible="False">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="♥" Foreground="#E05555" FontSize="14" Width="20"/>
@@ -97,27 +97,27 @@
                         <TextBlock Text="✦" Foreground="#5B9BEB" FontSize="14" Width="20"/>
                         <ProgressBar x:Name="MagicBar" Width="150" Height="7" Maximum="80" Foreground="#4A8AE0" Background="#1A2233" BorderThickness="0" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <TextBlock x:Name="HudText" Foreground="#E8E6DA" FontFamily="Consolas" FontSize="12" Margin="0,6,0,0"/>
+                    <TextBlock x:Name="HudText" Foreground="#10243E" FontFamily="Consolas" FontSize="12" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
             <!-- Shift: the inventory, which stops the clock like the game's -->
             <Border x:Name="InventoryBox" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="18,14" CornerRadius="6"
-                    Background="#F00B0F12" BorderBrush="#89958B" BorderThickness="2" IsHitTestVisible="False" Width="620">
+                    Background="#F0F3F8FF" BorderBrush="#4E6B8A" BorderThickness="2" IsHitTestVisible="False" Width="620">
                 <StackPanel>
-                    <TextBlock Text="INVENTORY" FontSize="10" Foreground="#89958B" Margin="0,0,0,6"/>
+                    <TextBlock Text="Inventory" FontSize="10" Foreground="#4E6B8A" Margin="0,0,0,6"/>
                     <UniformGrid x:Name="InventoryGrid" Columns="4"/>
-                    <TextBlock x:Name="InventoryDesc" Foreground="#E8E6DA" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0" MinHeight="70"/>
-                    <TextBlock Text="ARROWS choose   ENTER use   ESC or SHIFT close" FontSize="10" Foreground="#89958B" Margin="0,6,0,0" HorizontalAlignment="Right"/>
+                    <TextBlock x:Name="InventoryDesc" Foreground="#10243E" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0" MinHeight="70"/>
+                    <TextBlock Text="Arrows choose   Enter use   Esc or Shift close" FontSize="10" Foreground="#4E6B8A" Margin="0,6,0,0" HorizontalAlignment="Right"/>
                 </StackPanel>
             </Border>
             <!-- what the scripts say: the game's text box, over the map while it is open (it stops the clock) -->
             <Border x:Name="DialogueBox" Visibility="Collapsed" VerticalAlignment="Bottom" Margin="40,0,40,28" Padding="22,16"
-                    Background="#EE0B0F12" BorderBrush="#89958B" BorderThickness="2" CornerRadius="6" IsHitTestVisible="False">
+                    Background="#EEF3F8FF" BorderBrush="#4E6B8A" BorderThickness="2" CornerRadius="6" IsHitTestVisible="False">
                 <StackPanel>
-                    <TextBlock x:Name="DialogueSpeaker" FontSize="10" Foreground="#89958B" Margin="0,0,0,6"/>
-                    <TextBlock x:Name="DialogueText" FontSize="17" TextWrapping="Wrap" Foreground="#E8E6DA"/>
+                    <TextBlock x:Name="DialogueSpeaker" FontSize="10" Foreground="#4E6B8A" Margin="0,0,0,6"/>
+                    <TextBlock x:Name="DialogueText" FontSize="17" TextWrapping="Wrap" Foreground="#10243E"/>
                     <StackPanel x:Name="DialogueChoices" Margin="0,10,0,0"/>
-                    <TextBlock x:Name="DialogueHint" FontSize="10" Foreground="#89958B" Margin="0,10,0,0" HorizontalAlignment="Right"/>
+                    <TextBlock x:Name="DialogueHint" FontSize="10" Foreground="#4E6B8A" Margin="0,10,0,0" HorizontalAlignment="Right"/>
                 </StackPanel>
             </Border>
         </Grid>

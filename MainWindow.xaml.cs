@@ -90,6 +90,12 @@ public partial class MainWindow : Window
         scriptSession = new ScriptSession(() => gameRoot);
         nativeRenderer = new CommunityRendererBackend(gameRoot);
         InitializeComponent();
+        WindowPlacement.Attach(this, "MainWindow");
+        Scenes.SceneHistory.PersistPath = Path.Combine(AppContext.BaseDirectory, "undo_history.dat");
+        Scenes.SceneHistory.ConfirmClearWhenFull = (used, limit) => MessageBox.Show(this,
+            $"The undo cache is full ({used / (1024.0 * 1024.0):0.0} MB of a {limit / (1024.0 * 1024.0):0.0} MB limit).\n\nClear it to make room for this change? Choosing No just drops the oldest steps instead.",
+            "Undo cache full", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+        Scenes.SceneHistory.Load();
         modeReady = true;                 // the mode buttons raise Checked while the XAML loads; only real clicks count
         Focusable = true;
         JoinAreasCheck.IsChecked = lba1JoinAreas;
@@ -128,6 +134,7 @@ public partial class MainWindow : Window
         {
             if (SceneCombo.SelectedItem is not FilterableComboBox.Option o) return;
             if (currentGame == GameKind.Lba1) { ShowLba1Scene(o.Index); UpdatePlayButton(); return; }
+            if (o.Index < 0) { ShowLba2Area(-o.Index - 1); UpdatePlayButton(); return; }      // a joined map of interiors
             selectedLba2Scene = o.Index;      // Play starts this scene
             FileLabel.Text = $"●  {o.Display} / SCENE.HQR";
             DocumentTitle.Text = o.Display;
@@ -177,6 +184,7 @@ public partial class MainWindow : Window
                 islands.Add(new FilterableComboBox.Option(i++, Path.GetFileName(path)));
         }
 
+        ResetLba2Areas();
         allSceneEntries = BuildSceneEntries();
         // Only add the synthetic "Other" island if there's actually at
         // least one scene that needs it -- no point offering an island
@@ -225,7 +233,8 @@ public partial class MainWindow : Window
         {
             if (!archive.IsValid(hqrIndex)) continue;
             var numscene = hqrIndex - 1;
-            var name = hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null;
+            // (the descriptions say "White Leaf Desert"; LBA2 itself calls that island Desert Island)
+            var name = (hqrIndex < descriptions.Names.Count ? descriptions.Names[hqrIndex] : null)?.Replace("White Leaf Desert", "Desert Island");
             var isInterior = IsInteriorScene(archive, hqrIndex);
             var option = new FilterableComboBox.Option(numscene, name is null ? $"{numscene}" : $"{numscene}: {name}");
             var header = archive.Read(hqrIndex);
@@ -301,7 +310,10 @@ public partial class MainWindow : Window
             matching = allSceneEntries.Where(e => e.IslandFile is not null && string.Equals(e.IslandFile, islandName, StringComparison.OrdinalIgnoreCase));
         }
 
-        sceneOptions = matching.Select(e => e.Option).ToList();
+        var matchingScenes = matching.ToList();
+        sceneOptions = currentGame == GameKind.Lba2 && selected is not null
+            ? Lba2SceneOptions(matchingScenes, selected.Display == OtherIslandLabel ? null : Path.GetFileNameWithoutExtension(selected.Display))
+            : matchingScenes.Select(e => e.Option).ToList();
         sceneFilter?.Refresh();
         SceneCombo.Text = "";
     }
@@ -309,6 +321,7 @@ public partial class MainWindow : Window
     private void LoadIsland(string path)
     {
         DebugLog.Log($"MainWindow: LoadIsland {Path.GetFileName(path)}");
+        using var busy = UiBusy.Progress(BusyPanel, BusyLabel, $"Loading {Path.GetFileNameWithoutExtension(path)}…");
         try
         {
             LoadIslandPalette(path);
@@ -461,6 +474,7 @@ public partial class MainWindow : Window
 
     private void ShowInteriorSceneCore(int numscene, bool keepView)
     {
+        lba2JoinedView = false;
         if (!nativeRenderer.DirectRendererReady)
         {
             DocumentSummary.Text = "Interior scenes need the native renderer, which isn't available.";
@@ -523,6 +537,8 @@ public partial class MainWindow : Window
 
     private void ExitInteriorView()
     {
+        lba2JoinedView = false;
+        lba2AreaName = null;
         nativeRenderer.ReleaseInterior();
         interiorSceneActive = false;
         interiorSceneNumber = -1;
@@ -589,10 +605,14 @@ public partial class MainWindow : Window
     {
         var source = DummyBodyPreview.RenderMarker();
         if (source is null) return;
-        var size = Math.Clamp(height, 18, 500);
+        // (framed like every body marker: the body fills 80% of the square image's height, feet 90% down, so it stands 'height' tall on the point half of it below (cx, cy))
+        height = Math.Clamp(height, 18, 500);
+        var size = height / 0.8;
         var image = new Image { Source = source, Width = size, Height = size, Stretch = Stretch.Uniform, IsHitTestVisible = false };
+        // (the dummy body is dark and the map behind it black: a pale glow keeps it visible)
+        image.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.White, BlurRadius = 4, ShadowDepth = 0, Opacity = 0.9 };
         Canvas.SetLeft(image, cx - size / 2);
-        Canvas.SetTop(image, cy - size / 2);
+        Canvas.SetTop(image, cy + height / 2 - size * 0.9);
         ActorMarkerCanvas.Children.Add(image);
     }
 
@@ -623,11 +643,12 @@ public partial class MainWindow : Window
     private readonly Dictionary<int, Lba1Scene> lba1ViewScenes = new();
     private readonly Dictionary<int, (Lba1ActorImages.Marker Marker, double HalfHeight)> lba1ActorMarkers = new();
     private readonly Dictionary<int, Lba1ActorAttributesWindow> openLba1ActorWindows = new();
-    private bool lba1JoinAreas = EditorSettings.Current.Lba1JoinAreas;
+    private bool lba1JoinAreas = EditorSettings.Current.Lba1JoinConnectedAreas;
 
     // While an interior / LBA1 scene is on screen the minimap shows that scene instead of the
     // outdoor island: a thumbnail of the scene's content with a box for the part in view.
     private bool sceneMinimapActive;
+    private Brush? savedMinimapBackground;
     private ImageSource? savedIslandMinimap;
     private double sceneMinimapScale = 1;
     private Point sceneMinimapOrigin;
@@ -717,7 +738,8 @@ public partial class MainWindow : Window
         actorMarkersIsland = null;
         currentGame = game;
         SetGameSelection(game);
-        JoinAreasCheck.Visibility = game == GameKind.Lba1 ? Visibility.Visible : Visibility.Collapsed;
+        lba2JoinedView = false;
+        JoinAreasCheck.Visibility = Visibility.Visible;
 
         if (unavailable is not null)
         {
@@ -771,46 +793,95 @@ public partial class MainWindow : Window
     // Scene-list entries for a joined map carry the area's number as -(area + 1).
     private static int AreaOption(int area) => -(area + 1);
 
-    // The scenes (and joined areas) of one LBA1 island as scene-box options.
-    private List<FilterableComboBox.Option> Lba1SceneOptionsFor(Lba1Game game, int island)
+    // One entry of the scene list (and of the Scenes menu): the scene-box option, and the name the menu shows for it.
+    private sealed record Lba1SceneEntry(FilterableComboBox.Option Option, string MenuName);
+
+    // The scenes (and joined areas) of one LBA1 island: first everything that belongs to a connected outside map (the joined maps, biggest
+    // "Outside" first, or with joining off their scenes one after the other), then the rest.
+    private (List<Lba1SceneEntry> Connected, List<Lba1SceneEntry> Others) Lba1SceneGroups(Lba1Game game, int island)
     {
-        var options = new List<FilterableComboBox.Option>();
-        var joined = new HashSet<int>();
-        if (lba1JoinAreas)
-        {
-            for (var a = 0; a < game.Areas.Count; a++)
-            {
-                var area = game.Areas[a];
-                if (area.Island != island) continue;
-                foreach (var tile in area.Tiles) joined.Add(tile.Scene);
-                options.Add(new FilterableComboBox.Option(AreaOption(a), area.Label));
-            }
-        }
-        foreach (var s in game.Scenes.Where(s => s.Island == island && !joined.Contains(s.Index)))
+        var connected = new List<Lba1SceneEntry>();
+        var others = new List<Lba1SceneEntry>();
+        var inArea = new HashSet<int>();
+        Lba1SceneEntry SceneEntryOf(Lba1SceneInfo s)
         {
             var description = game.Description(s.Index);
-            options.Add(new FilterableComboBox.Option(s.Index, description is null
-                ? $"{s.Index}: {s.ActorCount} actors" + (s.Exits.Count > 0 ? $", exits to {string.Join(", ", s.Exits)}" : "")
-                : $"{s.Index}: {description}"));
+            return new Lba1SceneEntry(new FilterableComboBox.Option(s.Index, description is null
+                    ? $"{s.Index}: {s.ActorCount} actors" + (s.Exits.Count > 0 ? $", exits to {string.Join(", ", s.Exits)}" : "")
+                    : $"{s.Index}: {description}"),
+                description is null ? $"Scene {s.Index}" : SceneMenuNames.Clean(description));
         }
-        return options;
+        foreach (var (area, a) in game.Areas.Select((area, a) => (area, a)).Where(x => x.area.Island == island)
+                     .OrderByDescending(x => x.area.Name == "Outside").ThenByDescending(x => x.area.Tiles.Count).ThenBy(x => x.a))
+        {
+            foreach (var tile in area.Tiles) inArea.Add(tile.Scene);
+            if (lba1JoinAreas) connected.Add(new Lba1SceneEntry(new FilterableComboBox.Option(AreaOption(a), area.Label), area.Name));
+            else connected.AddRange(area.Tiles.Select(t => SceneEntryOf(game.Scenes.First(s => s.Index == t.Scene))));
+        }
+        others.AddRange(game.Scenes.Where(s => s.Island == island && !inArea.Contains(s.Index)).Select(SceneEntryOf));
+        return (connected, others);
     }
 
-    private void RefreshLba1SceneOptions(int island)
+    // The island's scenes and joined areas as scene-box options (in the order of Lba1SceneGroups).
+    private List<FilterableComboBox.Option> Lba1SceneOptionsFor(Lba1Game game, int island)
+    {
+        var (connected, others) = Lba1SceneGroups(game, island);
+        return connected.Concat(others).Select(e => e.Option).ToList();
+    }
+
+    // The entry of the current list that shows `scene`: the scene itself, or the joined map it is part of.
+    private FilterableComboBox.Option? Lba1OptionForScene(int scene)
+    {
+        if (sceneOptions.FirstOrDefault(o => o.Index == scene) is { } direct) return direct;
+        var area = lba1Game?.Areas.Select((a, i) => (a, i)).FirstOrDefault(x => x.a.Tiles.Any(t => t.Scene == scene));
+        return area?.a is null ? null : sceneOptions.FirstOrDefault(o => o.Index == AreaOption(area.Value.i));
+    }
+
+    // What to open for an island when nothing more specific was asked: its main outside map, or (joining off) the scene in the middle of it;
+    // an island with no joined map opens its first scene.
+    private FilterableComboBox.Option? DefaultLba1Option(int island)
+    {
+        if (lba1Game is not null && Lba1Areas.MainArea(lba1Game.Areas.Where(a => a.Island == island)) is { } main)
+        {
+            var pick = lba1JoinAreas
+                ? sceneOptions.FirstOrDefault(o => o.Index == AreaOption(lba1Game.Areas.ToList().IndexOf(main)))
+                : sceneOptions.FirstOrDefault(o => o.Index == Lba1Areas.CentralScene(main));
+            if (pick is not null) return pick;
+        }
+        return sceneOptions.FirstOrDefault();
+    }
+
+    // Lists the island's scenes and opens `preferScene` (its own entry, or its joined map's) or, without one, the island's default.
+    private void RefreshLba1SceneOptions(int island, int? preferScene = null)
     {
         if (lba1Game is null) return;
         sceneOptions = Lba1SceneOptionsFor(lba1Game, island);
         sceneFilter?.Refresh();
         SceneCombo.Text = "";
-        if (sceneOptions.Count > 0) SceneCombo.SelectedItem = sceneOptions[0];
+        var pick = (preferScene is int scene ? Lba1OptionForScene(scene) : null) ?? DefaultLba1Option(island);
+        if (pick is not null) SceneCombo.SelectedItem = pick;
+    }
+
+    // The scene the open map is looking at: the only one when a single scene is open, else the one with the most ground in the middle of the
+    // view (zoomed right in on one scene that is the one; zoomed out, the most central; equally central: either).
+    private int? Lba1FocusScene()
+    {
+        if (currentGame != GameKind.Lba1 || lba1Game is null || lba1CurrentTiles is not { Count: > 0 } tiles) return null;
+        if (tiles.Count == 1 || lba1ShownImage is not { } image) return tiles[0].Scene;
+        var zoom = interiorZoom > 0 ? interiorZoom : 1;
+        double width = ViewportHost.ActualWidth / zoom, height = ViewportHost.ActualHeight / zoom;
+        return Lba1Areas.FocusScene(tiles, scene => lba1Game.ColumnTops(scene).TopY, (x, y, z) => { var p = image.Project(x, y, z); return (p.X, p.Y); },
+            interiorCenter.X, interiorCenter.Y, width / 4, height / 4);
     }
 
     private void JoinAreas_Click(object sender, RoutedEventArgs e)
     {
+        var focus = Lba1FocusScene();          // (what is on screen, before the list changes under it)
         lba1JoinAreas = JoinAreasCheck.IsChecked == true;
-        EditorSettings.Current.Lba1JoinAreas = lba1JoinAreas;
+        EditorSettings.Current.Lba1JoinConnectedAreas = lba1JoinAreas;
         try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
-        if (currentGame == GameKind.Lba1 && IslandCombo.SelectedItem is FilterableComboBox.Option island) RefreshLba1SceneOptions(island.Index);
+        if (currentGame == GameKind.Lba1 && IslandCombo.SelectedItem is FilterableComboBox.Option island) RefreshLba1SceneOptions(island.Index, focus);
+        else if (currentGame == GameKind.Lba2) RefreshLba2AfterJoinToggle();
     }
 
     // `option` is a scene number, or AreaOption(area) for a joined map.
@@ -834,6 +905,7 @@ public partial class MainWindow : Window
     {
         if (lba1Game is null || lba1Images is null) return;
         var single = tiles.Count == 1;
+        using var busy = single ? UiBusy.Cursor() : UiBusy.Progress(BusyPanel, BusyLabel, "Drawing the map…");
         Lba1SceneImage image;
         var scenes = new Dictionary<int, Lba1Scene>();
         try
@@ -881,7 +953,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    const int half = 16;
+                    var half = DummyBodyPreview.MarkerHalfHeight;      // (the placeholder body at its real size, like every other body)
                     actors.Add((key, (int)feet.X, (int)feet.Y - half, 10, half, true));
                 }
 
@@ -932,7 +1004,7 @@ public partial class MainWindow : Window
         {
             var areaName = lba1Game.Areas.FirstOrDefault(a => a.Tiles.Any(t => t.Scene == tiles[0].Scene))?.Name ?? "Joined map";
             DocumentTitle.Text = $"{island} — {areaName}";
-            DocumentSummary.Text = $"{tiles.Count} scenes ({string.Join(", ", tiles.Select(t => t.Scene))}) / {actorCount} actors / {zoneCount} zones";
+            DocumentSummary.Text = $"{tiles.Count} scenes / {actorCount} actors / {zoneCount} zones";
             FileLabel.Text = $"LBA1  ·  joined scenes {string.Join(", ", tiles.Select(t => t.Scene))}";
         }
         BuildSceneMinimap(bitmap, interiorContent);
@@ -949,6 +1021,8 @@ public partial class MainWindow : Window
         {
             savedIslandMinimap = MinimapImage.Source;
             sceneMinimapActive = true;
+            savedMinimapBackground = MinimapBody.Background;
+            MinimapBody.Background = Brushes.Black;      // (a scene's picture is on black, like the view itself)
         }
         sceneMinimapOrigin = content.TopLeft;
         sceneMinimapScale = Math.Min(1.0, 214.0 / Math.Max(content.Width, content.Height));
@@ -989,6 +1063,7 @@ public partial class MainWindow : Window
     {
         if (!sceneMinimapActive) return;
         sceneMinimapActive = false;
+        if (savedMinimapBackground is not null) MinimapBody.Background = savedMinimapBackground;
         MinimapImage.Source = savedIslandMinimap;
         savedIslandMinimap = null;
         MinimapActorCanvas.Children.Clear();
@@ -998,7 +1073,7 @@ public partial class MainWindow : Window
     }
 
     // `key` is sceneIndex * 1000 + actorIndex.
-    private void OpenLba1ActorWindow(int key)
+    private void OpenLba1ActorWindow(int key, bool edit = false)
     {
         if (lba1Game is null || lba1Images is null) return;
         if (!lba1ViewScenes.TryGetValue(key / 1000, out var scene)) return;
@@ -1022,8 +1097,10 @@ public partial class MainWindow : Window
             MessageBox.Show(this, $"Couldn't read scene {sceneNumber}: {error.Message}", "LBA1 actor", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        WindowLifecycle.Register(window, "ActorAttributesWindow");    // shares a key (and so a remembered spot) with LBA2's own actor window: the same kind of thing
         window.Closed += (_, _) => openLba1ActorWindows.Remove(key);
         openLba1ActorWindows[key] = window;
+        if (!edit && editMode == EditMode.Explore) window.MakeViewOnly();
         window.Show();
     }
 
@@ -1077,6 +1154,7 @@ public partial class MainWindow : Window
             return;
         }
         var window = new ActorScriptWindow(null, lba1Session, ResolveLba1Source, DescribeLba1Actor, () => { zoneCache.Clear(); ReloadLba1AfterEdit(); }) { Owner = this };
+        WindowLifecycle.Register(window, "ActorScriptWindow");
         window.Closed += (_, _) => openScriptWindows.Remove(key);
         openScriptWindows[key] = window;
         window.ShowActor(key);
@@ -1105,7 +1183,7 @@ public partial class MainWindow : Window
                 Width = 10, Height = 10, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
                 Fill = new SolidColorBrush(ZoneStyle.ColorOf(type)),
             });
-            row.Children.Add(new TextBlock { Text = ZoneStyle.NameOf(type), Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA)) });
+            row.Children.Add(new TextBlock { Text = ZoneStyle.NameOf(type), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) });
             var check = new CheckBox { Content = row, Tag = type, IsChecked = zoneTypeVisible[type], Margin = new Thickness(0, 0, 0, 8) };
             check.Click += ZoneType_Click;
             ZoneTypeList.Children.Add(check);
@@ -1318,14 +1396,16 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "Scenes 13 or 61 have unsaved script edits. Save or discard them first.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        // (deliberately says nothing about what the changes are: they are a surprise)
         var confirm = MessageBox.Show(this,
-            Lba1SurpriseChanges.Describe + $"\n\nFolder: {directory}\n\nContinue?", Lba1SurpriseChanges.Title, MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            $"Make the surprise changes to the LBA1 game files?\n\nFolder: {directory}\n\nThe original files are kept as .bak copies.", Lba1SurpriseChanges.Title, MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.OK) return;
 
         try
         {
             var result = Lba1SurpriseChanges.Apply(directory);
-            MessageBox.Show(this, result.Message, Lba1SurpriseChanges.Title, MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, result.Changed ? "Done. The surprise changes are made." : "The surprise changes are already made; nothing to change.",
+                Lba1SurpriseChanges.Title, MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
@@ -1340,6 +1420,51 @@ public partial class MainWindow : Window
         else { lba1Game = null; lba1Images = null; }
     }
 
+    // Tools > LBA2: Fix scripting errors: patches the known retail SCENE.HQR script bugs (see Lba2ScriptFixes).
+    private void Lba2FixScriptingErrors_Click(object sender, RoutedEventArgs e)
+    {
+        if (!Lba2Engine.IsGameFolder(gameRoot))
+        {
+            MessageBox.Show(this, "The LBA2 game folder isn't set. Choose it under File > Settings.", Lba2ScriptFixes.Title, MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (scriptSession.EditedScenes.Any(s => Lba2ScriptFixes.TargetScenes.Contains(s)))
+        {
+            MessageBox.Show(this, "Scenes 36, 100 or 180 have unsaved script edits. Save or discard them first.", Lba2ScriptFixes.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        var confirm = MessageBox.Show(this,
+            "Fix three known retail script bugs?\n\n" +
+            "- White Leaf Desert Bazaar (scene 36): buying the holomap never actually unlocks it.\n" +
+            "- Wannies Island mine (scene 100): the Dino-Fly clover box can be farmed repeatedly.\n" +
+            "- Island CX (scene 180): its clover box shares a flag with scene 129's, so collecting one breaks the other.\n\n" +
+            $"Folder: {gameRoot}\n\nThe original SCENE.HQR is kept as a .bak copy.",
+            Lba2ScriptFixes.Title, MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.OK) return;
+
+        Lba2ScriptFixes.FixResult result;
+        using (UiBusy.Cursor())
+        {
+            try { result = Lba2ScriptFixes.Apply(scriptSession); }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+            {
+                MessageBox.Show(this, $"Nothing was changed: {error.Message}", Lba2ScriptFixes.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+        }
+        MessageBox.Show(this, result.Message, Lba2ScriptFixes.Title, MessageBoxButton.OK, result.Changed ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        if (!result.Changed) return;
+
+        zoneCache.Clear();
+        foreach (var scene in result.TouchedScenes) scriptSession.ForgetScene(scene);
+        if (currentGame == GameKind.Lba2)
+        {
+            if (interiorSceneActive && result.TouchedScenes.Contains(interiorSceneNumber)) ShowInteriorScene(interiorSceneNumber, keepView: true);
+            else if (!interiorSceneActive) { InvalidateNativeIsland(); if (nativeViewActive) RenderNativeCamera(); }
+        }
+        RefreshZoneListIfVisible();
+    }
+
     // Tools > LBA2: edit a scene as data on a plan of it (Lba2SceneEditorWindow).
     private void Lba2Editor_Click(object sender, RoutedEventArgs e)
     {
@@ -1349,7 +1474,7 @@ public partial class MainWindow : Window
             return;
         }
         var start = Lba2SceneToPlay();
-        try { new Lba2SceneEditorWindow(gameRoot, start, EditLba2ScriptFromEditor) { Owner = this }.Show(); }
+        try { var w = new Lba2SceneEditorWindow(gameRoot, start, EditLba2ScriptFromEditor) { Owner = this }; WindowLifecycle.Register(w, "Lba2SceneEditorWindow"); w.Show(); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
             DebugLog.Log($"MainWindow: LBA2 scene editor failed: {error}");
@@ -1371,7 +1496,9 @@ public partial class MainWindow : Window
         {
             Func<int, string?>? describe = null;
             if (Lba1Game.IsInstalled(lba1)) { var game = new Lba1Game(lba1); describe = game.Description; }
-            new GridEditorWindow(Lba1Game.IsInstalled(lba1) ? lba1 : null, lba2, describe) { Owner = this }.Show();
+            var gridWindow = new GridEditorWindow(Lba1Game.IsInstalled(lba1) ? lba1 : null, lba2, describe) { Owner = this };
+            WindowLifecycle.Register(gridWindow, "GridEditorWindow");
+            gridWindow.Show();
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
@@ -1389,7 +1516,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "Neither game folder is set. Choose them under File > Settings.", "Objects and bodies", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        try { new ObjectBrowserWindow(lba1, lba2) { Owner = this }.Show(); }
+        try { var w = new ObjectBrowserWindow(lba1, lba2) { Owner = this }; WindowLifecycle.Register(w, "ObjectBrowserWindow"); w.Show(); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
             MessageBox.Show(this, $"Couldn't open the object browser: {error.Message}", "Objects and bodies", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1406,7 +1533,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "Neither game folder is set. Choose them under File > Settings.", "Bricks and sprites", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        try { new AssetEditorWindow(lba1, lba2) { Owner = this }.Show(); }
+        try { var w = new AssetEditorWindow(lba1, lba2) { Owner = this }; WindowLifecycle.Register(w, "AssetEditorWindow"); w.Show(); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
             MessageBox.Show(this, $"Couldn't open the picture editor: {error.Message}", "Bricks and sprites", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -1436,7 +1563,9 @@ public partial class MainWindow : Window
         var start = currentGame == GameKind.Lba1 && lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0;
         try
         {
-            new Lba1SceneEditorWindow(directory, start, EditLba1ActorFromEditor) { Owner = this }.Show();
+            var sceneWindow = new Lba1SceneEditorWindow(directory, start, EditLba1ActorFromEditor) { Owner = this };
+            WindowLifecycle.Register(sceneWindow, "Lba1SceneEditorWindow");
+            sceneWindow.Show();
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
@@ -1459,7 +1588,7 @@ public partial class MainWindow : Window
         var result = GoToLba1Scene(scene);
         DebugLog.Log($"MainWindow: editor asked for scene {scene} actor {actor}: {result}");
         if (script) OpenLba1ScriptWindow(scene * 1000 + actor);
-        else OpenLba1ActorWindow(scene * 1000 + actor);
+        else OpenLba1ActorWindow(scene * 1000 + actor, edit: true);
     }
 
     // After a zone edit was saved: read the LBA1 files again and redraw the same scene(s).
@@ -1525,8 +1654,12 @@ public partial class MainWindow : Window
                 Tag = index,
             };
             if (highlightSelection && selectedActorIndex == index) AddSelectionRing(sx, sy, hit.Width, hit.Height);
-            hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
-            hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
+            if (lba2JoinedView) hit.MouseLeftButtonDown += JoinedLba2Actor_MouseLeftButtonDown;
+            else
+            {
+                hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+                hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
+            }
             Canvas.SetLeft(hit, sx - hit.Width / 2);
             Canvas.SetTop(hit, sy - hit.Height / 2);
             ActorMarkerCanvas.Children.Add(hit);
@@ -1713,8 +1846,12 @@ public partial class MainWindow : Window
                 Cursor = Cursors.Hand,
                 Tag = index,
             };
-            hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
-            hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
+            if (lba2JoinedView) hit.MouseLeftButtonDown += JoinedLba2Actor_MouseLeftButtonDown;
+            else
+            {
+                hit.MouseLeftButtonDown += ActorMarker_MouseLeftButtonDown;
+                hit.MouseRightButtonDown += ActorMarker_MouseRightButtonDown;
+            }
             Canvas.SetLeft(hit, screenX - hit.Width / 2);
             Canvas.SetTop(hit, screenY - hit.Height / 2);
             ActorMarkerCanvas.Children.Add(hit);
@@ -1773,10 +1910,11 @@ public partial class MainWindow : Window
         // now selected, but don't pop one open on every click -- only
         // explicit actions (double-click, context menu) do that.
         if (openScriptWindows.TryGetValue(index, out var openScript)) openScript.ShowActor(index);
-        // Explore only selects; Script opens the script at once; Build edits the actor on a double-click.
+        // Script opens the script at once; a double-click opens the actor's attributes (Explore: view only, Build: to edit).
         if (editMode == EditMode.Script) OpenActorScriptWindow(index);
-        else if (editMode == EditMode.Build && e.ClickCount >= 2)
+        else if (e.ClickCount >= 2)
         {
+            // (in Explore mode the window opens too, view only)
             if (currentGame == GameKind.Lba1) OpenLba1ActorWindow(index);
             else OpenActorAttributesWindow(index);
         }
@@ -1815,12 +1953,13 @@ public partial class MainWindow : Window
             return;
         }
         var window = new ActorScriptWindow(nativeRenderer.RendererLibrary, scriptSession, ResolveActorSource) { Owner = this };
+        WindowLifecycle.Register(window, "ActorScriptWindow");
         window.Closed += (_, _) => openScriptWindows.Remove(index);
         openScriptWindows[index] = window;
         window.ShowActor(index);
     }
 
-    private void OpenActorAttributesWindow(int index)
+    private void OpenActorAttributesWindow(int index, bool edit = false)
     {
         if (openAttributesWindows.TryGetValue(index, out var existing))
         {
@@ -1829,6 +1968,7 @@ public partial class MainWindow : Window
         }
         DebugLog.Log($"MainWindow: opening ActorAttributesWindow for index={index}");
         var window = new ActorAttributesWindow(nativeRenderer, palette, index) { Owner = this };
+        WindowLifecycle.Register(window, "ActorAttributesWindow");
         window.OpenScriptRequested += OpenActorScriptWindow;
         // The window's own Closed handler undoes RendererAddActor if this
         // was a freshly-added actor never applied -- refresh here in case
@@ -1843,6 +1983,7 @@ public partial class MainWindow : Window
             else RenderNativeCamera();
         };
         openAttributesWindows[index] = window;
+        if (!edit && editMode == EditMode.Explore) window.MakeViewOnly();
         window.Show();
     }
 
@@ -1860,7 +2001,7 @@ public partial class MainWindow : Window
         if (editMode == EditMode.Build)
         {
             var editAttributes = new MenuItem { Header = "Edit Attributes…" };
-            editAttributes.Click += (_, _) => { if (lba1) OpenLba1ActorWindow(index); else OpenActorAttributesWindow(index); };
+            editAttributes.Click += (_, _) => { if (lba1) OpenLba1ActorWindow(index, edit: true); else OpenActorAttributesWindow(index, edit: true); };
             menu.Items.Add(editAttributes);
         }
         var editScript = new MenuItem { Header = editMode == EditMode.Build ? "Edit Script… (switches to Script mode)" : "Edit Script…" };
@@ -2608,6 +2749,10 @@ public partial class MainWindow : Window
         StopPlay();
         SaveAudioIfDirty();
         if (!ConfirmTerrainDiscard()) { e.Cancel = true; return; }
+        // Every other open window (actor attributes, script editors, the grid/object/asset editors, ...)
+        // closes too, each running its own Closing handler (an unsaved script edit still asks first) -- if
+        // any of them refuses, the main window's own close is cancelled rather than leaving them orphaned.
+        if (!WindowLifecycle.CloseAll(except: this)) { e.Cancel = true; return; }
         StopLive();                       // the preview folder is removed and the process leaves it
         nativeRenderCancellation?.Cancel();
         nativeRenderer.ShutdownDirectRenderer();
@@ -2619,6 +2764,15 @@ public partial class MainWindow : Window
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.Z or Key.Y && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase)
         {
             RunHistoryStep(undo: e.Key == Key.Z);
+            e.Handled = true;
+            return;
+        }
+        // Ctrl+S / Ctrl+O: the same File > Save / File > Open the menu offers (every other window that has
+        // its own meaningful "save" already binds Ctrl+S the same way, to its own Save/Apply -- see
+        // ActorScriptWindow, Lba1SceneEditorWindow, Lba2SceneEditorWindow, GridEditorWindow, AssetEditorWindow).
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.S or Key.O && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase)
+        {
+            if (e.Key == Key.S) Save_Click(sender, e); else Open_Click(sender, e);
             e.Handled = true;
             return;
         }
@@ -2645,6 +2799,7 @@ public partial class MainWindow : Window
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsWindow { Owner = this };
+        WindowPlacement.Attach(dialog, "SettingsWindow");
         if (dialog.ShowDialog() != true) return;
         if (dialog.ScriptNamesChanged) RefreshScriptStyle();
         if (dialog.Lba1DirectoryChanged)

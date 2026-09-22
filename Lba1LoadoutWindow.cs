@@ -22,8 +22,8 @@ internal sealed class Lba1LoadoutWindow : Window
         Width = 560; Height = 640;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
-        var back = new SolidColorBrush(Color.FromRgb(0x14, 0x1B, 0x19));
-        var fore = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
+        var back = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
+        var fore = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
         Background = back; Foreground = fore;
 
         var root = new DockPanel { Margin = new Thickness(14) };
@@ -42,7 +42,7 @@ internal sealed class Lba1LoadoutWindow : Window
         root.Children.Add(buttons);
 
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "INVENTORY", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B)), Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBlock { Text = "Inventory", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), Margin = new Thickness(0, 0, 0, 4) });
         var wrap = new WrapPanel();
         for (var i = 0; i < Lba1Const.MaxInventory; i++)
         {
@@ -54,7 +54,7 @@ internal sealed class Lba1LoadoutWindow : Window
         }
         panel.Children.Add(wrap);
 
-        panel.Children.Add(new TextBlock { Text = "STATE", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B)), Margin = new Thickness(0, 12, 0, 4) });
+        panel.Children.Add(new TextBlock { Text = "State", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), Margin = new Thickness(0, 12, 0, 4) });
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -76,7 +76,7 @@ internal sealed class Lba1LoadoutWindow : Window
         Row("leaves", "Clover leaves");
         Row("chapter", "Chapter", "what the story scripts test with CHAPTER");
         panel.Children.Add(grid);
-        panel.Children.Add(new TextBlock { Text = "OTHER GAME FLAGS  (number=value, comma separated)", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B)), Margin = new Thickness(0, 12, 0, 4) });
+        panel.Children.Add(new TextBlock { Text = "Other game flags  (number=value, comma separated)", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), Margin = new Thickness(0, 12, 0, 4) });
         flags.Padding = new Thickness(3, 2, 3, 2);
         flags.ToolTip = "Scripts read these with VAR_GAME; 70 is the 'instructions' flag that blocks item use.";
         panel.Children.Add(flags);

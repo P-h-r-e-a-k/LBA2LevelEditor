@@ -1,5 +1,8 @@
 using LBA2LevelEditor;
 using LBA2LevelEditor.Lba1.Runtime;
+using LBA2LevelEditor.Lba1;
+using LBA2LevelEditor.LbaScript;
+using LBA2LevelEditor.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -26,7 +29,8 @@ internal static class RuntimeTests
         if (what is "math" or "all") Math_();
         if (what is "smoke" or "all") Smoke(data);
         if (what is "walk" or "all") Walk(data);
-        if (what is "doors" or "all") Doors(data);
+        if (what is "doors" or "all") { Doors(data); RetailBonusZone(data); DoorLock(); SecretRoom(); }
+        if (what is "fishermen" or "all") Fishermen();
         if (what is "text" or "all") Text(data);
         if (what is "dialogue" or "all") Dialogue(data);
         if (what is "extras" or "all") Extras(data);
@@ -384,6 +388,420 @@ internal static class RuntimeTests
         Check(rt.Hero.GenAnim == Lba1Const.GenAnimRien, "released, he goes back to standing");
     }
 
+    // A bonus zone of the game's own (scene 13's zone 2, words 0, 48, 1, 0: money or a heart): pressing action in it lets a bonus pop out. This is how the
+    // engine reads a giver zone (which bonuses from the second word, how many from the third, taken from the fourth), and the lamp's key zone is written to match.
+    private static void RetailBonusZone(Lba1RuntimeData data)
+    {
+        var zone = data.Scene(13).Zones.Where(z => z.Type == 4 && z.Info[1] is 48).First();
+        var rt = new Lba1Runtime(data);
+        rt.ChangeCube(13);
+        rt.Run(30);
+        rt.Place((zone.X0 + zone.X1) / 2, zone.Y0, (zone.Z0 + zone.Z1) / 2, 0);
+        rt.Fire = Lba1Const.FSpace;
+        rt.Run(4);
+        rt.Fire = 0;
+        rt.Run(10);
+        Check(rt.Extras.Any(e => e.Sprite is 3 or 4), $"a retail giver zone (words {string.Join(",", zone.Info)}) lets a coin or a heart pop out when action is pressed in it");
+    }
+
+    // Where Twinsen stands to ask a mushroom (actors 4..15): 500 away on the side that is furthest from the other mushrooms (one asks the first in its list within reach).
+    private static (int X, int Z) Beside(LBA2LevelEditor.Scenes.SceneModel room, int mushroom)
+    {
+        var m = room.Actors[mushroom];
+        (int X, int Z) best = (m.X - 500, m.Z);
+        var bestGap = -1.0;
+        foreach (var (dx, dz) in new[] { (-500, 0), (500, 0), (0, -500), (0, 500), (-360, -360), (360, -360), (-360, 360), (360, 360) })
+        {
+            var (x, z) = (m.X + dx, m.Z + dz);
+            var gap = Enumerable.Range(4, 12).Where(i => i != mushroom).Min(i => Math.Sqrt(Math.Pow(room.Actors[i].X - x, 2) + Math.Pow(room.Actors[i].Z - z, 2)));
+            if (gap > bestGap) { bestGap = gap; best = (x, z); }
+        }
+        return best;
+    }
+
+    // The bedroom's extras (Lba1SecretRoomExtras) in the simulation, on a temp copy of the game folder with the surprise changes applied: the penguin walks
+    // and is taken on touch, each reward mushroom of the two smiley faces (clovers, the heart nose, the bottle nose) pops its reward out when action is pressed
+    // beside it and then suicides, and a clover-box mushroom shows its box and suicides; the box gives a clover box once (its game flag stays set), and a
+    // mushroom whose box has been given is gone on the next visit.
+    private static void SecretRoom()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lba1_room_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var file in Directory.GetFiles(Lba1Dir, "*.HQR")) File.Copy(file, Path.Combine(dir, Path.GetFileName(file)));
+            foreach (var name in new[] { "SCENE.HQR", "LBA_GRI.HQR", "BODY.HQR", "FILE3D.HQR", "TEXT.HQR" })
+                if (File.Exists(Path.Combine(Lba1Dir, name + ".bak"))) File.Copy(Path.Combine(Lba1Dir, name + ".bak"), Path.Combine(dir, name), true);
+            SceneHistory.Clear();
+            Lba1SurpriseChanges.Apply(dir);
+            SceneHistory.Clear();
+            var data = new Lba1RuntimeData(dir);
+            var room = data.Scene(61);
+            var penguinAt = 3;
+            Check(room.Actors.Count == 25 && !room.Actors[penguinAt].IsSprite && room.Actors[penguinAt].Entity == 9, "secret room: the scene has its penguin, twelve mushrooms, five boxes and four coins");
+
+            // the pink elf greets Twinsen once when he first comes near, and again when he presses action close to it
+            var elfAt = 2;
+            var elfActor = room.Actors[elfAt];
+            var greet = new Lba1Runtime(data) { AutoCloseDialogues = false };
+            greet.ChangeCube(61);
+            greet.Place(elfActor.X + 2700, 768, elfActor.Z, 768);
+            greet.Run(20);
+            Check(greet.Dialogue is null && greet.FlagGame[Lba1PinkElf.GreetingFlag] == 0, $"secret room: the elf says nothing while Twinsen is far from it (2700 units away)");
+            greet.Place(elfActor.X + 2200, 768, elfActor.Z, 768);
+            greet.Run(30);
+            Check(greet.Dialogue is { } hello && hello.TextId == Lba1PinkElf.GreetingId && hello.Speaker == elfAt && hello.Colour == 14 && hello.Text == Lba1PinkElf.GreetingEnglish && greet.FlagGame[Lba1PinkElf.GreetingFlag] == 1,
+                $"secret room: the elf greets Twinsen when he comes within 2500 units, in pink, with the greeting text ({greet.Dialogue?.Text}; hero {greet.Hero.PosX},{greet.Hero.PosY},{greet.Hero.PosZ}; flag {greet.FlagGame[Lba1PinkElf.GreetingFlag]})");
+            greet.CloseDialogue();
+            greet.Run(60);
+            Check(greet.Dialogue is null, "secret room: and does not greet him again by itself");
+            greet.Place(elfActor.X + 2000, 768, elfActor.Z, 768);
+            greet.Fire = Lba1Const.FSpace;
+            greet.Run(6);
+            greet.Fire = 0;
+            greet.Run(6);
+            Check(greet.Dialogue is null, "secret room: pressing action 2000 units from the elf says nothing");
+            greet.Place(elfActor.X + 1100, 768, elfActor.Z, 768);
+            greet.Fire = Lba1Const.FSpace;
+            greet.Run(6);
+            Check(greet.Dialogue is { TextId: Lba1PinkElf.GreetingId }, "secret room: pressing action within 1500 units of the elf makes it say the greeting again");
+            greet.CloseDialogue();
+            greet.Run(30);
+            Check(greet.Dialogue is null, "secret room: holding action down does not repeat it");
+            greet.Fire = 0;
+            greet.Run(4);
+            greet.Fire = Lba1Const.FSpace;
+            greet.Run(6);
+            Check(greet.Dialogue is { TextId: Lba1PinkElf.GreetingId }, "secret room: letting go of action and pressing it again does");
+            greet.Fire = 0;
+
+
+            // the penguin walks up and down the room, along x 56
+            var rt = new Lba1Runtime(data);
+            rt.ChangeCube(61);
+            rt.Run(20);
+            var penguin = rt.Objects[penguinAt];
+            var start = (penguin.PosX, penguin.PosZ);
+            rt.Place(rt.Hero.PosX, rt.Hero.PosY, rt.Hero.PosZ, rt.Hero.Beta);
+            rt.Run(240);
+            Check((penguin.PosX, penguin.PosZ) != start && penguin.PosX == 56 * 512 && penguin.PosZ >= 48 * 512 && penguin.PosZ <= 61 * 512, $"secret room: the penguin walks about the room ({start} -> ({penguin.PosX}, {penguin.PosZ}))");
+
+            // taken on touch: game flag 14 is set and the penguin is gone
+            Check(rt.FlagGame[14] == 0, "secret room: Twinsen has no penguin at first");
+            rt.Place(penguin.PosX, penguin.PosY, penguin.PosZ, 0);
+            rt.Run(60);
+            Check(rt.FlagGame[14] == 1, "secret room: touching the penguin takes it (game flag 14)");
+
+            // a reward mushroom: action beside it lets its reward pop out, and the mushroom is gone (dead, no body) - for this visit only
+            (string What, int Sprite, int Worth, int Mushroom)[] rewards = { ("clover", 7, 1, 4), ("clover", 7, 1, 8), ("heart", 4, 50, 9), ("bottle", 5, 80, 15) };
+            foreach (var (what, sprite, worth, mushroom) in rewards)
+            {
+                var r = new Lba1Runtime(data);
+                r.ChangeCube(61);
+                r.Run(30);
+                r.MagicLevel = 1;      // (with no magic yet the engine turns a magic bottle into a heart)
+                var m = data.Scene(61).Actors[mushroom];
+                var mushObj = r.Objects[mushroom];
+                Check(!mushObj.IsDead && mushObj.Body != -1, $"secret room: the {what} mushroom (actor {mushroom}) is standing at first");
+                var (hx, hz) = Beside(room, mushroom); r.Place(hx, 768, hz, 768);
+                r.Fire = Lba1Const.FSpace;
+                r.Run(4);
+                r.Fire = 0;
+                r.Run(8); Console.WriteLine($"    diag m{mushroom} spot ({hx},{hz}) mushroom ({m.X},{m.Z}) hero now ({r.Hero.PosX},{r.Hero.PosZ}) dead {r.Objects[mushroom].IsDead} extras {string.Join(",", r.Extras.Where(e => e.Sprite != -1).Select(e => e.Sprite))}");
+                var extra = r.Extras.FirstOrDefault(e => e.Sprite == sprite);
+                Check(extra is not null && extra.Divers == worth, $"secret room: pressing action beside the {what} mushroom (actor {mushroom}) lets a {what} worth {worth} pop out ({extra?.Sprite}, {extra?.Divers})");
+                Check(mushObj.IsDead && mushObj.Body == -1, $"secret room: the {what} mushroom (actor {mushroom}) suicides after giving its bonus");
+                var others = Enumerable.Range(4, 12).Where(i => i != mushroom).Count(i => r.Objects[i].IsDead);
+                Check(others == 0, $"secret room: only that mushroom is gone ({others} others are dead: {string.Join(",", Enumerable.Range(4, 12).Where(i => i != mushroom && r.Objects[i].IsDead))})");
+                r.Place(hx, 768, hz, 768);
+                var before = r.Extras.Count(e => e.Sprite != -1);
+                r.Fire = Lba1Const.FSpace;
+                r.Run(4);
+                r.Fire = 0;
+                r.Run(8);
+                Check(r.Extras.Count(e => e.Sprite != -1) <= before, $"secret room: a second action beside the gone {what} mushroom gives nothing more");
+                r.ChangeCube(61);
+                r.Run(10);
+                Check(!r.Objects[mushroom].IsDead, $"secret room: the {what} mushroom is back on the next visit");
+            }
+
+            // the eyes are coins: sprite actors that stay (a popped-out coin is taken away after 20 seconds); touching one pops a 50-kash coin out towards Twinsen and the sprite is used up
+            foreach (var coinAt in new[] { 21, 24 })
+            {
+                var c = new Lba1Runtime(data);
+                c.ChangeCube(61);
+                c.Run(30);
+                var spot = data.Scene(61).Actors[coinAt];
+                var coinObj = c.Objects[coinAt];
+                Check(!coinObj.IsDead && coinObj.Sprite == 3 && (coinObj.Flags & Lba1Const.Invisible) == 0, $"secret room: coin {coinAt} is there at first (the kash sprite; box x {coinObj.XMin}..{coinObj.XMax}, y {coinObj.YMin}..{coinObj.YMax}, z {coinObj.ZMin}..{coinObj.ZMax}; hero box x {c.Hero.XMin}..{c.Hero.XMax})");
+                // a coin dropped by a monster is gone after 20 seconds; these are not: 40 seconds on (2000 ticks) it is still there
+                var until = c.TimerRef + 2000;
+                var g = 0;
+                while (c.TimerRef < until && g++ < 5000) c.Frame();
+                Check(!coinObj.IsDead && (coinObj.Flags & Lba1Const.Invisible) == 0, $"secret room: coin {coinAt} is still there after 40 seconds");
+                c.NbGoldPieces = 0;
+                c.Place(spot.X - 300, 768, spot.Z, 768);
+                c.Run(6);
+                var popped = c.Extras.FirstOrDefault(e => e.Sprite == 3);
+                Check(coinObj.IsDead && (popped is not null && popped.Divers == 50 || c.NbGoldPieces == 50), $"secret room: touching coin {coinAt} pops a coin worth 50 out ({popped?.Divers}, kash {c.NbGoldPieces})");
+                c.Run(200);
+                Check(c.NbGoldPieces == 50, $"secret room: Twinsen picks the popped-out coin up: 50 kashes ({c.NbGoldPieces})");
+                Check(Enumerable.Range(21, 4).Count(i => c.Objects[i].IsDead) == 1, "secret room: only that coin is used up");
+                c.ChangeCube(61);
+                c.Run(10);
+                Check(!c.Objects[coinAt].IsDead, $"secret room: coin {coinAt} is back on the next visit");
+            }
+
+            // a clover-box mushroom: nothing at first, then its box appears beside it when action is pressed (and the mushroom suicides), and touching the box gives a clover box, once
+            var run = new Lba1Runtime(data);
+            run.ChangeCube(61);
+            run.Run(30);
+            var boxActor = 16;      // (the first clover box: after the penguin (3), the twelve mushrooms (4..15))
+            var mushAt = 10;        // the first clover-box mushroom (the right face's mouth, at 58, 53)
+            var mush = data.Scene(61).Actors[mushAt];
+            var box = run.Objects[boxActor];
+            Check((box.Flags & Lba1Const.Invisible) != 0 && !run.Objects[mushAt].IsDead, "secret room: a clover box is hidden until its mushroom is asked");
+            var boxes = run.NbCloverBox;
+            var (rx, rz) = Beside(room, mushAt); run.Place(rx, 768, rz, 768);
+            run.Fire = Lba1Const.FSpace;
+            run.Run(4);
+            run.Fire = 0;
+            run.Run(10);
+            Check((box.Flags & Lba1Const.Invisible) == 0, "secret room: pressing action beside a clover-box mushroom shows its box");
+            Check(run.Objects[mushAt].IsDead && !run.Extras.Any(e => e.Sprite is 3 or 4 or 5 or 7), "secret room: the clover-box mushroom suicides and pops nothing out itself (" + string.Join(",", run.Extras.Where(e => e.Sprite != -1).Select(e => e.Sprite)) + "; dead " + string.Join(",", Enumerable.Range(4, 12).Where(i => run.Objects[i].IsDead)) + ")");
+            run.Place(box.PosX, box.PosY, box.PosZ, 0);
+            run.Run(40);
+            Check(run.NbCloverBox == boxes + 1 && run.FlagGame[221] == 1, $"secret room: touching the box gives a clover box ({boxes} -> {run.NbCloverBox}) and sets its game flag (221)");
+
+            // and never again: the flag is set, so on the next visit the mushroom and the box are both gone
+            var again = new Lba1Runtime(data);
+            again.ChangeCube(61);
+            again.FlagGame[221] = 1;
+            again.ChangeCube(61);
+            again.Run(30);
+            Check(again.Objects[mushAt].IsDead, "secret room: a clover-box mushroom whose box has been given is gone on the next visit");
+            Check(!again.Objects[mushAt + 1].IsDead, "secret room: the other clover-box mushrooms are still there");
+            var (ax, az) = Beside(room, mushAt); again.Place(ax, 768, az, 768);
+            again.Fire = Lba1Const.FSpace;
+            again.Run(4);
+            again.Fire = 0;
+            again.Run(30);
+            var b2 = again.NbCloverBox;
+            var box2 = again.Objects[boxActor];
+            again.Place(box2.PosX, box2.PosY, box2.PosZ, 0);
+            again.Run(40);
+            Check(again.NbCloverBox == b2, "secret room: a clover box already given is not given again");
+
+            // every line of the doorway: Twinsen walks in from the street and stays in the room (a clover box once stood where he arrives on one line, pushed him into the
+            // doorway's zone and sent him straight back out, over and over)
+            foreach (var z in new[] { 6144, 6400, 6656, 6912, 7168 })
+            {
+                var w = new Lba1Runtime(data);
+                w.ChangeCube(13);
+                w.NbLittleKeys = 1;
+                w.Run(5);
+                w.Place(54 * 512, 256, z, 768);
+                w.Joy = Lba1Const.JUp;
+                var scenes = 0;
+                var lastCube = w.NumCube;
+                for (var f = 0; f < 700; f++)
+                {
+                    w.Frame();
+                    if (w.NumCube != lastCube) { scenes++; lastCube = w.NumCube; }
+                }
+                Check(w.NumCube == 61 && scenes == 1, $"secret room: walking in along z {z / 512.0:0.0} of the doorway ends in the room after one scene change, not thrown out again (scene {w.NumCube}, {scenes} changes)");
+            }
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+    // The bedroom door's key lock (Lba1DoorLock) in the runtime, on a temp copy of the game folder with the surprise changes applied: without a key the
+    // door stays shut, one little key opens it and sets game flag 220, and afterwards it opens with no key at all (the flag outlives the scene).
+    private static void DoorLock()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lba1_lock_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var file in Directory.GetFiles(Lba1Dir, "*.HQR")) File.Copy(file, Path.Combine(dir, Path.GetFileName(file)));
+            foreach (var name in new[] { "SCENE.HQR", "LBA_GRI.HQR", "BODY.HQR", "FILE3D.HQR", "TEXT.HQR" })
+                if (File.Exists(Path.Combine(Lba1Dir, name + ".bak"))) File.Copy(Path.Combine(Lba1Dir, name + ".bak"), Path.Combine(dir, name), true);
+            SceneHistory.Clear();
+            Lba1SurpriseChanges.Apply(dir);
+            SceneHistory.Clear();
+            var data = new Lba1RuntimeData(dir);
+
+            var rt = new Lba1Runtime(data);
+            rt.ChangeCube(13);
+            var door = rt.Objects[28];
+            rt.Run(60);
+            var shut = (door.PosX, door.PosZ);
+            Check(rt.FlagGame[Lba1DoorLock.Flag] == 0, "door lock: the flag starts clear");
+
+            // no key: pushing against the door for a long time does nothing
+            rt.Place(54 * 512, 256, 13 * 512, 768);
+            rt.Joy = Lba1Const.JUp;
+            var slid = false;
+            for (var f = 0; f < 300; f++)
+            {
+                rt.Frame();
+                if ((door.PosX, door.PosZ) != shut) slid = true;
+            }
+            Check(!slid && rt.NumCube == 13 && rt.FlagGame[Lba1DoorLock.Flag] == 0, "door lock: without a key the door stays shut and the flag stays clear");
+            rt.Joy = 0;
+
+            // one key: it is spent, the flag is set and the door opens
+            rt.NbLittleKeys = 1;
+            rt.Place(54 * 512, 256, 13 * 512, 768);
+            rt.Joy = Lba1Const.JUp;
+            for (var f = 0; f < 400 && rt.NumCube == 13; f++)
+            {
+                rt.Frame();
+                if ((door.PosX, door.PosZ) != shut) slid = true;
+            }
+            Check(slid && rt.NumCube == 61, $"door lock: with a key the door slides open and Twinsen walks into the bedroom (scene {rt.NumCube})");
+            Check(rt.FlagGame[Lba1DoorLock.Flag] == 1, "door lock: opening it sets the flag (\"Door unlocked\")");
+            rt.Joy = 0;
+
+            // the second time, with no key (keys are lost on entering a scene anyway): the door opens for nothing
+            rt.ChangeCube(13);
+            Check(rt.NbLittleKeys == 0 && rt.FlagGame[Lba1DoorLock.Flag] == 1, "door lock: the flag survives the scene change and Twinsen has no key");
+            door = rt.Objects[28];
+            rt.Run(60);
+            shut = (door.PosX, door.PosZ);
+            slid = false;
+            rt.Place(54 * 512, 256, 13 * 512, 768);
+            rt.Joy = Lba1Const.JUp;
+            for (var f = 0; f < 400 && rt.NumCube == 13; f++)
+            {
+                rt.Frame();
+                if ((door.PosX, door.PosZ) != shut) slid = true;
+            }
+            Check(slid && rt.NumCube == 61 && rt.NbLittleKeys == 0, "door lock: once unlocked it opens without a key, and no key is spent");
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+
+    // The chapter-6 boat trips of the three fishermen (Lba1Fishermen), on a copy of the game files that the surprise changes have been applied to:
+    // the menu each one offers, and that every offer really carries Twinsen to the island it names (the dialogue box is answered, the boat is
+    // boarded, the trip runs and the landing point sits in the cube-change zone of the other island).
+    private static void Fishermen()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lba1_fish_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var file in Directory.GetFiles(Lba1Dir, "*.HQR")) File.Copy(file, Path.Combine(dir, Path.GetFileName(file)));
+            foreach (var name in new[] { "SCENE.HQR", "LBA_GRI.HQR", "BODY.HQR", "FILE3D.HQR", "TEXT.HQR" })
+                if (File.Exists(Path.Combine(Lba1Dir, name + ".bak"))) File.Copy(Path.Combine(Lba1Dir, name + ".bak"), Path.Combine(dir, name), true);
+            SceneHistory.Clear();
+            Lba1SurpriseChanges.Apply(dir);
+            SceneHistory.Clear();
+            var data = new Lba1RuntimeData(dir);
+
+            // scene, fisherman, boat, where the fisherman's own part ends (his track label), chapter, and (choice text id -> scene reached)
+            var trips = new (string Where, int Scene, int Fisherman, int Boat, int DoneLabel, (int X, int Z, int Beta) Stand, (int Choice, int Reaches, string Name)[] Offers)[]
+            {
+                ("Port Belooga", 24, 1, 4, 112, (23232, 16384, 256), new[] { (118, 6, "Citadel Island"), (47, 39, "White Leaf Desert"), (79, 42, "Proxima Island") }),
+                ("the military camp", 39, 2, 1, 100, (9368, 3928, 768), new[] { (10, 6, "Citadel Island"), (6, 24, "Principal Island"), (17, 42, "Proxima Island") }),
+                ("Proxima City", 42, 10, 9, 100, (4096, 21728, 768), new[] { (6, 6, "Citadel Island"), (5, 24, "Principal Island"), (62, 39, "White Leaf Desert") }),
+            };
+            foreach (var trip in trips)
+            {
+                var offered = Ride(data, trip.Scene, 6, trip.Fisherman, trip.Boat, trip.DoneLabel, trip.Stand, trip.Offers[0].Choice, out _, out _, out _);
+                var expected = trip.Offers.Select(o => o.Choice).ToList();
+                Check(expected.All(offered.Contains), $"{trip.Where}, chapter 6: he offers {string.Join(", ", trip.Offers.Select(o => o.Name))} (choices {string.Join(",", offered)})");
+                foreach (var offer in trip.Offers)
+                {
+                    Ride(data, trip.Scene, 6, trip.Fisherman, trip.Boat, trip.DoneLabel, trip.Stand, offer.Choice, out _, out var reached, out var control);
+                    Check(reached == offer.Reaches, $"{trip.Where}, chapter 6: the trip to {offer.Name} arrives in scene {offer.Reaches} (got {reached})");
+                    Check(control, $"{trip.Where}, chapter 6: after the trip to {offer.Name} Twinsen is visible and can walk (no softlock at the landing)");
+                }
+            }
+
+            // chapter 5 is as the game had it: Port Belooga offers the desert only (and nothing at all before the Astronomer has been asked)
+            var five = Ride(data, 24, 5, 1, 4, 112, (23232, 16384, 256), 47, out _, out _, out _);
+
+            // the check itself: the first version's landing from Proxima (a point in the desert's east-edge zone, which waits for the chapter-6 boat) is the softlock
+            var store = new SceneStore(SceneGame.Lba1, dir);
+            var landing = SceneScripts.Load(store.LoadRecord(42), 42, null, lba1: true);
+            landing.SetText(0, ScriptKind.Life, landing.GetText(0, ScriptKind.Life).Replace("holomap_traj(31);\n            change_cube(39);", "holomap_traj(31);\n            pos_point(30);"));
+            store.SaveMany(new[] { new SceneChange(42, SceneSerializer.Parse(SceneGame.Lba1, landing.Build().Record!)) }, description: "test: the first version's landing");
+            SceneHistory.Clear();
+            Ride(new Lba1RuntimeData(dir), 42, 6, 10, 9, 100, (4096, 21728, 768), 62, out _, out var oldReached, out var oldControl);
+            Check(oldReached == 39 && !oldControl, $"Proxima City, the first version's landing: the trip reaches the desert but Twinsen is stuck there (scene {oldReached}, control {oldControl}): the check sees the softlock");
+            Check(!five.Contains(118) && !five.Contains(79), $"Port Belooga, chapter 5: no Citadel or Proxima offer (choices {string.Join(",", five)})");
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) try { Directory.Delete(dir, true); } catch (IOException) { }
+        }
+    }
+
+    // Talks to a fisherman in the scene in the chapter, takes the choice when it is offered, then boards his boat; returns the choices offered.
+    private static List<int> Ride(Lba1RuntimeData data, int scene, int chapter, int fisherman, int boat, int doneLabel, (int X, int Z, int Beta) stand, int choice, out List<string> events, out int reached, out bool control)
+    {
+        var offered = new List<int>();
+        var rt = new Lba1Runtime(data)
+        {
+            // a headless run answers questions at once: with the offered choice it is asked for (the last, "not now", otherwise)
+            ChoicePolicy = ids => { offered = ids.ToList(); return ids.Contains(choice) ? choice : ids[^1]; },
+        };
+        rt.ChangeCube(scene);
+        rt.Chapter = chapter;
+        rt.NbGoldPieces = 100;
+        rt.Run(scene == 24 ? 20 : 900);   // (the other two scenes open with the boat coming in: Twinsen gets control when it has landed)
+        var f = rt.Objects[fisherman];
+        rt.Place(stand.X, f.PosY, stand.Z, stand.Beta);
+        rt.Fire = Lba1Const.FSpace;
+        rt.Frame();
+        rt.Fire = 0;
+        var boarding = false;
+        for (var frame = 0; frame < 6000 && rt.NumCube == scene; frame++)
+        {
+            // (Twinsen stood on Proxima's pier where the fisherman sits: he steps out of the way of the walk to the boat, which is what the player would do too)
+            if (scene == 42 && frame == 5 && rt.NbGoldPieces < 100) rt.Place(4300, rt.Hero.PosY, 20700, 768);
+            var aboard = boarding && (rt.Hero.Flags & Lba1Const.Invisible) != 0;   // (the script hides him once he is in the boat)
+            if (aboard) rt.Joy = 0;
+            else if (rt.NbGoldPieces < 100 && (boarding || f.LabelTrack == doneLabel))
+            {
+                // his part is over: Twinsen walks straight to the boat (in scene 24 from the dock next to it), turning to it now and then
+                var b = rt.Objects[boat];
+                if (!boarding && scene == 24) rt.Place(b.PosX, b.PosY, b.PosZ + 900, 512);
+                else if (frame % 10 == 0) rt.Place(rt.Hero.PosX, rt.Hero.PosY, rt.Hero.PosZ, Lba1Trig.GetAngle(rt.Hero.PosX, rt.Hero.PosZ, b.PosX, b.PosZ));
+                rt.Joy = Lba1Const.JUp;
+                boarding = true;
+            }
+            rt.Frame();
+        }
+        rt.Joy = 0;
+        events = rt.Events.TakeLast(6).ToList();
+        reached = rt.NumCube;
+        control = reached != scene && HasControl(rt);
+        return offered;
+    }
+
+    // After a trip: lets the arrival play out (the boat sails in, the camera returns), then Twinsen must be visible and walk when the stick is pushed
+    // (any of the four headings: the landing may put him against a wall). A landing that waits for something that never comes leaves him hidden and frozen.
+    private static bool HasControl(Lba1Runtime rt)
+    {
+        rt.Run(1500);
+        if (Environment.GetEnvironmentVariable("LBA_DEBUG") == "1") Console.WriteLine($"    arrival: scene {rt.NumCube} hero ({rt.Hero.PosX},{rt.Hero.PosY},{rt.Hero.PosZ}) flags {rt.Hero.Flags:X} move {rt.Hero.Move} comportement {rt.Comportement} cam ({rt.CameraX},{rt.CameraZ}) labels {string.Join(",", rt.Objects.Take(8).Select(o => o.LabelTrack))} history {string.Join(">", rt.CubeHistory)} events {string.Join(" / ", rt.Events.TakeLast(3))}");
+        if ((rt.Hero.Flags & Lba1Const.Invisible) != 0) return false;
+        foreach (var beta in new[] { 0, 256, 512, 768 })
+        {
+            var scene = rt.NumCube;
+            var (x, z) = (rt.Hero.PosX, rt.Hero.PosZ);
+            rt.Place(x, rt.Hero.PosY, z, beta);
+            rt.Joy = Lba1Const.JUp;
+            rt.Run(30);
+            rt.Joy = 0;
+            var moved = System.Math.Abs(rt.Hero.PosX - x) + System.Math.Abs(rt.Hero.PosZ - z);
+            if (moved > 200 || rt.NumCube != scene) return true;
+        }
+        return false;
+    }
+
     private static void Doors(Lba1RuntimeData data)
     {
         // the retail door of house 58 (Lupin Burg, scene 13, actor 8): walk into it from the street and the scene changes
@@ -420,7 +838,8 @@ internal static class RuntimeTests
         Check(newDoor.SRot == 0 && (newDoor.PosX, newDoor.PosZ) == (newDoor.AnimStepX, newDoor.AnimStepZ), "the new door starts closed");
         var doorClosed = (newDoor.PosX, newDoor.PosZ);
 
-        // arch at x = 51 (cell), z = 12..14: approach from the street, facing west
+        // arch at x = 51 (cell), z = 12..14: approach from the street, facing west (with a key, in case the door has been locked: see DoorLock)
+        rt.NbLittleKeys = 1;
         rt.Place(54 * 512, 256, 13 * 512, 768);
         rt.Joy = Lba1Const.JUp;
         var slid = false;
@@ -443,6 +862,26 @@ internal static class RuntimeTests
         Check(rt.NumCube == 13, "walking out of the bedroom returns to Lupin Burg");
         Check(rt.Hero.PosX >= 51 * 512 - 256 && rt.Hero.PosX <= 54 * 512, "he comes out at the arch, not somewhere else in the town");
 
+        // the lamp post's key: pressing the action key inside its zone lets a key pop out, and Twinsen has one more when he has picked it up
+        if (data.Scene(13).Zones.Any(z => z.Type == 4 && z.Info[1] == 128))
+        {
+            rt = new Lba1Runtime(data);
+            rt.ChangeCube(13);
+            rt.Run(30);
+            var keysBefore = rt.NbLittleKeys;
+            rt.Place(768, 2048, 32000, 256);
+            rt.Fire = Lba1Const.FSpace;
+            rt.Run(4);
+            rt.Fire = 0;
+            rt.Run(60);
+            // the key has flown out of the lamp and landed on the cobbles, not off the platform; Twinsen walks over to it
+            var key = rt.Extras.FirstOrDefault(e => e.Sprite == 6);
+            Check(key is not null && key.PosX > 256 && key.PosZ < 32256 && key.PosY >= 2048, $"the key lands on the platform's cobbles ({key?.PosX},{key?.PosY},{key?.PosZ})");
+            if (key is not null) rt.Place(key.PosX, 2048, key.PosZ, 0);
+            rt.Run(60);
+            Check(rt.NbLittleKeys == keysBefore + 1, $"the lamp post gives Twinsen a key when he presses action beside it ({keysBefore} -> {rt.NbLittleKeys})");
+            Check(data.Scene(13).Zones.Count(z => z.Type == 4 && z.Info[1] == 128) == 1, "scene 13 has exactly one key-only bonus zone (the lamp's)");
+        }
         // the pink elf of the surprise changes, when they have been applied to these game files
         var roomActors = data.Scene(61).Actors;
         var pinkElfIndex = Enumerable.Range(1, roomActors.Count - 1).FirstOrDefault(i => !roomActors[i].IsSprite && roomActors[i].Entity == 49 && roomActors[i].Body == 42);

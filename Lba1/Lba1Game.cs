@@ -63,7 +63,7 @@ internal sealed class Lba1Game
                 var scene = Lba1Scene.Parse(index, sceneArchive.Read(index));
                 sceneCache[index] = scene;
                 var exits = scene.Zones.Where(z => z.Type == 0 && z.Info[0] != index).Select(z => z.Info[0]).Distinct().Order().ToList();
-                scenes.Add(new Lba1SceneInfo(index, scene.Island, scene.Actors.Count - 1, scene.Zones.Count, exits));
+                scenes.Add(new Lba1SceneInfo(index, Lba1Areas.MapIsland(index, scene.Island), scene.Actors.Count - 1, scene.Zones.Count, exits));
             }
             catch (Exception error)
             {

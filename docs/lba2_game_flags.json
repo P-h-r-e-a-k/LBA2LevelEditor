@@ -1,0 +1,8018 @@
+[
+  {
+    "id": 0,
+    "symbol": "FLAG_HOLOMAP",
+    "kind": "inventory",
+    "name": "Holomap",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Found in Twinsen's secret room (s1); sold for 10 kashes in the Citadel shop (s14) and the Desert bazaar (s36). The engine only opens the holomap when this is 1 (PERSO.CPP) and SET_HOLO_POS pops the inventory icon up.",
+    "writtenBy": [
+      "s1 Citadel Island, Twinsen's house Secret scene (found-object, =1)",
+      "s14 Citadel Island, Shop (found-object, =1)",
+      "s36 White Leaf Desert, Bazaar (found-object)"
+    ],
+    "readInScenes": [
+      1,
+      3,
+      14,
+      36
+    ],
+    "decors": []
+  },
+  {
+    "id": 1,
+    "symbol": "FLAG_BALLE_MAGIQUE",
+    "kind": "inventory",
+    "name": "Magic ball",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Found in Twinsen's secret room (s1). Its power/model follows MagicLevel, not this value (INVENT.CPP).",
+    "writtenBy": [
+      "s1 Citadel Island, Twinsen's house Secret scene (found-object, =1)"
+    ],
+    "readInScenes": [
+      1,
+      2,
+      15,
+      43
+    ],
+    "decors": []
+  },
+  {
+    "id": 2,
+    "symbol": "FLAG_DART",
+    "kind": "count",
+    "name": "Darts",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Quantity, capped at 99 (MAX_DARTS). Sold three for 4 kashes (s14, s36, s67); the engine subtracts one per throw (FICHE.CPP) and adds pickups (DART.CPP).",
+    "writtenBy": [
+      "s1 Citadel Island, Twinsen's house Secret scene (found-object)",
+      "s14 Citadel Island, Shop (found-object, =3)",
+      "s36 White Leaf Desert, Bazaar (found-object, =3)",
+      "s67 White Leaf Desert, at the Temple of Bù (found-object)"
+    ],
+    "readInScenes": [
+      1,
+      14,
+      36,
+      67
+    ],
+    "decors": []
+  },
+  {
+    "id": 3,
+    "symbol": "FLAG_BOULE_SENDELL",
+    "kind": "inventory",
+    "name": "Sendell's ball",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in Sendell's ball room (s34). The school/desert scenes read it to know the ball was recovered.",
+    "writtenBy": [
+      "s34 Citadel Island, Sendell's ball room (found-object, =1)"
+    ],
+    "readInScenes": [
+      24,
+      27,
+      34,
+      39,
+      47,
+      56,
+      57,
+      113
+    ],
+    "decors": []
+  },
+  {
+    "id": 4,
+    "symbol": "FLAG_TUNIQUE",
+    "kind": "inventory",
+    "name": "Tunic and Sendell's medallion",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in Miss Bloop's museum (s15). While 0 the hero uses the no-tunic body (OBJECT.CPP). STATE_INVENTORY(4,1) turns the icon into the wizard's tunic when the wizard outfit is bought (var 109).",
+    "writtenBy": [
+      "s15 Citadel Island, Miss Bloop's Private Museum (=1, found-object)",
+      "s62 White Leaf Desert, near car jump (icon state 1, found-object)",
+      "s63 White Leaf Desert, near Temple of Bù (icon state 1, found-object)",
+      "s65 White Leaf Desert, near Esmer Shuttle (icon state 1, found-object)",
+      "s66 White Leaf Desert, near Bald Mountain (icon state 1, found-object)",
+      "s67 White Leaf Desert, at the Temple of Bù (icon state 1, found-object)",
+      "s68 White Leaf Desert, near Temple of Bù (icon state 1, found-object)",
+      "s70 White Leaf Desert, near Esmer Shuttle (icon state 1, found-object)",
+      "s71 White Leaf Desert, near Bald Mountain (icon state 1, found-object)",
+      "s72 White Leaf Desert, near Bald Mountain (icon state 1, found-object)",
+      "s84 Otringal Prison (icon state 0)"
+    ],
+    "readInScenes": [
+      0,
+      2,
+      15,
+      48
+    ],
+    "decors": []
+  },
+  {
+    "id": 5,
+    "symbol": "FLAG_PERLE",
+    "kind": "inventory",
+    "name": "Pearl of Incandescence / Itinerary token (one shared slot)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "TabInv[5] holds model 5 (pearl) and model 24 (itinerary token, \"FLAG_DISQUE_ROUTE\"). Pearl: taken in the pearl cave (s113), handed to the Weather Wizard (s21). Token: picked up in the Esmer base (s12) and the Otringal control tower (s85), consumed by the Esmer shuttles (s41, s114, s182). See also 169 and 170.",
+    "writtenBy": [
+      "s12 White Leaf Desert, Esmer Base (=1, icon state 1, found-object, marked used)",
+      "s21 Citadel Island, Tent of the Weather Wizard (=0)",
+      "s41 White Leaf Desert, Esmer Shuttle (=0)",
+      "s85 Otringal, control tower entrance (=1, icon state 1, found-object)",
+      "s113 White Leaf Desert, Pearl of Incandescence room (=1, icon state 0, found-object)",
+      "s114 White Leaf Desert, Esmer shuttle (=0)",
+      "s177 Island CX, Stairs in the control tower (=1, icon state 1, found-object)",
+      "s182 Island CX, Esmer Shuttle (=0)"
+    ],
+    "readInScenes": [
+      12,
+      21,
+      41,
+      85,
+      114,
+      177,
+      182
+    ],
+    "decors": []
+  },
+  {
+    "id": 6,
+    "symbol": "FLAG_CLEF_PYRAMID",
+    "kind": "inventory",
+    "name": "Pyramid-shaped key",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Given by the neighbour after the gallic-acid quest (s9, var 54); used on the sewer door (s17).",
+    "writtenBy": [
+      "s9 Citadel Island, Neighbor's house (found-object, =1)",
+      "s17 Citadel Island, Sewer (below Downtown) (=0)"
+    ],
+    "readInScenes": [
+      9,
+      17,
+      57
+    ],
+    "decors": []
+  },
+  {
+    "id": 7,
+    "symbol": "FLAG_VOLANT",
+    "kind": "inventory",
+    "name": "Part for the car (steering wheel)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Found in Baldino's house (s38); consumed at the Dino-Fly (s49). Doubles as the translator's slot (see 29).",
+    "writtenBy": [
+      "s38 White Leaf Desert, J. Baldino's House (found-object, =1)",
+      "s49 Citadel Island, near Dino-Fly (=0)"
+    ],
+    "readInScenes": [
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 8,
+    "symbol": "FLAG_MONEY",
+    "kind": "count",
+    "name": "Kashes (Twinsun) / Zlitos (Zeelich)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Quantity. Mirrored into NbGoldPieces or NbZlitosPieces (chosen by Planet: Zlitos from Planet 2, the Zeelich islands such as Otringal; the Emerald Moon still pays in Kashes) whenever a script writes it, and copied back by InitTabIndir. Scripts spend it with SUB_VAR_GAME(8, n) and GIVE_GOLD_PIECES; amounts seen 1 to 10000.",
+    "writtenBy": [
+      "s3 Citadel Island, Tavern (-5, +1)",
+      "s6 Citadel Island, Baggage claim building, 2st scene (-102)",
+      "s8 Citadel Island, Ticket office (-10)",
+      "s14 Citadel Island, Shop (-10, -4, -5)",
+      "s15 Citadel Island, Miss Bloop's Private Museum (-15)",
+      "s22 Citadel Island, Downtown Pharmacy (-5)",
+      "s27 White Leaf Desert, School of Magic, 2nd scene (-120, +2)",
+      "s36 White Leaf Desert, Bazaar (-15, -4, -10, -50)",
+      "s40 White Leaf Desert, Ticket office (-12)",
+      "s45 Citadel Island, near the tent of the Weather Wizard (-8)",
+      "s46 Citadel Island, near Lighthouse (-8)",
+      "s48 Citadel Island, downstairs the sewer grid (-3, -8)",
+      "s50 Citadel Island, at the Cliffs of the Woodbridge (-8)",
+      "s57 White Leaf Desert, at the Von Kournil tour (-40)",
+      "s62 White Leaf Desert, near car jump (-50, -10)",
+      "s63 White Leaf Desert, near Temple of Bù (-50, -10)",
+      "s65 White Leaf Desert, near Esmer Shuttle (-50, -10)",
+      "s66 White Leaf Desert, near Bald Mountain (-50, -10)",
+      "s67 White Leaf Desert, at the Temple of Bù (-7, -4, -50, -10)",
+      "s68 White Leaf Desert, near Temple of Bù (-50, -10)",
+      "s70 White Leaf Desert, near Esmer Shuttle (-50, -10)",
+      "s71 White Leaf Desert, near Bald Mountain (-50, -10)",
+      "s72 White Leaf Desert, near Bald Mountain (-2, -50, -10)",
+      "s81 Otringal, the Imperial Hotel (-10)",
+      "s87 Otringal, near Harbor (-100, -10, -5)",
+      "s89 Otringal, the Lower City scene (-10000)",
+      "s95 Celebration Island, the only outside scene (-5)",
+      "s109 Francos Island, the village scene (-5)",
+      "s135 Otringal, Casino entrance (-1, -5)",
+      "s136 Otringal, Bar entrance (-1)",
+      "s147 Otringal, the Twinsunian souvenir shop (-30, -15, -20, -40, -35, +25, +20, =0)",
+      "s171 Francos Island, Shop (-20)"
+    ],
+    "readInScenes": [
+      3,
+      6,
+      8,
+      14,
+      15,
+      22,
+      27,
+      36,
+      40,
+      45,
+      46,
+      48,
+      50,
+      57,
+      62,
+      63,
+      65,
+      66,
+      67,
+      68,
+      70,
+      71,
+      72,
+      81,
+      87,
+      95,
+      109,
+      127,
+      135,
+      136,
+      147,
+      171
+    ],
+    "decors": []
+  },
+  {
+    "id": 9,
+    "symbol": "FLAG_PISTOLASER",
+    "kind": "inventory",
+    "name": "Pisto-Laser",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 when owned; the icon's 3D model is switched with STATE_INVENTORY: 1 = crystal, 2 = laser pistol (only model 2 is usable, PERSO.CPP). Quest stage lives in var 130. One decor (Citadel cube 7) is hidden when this is set.",
+    "writtenBy": [
+      "s95 Celebration Island, the only outside scene (icon state 2, found-object, =1)",
+      "s148 Otringal, the Dissidents' hide out (icon state 2, icon state 1, found-object, =1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "CITADEL cube 7: 1 decor(s), body 41, hidden while set"
+    ]
+  },
+  {
+    "id": 10,
+    "symbol": "FLAG_SABRE",
+    "kind": "inventory",
+    "name": "Emperor's sabre",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Found in the emperor's room on Island CX (s181, needs a little key).",
+    "writtenBy": [
+      "s181 Island CX, Room in the emperor (found-object, =1)"
+    ],
+    "readInScenes": [
+      181
+    ],
+    "decors": []
+  },
+  {
+    "id": 11,
+    "symbol": "FLAG_GANT",
+    "kind": "inventory",
+    "name": "Wannie's glove",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Reward from the injured Wannie at the ferryman landing (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (found-object, =1)",
+      "s101 Wannies Island, the house of the firefly tart-giving family (found-object, =1)",
+      "s112 Wannies Island, near the temple on the main (found-object, =1)"
+    ],
+    "readInScenes": [
+      97,
+      101,
+      112
+    ],
+    "decors": []
+  },
+  {
+    "id": 12,
+    "symbol": "FLAG_PROTOPACK",
+    "kind": "inventory",
+    "name": "Proto-Pack",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the baggage claim building (s5); STATE_INVENTORY(12,1) upgrades it to the super jet-pack when Baldino gives it (s138, var 117).",
+    "writtenBy": [
+      "s5 Citadel Island, Baggage claim building, 1st scene (found-object, =1)",
+      "s138 Otringal, the Twinsen and Baldino crash site (icon state 1, found-object)"
+    ],
+    "readInScenes": [
+      5
+    ],
+    "decors": []
+  },
+  {
+    "id": 13,
+    "symbol": "FLAG_TICKET_FERRY",
+    "kind": "inventory",
+    "name": "Ferry ticket",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Bought at the Citadel (s8, 10 kashes) and Desert (s40, 12 kashes) ticket offices and at the Otringal souvenir shop (s147); consumed with SET_USED_INVENTORY when boarding (s43, s65). See 59.",
+    "writtenBy": [
+      "s8 Citadel Island, Ticket office (found-object, =1)",
+      "s40 White Leaf Desert, Ticket office (found-object, =1)",
+      "s43 Citadel Island, near the Harbor (marked used, =0)",
+      "s65 White Leaf Desert, near Esmer Shuttle (marked used, =0)",
+      "s147 Otringal, the Twinsunian souvenir shop (found-object, =1, marked used, =0)"
+    ],
+    "readInScenes": [
+      8,
+      40,
+      43,
+      65,
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 14,
+    "symbol": "FLAG_MECA_PINGOUIN",
+    "kind": "count",
+    "name": "Nitro-Meca-Penguins",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Quantity, max 10 (the debug cheat code adds 5; the \"all objects\" cheat sets 9). +1 from each penguin pickup; the engine decrements it per throw (OBJECT.CPP).",
+    "writtenBy": [
+      "s10 White Leaf Desert, Temple of Bú, 1st scene (found-object, =1)",
+      "s11 White Leaf Desert, Temple of Bú, 2nd scene (found-object, +1)",
+      "s12 White Leaf Desert, Esmer Base (found-object, +1)",
+      "s14 Citadel Island, Shop (found-object, +1)",
+      "s27 White Leaf Desert, School of Magic, 2nd scene (found-object, +1)",
+      "s36 White Leaf Desert, Bazaar (found-object, +1)",
+      "s54 Emerald Moon, Baldino's cell (found-object, +1)",
+      "s59 White Leaf Desert, near Lighthouse (+1, found-object)",
+      "s134 Otringal, Bar backstage (found-object, =1)",
+      "s147 Otringal, the Twinsunian souvenir shop (found-object, +1)",
+      "s148 Otringal, the Dissidents' hide out (found-object, +1)",
+      "s181 Island CX, Room in the emperor (found-object, =1)",
+      "s183 The protection spell cave, 1st scene (found-object, +1)",
+      "s192 The Dark Monk statue Secret scene (found-object, +1)"
+    ],
+    "readInScenes": [
+      10,
+      11,
+      12,
+      14,
+      27,
+      36,
+      54,
+      59,
+      134,
+      147,
+      148,
+      181,
+      183,
+      192
+    ],
+    "decors": []
+  },
+  {
+    "id": 15,
+    "symbol": "FLAG_GAZOGEM",
+    "kind": "inventory",
+    "name": "Can of GazoGem",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the Francos gazogem factory (s143), handed to Baldino (s138, var 127).",
+    "writtenBy": [
+      "s138 Otringal, the Twinsen and Baldino crash site (=0)",
+      "s143 Francos gazogem factory, 4th room (found-object, =1)"
+    ],
+    "readInScenes": [
+      89,
+      138,
+      143
+    ],
+    "decors": []
+  },
+  {
+    "id": 16,
+    "symbol": "FLAG_DEMI_MEDAILLON",
+    "kind": "inventory",
+    "name": "Dissidents' ring (half medallion)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Given by the dissident in the emperor's palace room (s79, var 124 = 3); lost in the souvenir shop (s147).",
+    "writtenBy": [
+      "s79 Otringal, Emperor's palace 1st room (found-object, =1)",
+      "s147 Otringal, the Twinsunian souvenir shop (=0)"
+    ],
+    "readInScenes": [
+      104,
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 17,
+    "symbol": "FLAG_ACIDE_GALLIQUE",
+    "kind": "inventory",
+    "name": "Gallic acid",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Borrowed from Ker'aooc's helper (s35) or bought for 50 kashes at the Desert bazaar (s36); used on the neighbour's map (s9, var 54).",
+    "writtenBy": [
+      "s9 Citadel Island, Neighbor's house (=0)",
+      "s35 White Leaf Desert, House of Ker'aooc the Healer (found-object, =1)",
+      "s36 White Leaf Desert, Bazaar (found-object, =1)"
+    ],
+    "readInScenes": [
+      9,
+      35,
+      36,
+      49,
+      57
+    ],
+    "decors": []
+  },
+  {
+    "id": 18,
+    "symbol": "FLAG_CHANSON",
+    "kind": "inventory",
+    "name": "Ferryman's song",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Learned in the monk's house (s116, var 64). Read by the ferryman landings.",
+    "writtenBy": [
+      "s116 Wannies Island, the monk house (found-object, =1)"
+    ],
+    "readInScenes": [
+      97,
+      105,
+      116,
+      132
+    ],
+    "decors": []
+  },
+  {
+    "id": 19,
+    "symbol": "FLAG_ANNEAU_FOUDRE",
+    "kind": "inventory",
+    "name": "Ring of lightning",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Given by the Weather Wizard (s21). The engine also needs MagicLevel and MagicPoint to fire it (PERSO.CPP).",
+    "writtenBy": [
+      "s21 Citadel Island, Tent of the Weather Wizard (found-object, =1)"
+    ],
+    "readInScenes": [
+      21,
+      27,
+      34,
+      113
+    ],
+    "decors": []
+  },
+  {
+    "id": 20,
+    "symbol": "FLAG_PARAPLUIE",
+    "kind": "inventory",
+    "name": "Customer's umbrella",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Picked up in the sewers (s48) after the theft (var 57); handed over at Ker'aooc's (s35) or on the Citadel (s48); also for sale in the Otringal souvenir shop (s147).",
+    "writtenBy": [
+      "s35 White Leaf Desert, House of Ker'aooc the Healer (=0)",
+      "s48 Citadel Island, downstairs the sewer grid (=0, found-object, =1)",
+      "s147 Otringal, the Twinsunian souvenir shop (found-object, =1, marked used, =0)"
+    ],
+    "readInScenes": [
+      35,
+      48,
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 21,
+    "symbol": "FLAG_GEMME",
+    "kind": "count",
+    "name": "Gems",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Quantity, +1 per gem (s97, s100, s105, s111, s112, s129, s131, s132...), spent as ferry fares (-4 at s97/s105). Used as the currency of the mosquibee/wannie ferrymen.",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (marked used, -4, found-object, +1, +4)",
+      "s100 Wannies Island, the mine, 2nd room (found-object, +1)",
+      "s105 Mosquibees Island, the arrival scene (marked used, -4, found-object, +1)",
+      "s111 Wannies Island, the mine, 3rd room (found-object, +1)",
+      "s112 Wannies Island, near the temple on the main (found-object, +1)",
+      "s129 Island Under Celebration, the hide out (found-object, +1)",
+      "s131 Island Under Celebration, the upper scene (found-object, +1)",
+      "s132 Island Under Celebration, the arrival scene (marked used, -4, found-object, +1)",
+      "s149 Mosquibees Island, the passage to the fragment (found-object, +1)"
+    ],
+    "readInScenes": [
+      97,
+      105,
+      132
+    ],
+    "decors": []
+  },
+  {
+    "id": 22,
+    "symbol": "FLAG_CONQUE",
+    "kind": "inventory",
+    "name": "Horn of the Blue Triton",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Given by the rector for the Garden Balsam (s27, var 61 = 4). Owning it enables the horn behaviour (C_CONQUE, weapon key 4, PERSO.CPP); the horn keeps its own life refill (TabInv PtMagie), topped up by FULL_POINT and by leftover clover bonuses (GERELIFE.CPP, EXTRA.CPP).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (found-object, =1)"
+    ],
+    "readInScenes": [
+      38,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 23,
+    "symbol": "FLAG_SARBACANE",
+    "kind": "inventory",
+    "name": "Blowgun",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Awarded after the blowgun test (s27, var 63 = 2); STATE_INVENTORY(23,1) makes it the blowtron in s128.",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (found-object, =1)",
+      "s128 Mosquibees Island, Bee test room (icon state 1, found-object)"
+    ],
+    "readInScenes": [
+      27
+    ],
+    "decors": []
+  },
+  {
+    "id": 24,
+    "symbol": "FLAG_DISQUE_ROUTE / FLAG_VISIONNEUSE",
+    "kind": "inventory",
+    "name": "Memory viewer (ACF viewer)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Picked up at Baldino's house (s38) or bought in the Otringal shop for 30 zlitos (s147). Opens the replay list of the movies flagged in vars 235-237 (PlayAllAcf). COMMON.H also names this index FLAG_DISQUE_ROUTE (itinerary disc).",
+    "writtenBy": [
+      "s38 White Leaf Desert, J. Baldino's House (=1, found-object)",
+      "s147 Otringal, the Twinsunian souvenir shop (=1, found-object)"
+    ],
+    "readInScenes": [
+      38,
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 25,
+    "symbol": "FLAG_TART_LUCI",
+    "kind": "inventory",
+    "name": "Slice of firefly tart",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Picked up in the tart-giving family's house (s101); handed over in the city (s118, var 64 = 2).",
+    "writtenBy": [
+      "s101 Wannies Island, the house of the firefly tart-giving family (found-object, =1)",
+      "s118 Wannies Island, the city (marked used, =0)"
+    ],
+    "readInScenes": [
+      118
+    ],
+    "decors": []
+  },
+  {
+    "id": 26,
+    "symbol": "FLAG_RADIO",
+    "kind": "inventory",
+    "name": "Portable radio",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Given by Baldino at his house (s38, var 74 = 2).",
+    "writtenBy": [
+      "s17 Citadel Island, Sewer (below Downtown) (marked used)",
+      "s38 White Leaf Desert, J. Baldino's House (found-object, =1)",
+      "s47 Citadel Island, at the Sendell's sign (marked used)",
+      "s60 White Leaf Desert, near J. Baldino's House (marked used)",
+      "s87 Otringal, near Harbor (marked used)"
+    ],
+    "readInScenes": [
+      1,
+      17,
+      38,
+      47,
+      60,
+      87
+    ],
+    "decors": []
+  },
+  {
+    "id": 27,
+    "symbol": "FLAG_FLEUR",
+    "kind": "inventory",
+    "name": "Garden Balsam",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Picked up near the car jump (s62); handed to the rector (s27).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=0)",
+      "s62 White Leaf Desert, near car jump (found-object, =1)"
+    ],
+    "readInScenes": [
+      27,
+      56,
+      57,
+      58,
+      61,
+      62,
+      63,
+      66,
+      67,
+      68
+    ],
+    "decors": []
+  },
+  {
+    "id": 28,
+    "symbol": "FLAG_ARDOISE",
+    "kind": "inventory",
+    "name": "Magic slate",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Awarded outside the Dome of the Slate (s44, var 61 = 5). MEMO_ARDOISE only stores plans while this is 1.",
+    "writtenBy": [
+      "s44 Citadel Island, outside the Dome of the Slate (found-object, =1)"
+    ],
+    "readInScenes": [
+      9,
+      31,
+      44
+    ],
+    "decors": []
+  },
+  {
+    "id": 29,
+    "symbol": "FLAG_TRADUCTEUR",
+    "kind": "inventory",
+    "name": "Translator",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Picked up in the Esmer shuttles (s41, s114, s115), Baldino's cell (s54), the Otringal prison (s84) and the control tower (s85). Shares its slot with the car part (7).",
+    "writtenBy": [
+      "s41 White Leaf Desert, Esmer Shuttle (found-object, =1, marked used)",
+      "s54 Emerald Moon, Baldino's cell (found-object, =1, marked used)",
+      "s84 Otringal Prison (found-object, =1, marked used)",
+      "s85 Otringal, control tower entrance (found-object, =1, marked used)",
+      "s114 White Leaf Desert, Esmer shuttle (found-object, =1, marked used)",
+      "s115 Emerald Moon, Esmer shuttle (=1, found-object, marked used)"
+    ],
+    "readInScenes": [
+      12,
+      13,
+      23,
+      41,
+      54,
+      75,
+      77,
+      78,
+      84,
+      85,
+      92,
+      114,
+      115
+    ],
+    "decors": []
+  },
+  {
+    "id": 30,
+    "symbol": "FLAG_DIPLOME",
+    "kind": "inventory",
+    "name": "Wizard's diploma",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Awarded by the rector (s27, var 61 = 7); confiscated in the emperor's palace (s80); sold in the Otringal souvenir shop (s147).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (found-object, =1)",
+      "s80 Otringal, Emperor's palace last room (=0)",
+      "s147 Otringal, the Twinsunian souvenir shop (found-object, =1, marked used, =0)"
+    ],
+    "readInScenes": [
+      8,
+      27,
+      38,
+      40,
+      49,
+      57,
+      62,
+      63,
+      65,
+      66,
+      67,
+      68,
+      70,
+      71,
+      72,
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 31,
+    "symbol": "FLAG_DMKEY_KNARTA",
+    "kind": "inventory",
+    "name": "Key fragment of the Francos",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the Francos village (s109). All four fragments together (31-34) set var 55 and STATE_INVENTORY turns them into the full key.",
+    "writtenBy": [
+      "s80 Otringal, Emperor's palace last room (icon state 1, found-object)",
+      "s93 Celebration Island, inside the temple (=0)",
+      "s103 Mosquibees Island, the scene on top of the mountain (icon state 1, found-object)",
+      "s109 Francos Island, the village scene (=1, found-object, icon state 1)",
+      "s117 Wannies Island, mine temple (icon state 1, found-object)"
+    ],
+    "readInScenes": [
+      80,
+      93,
+      103,
+      109,
+      117,
+      175
+    ],
+    "decors": [
+      "KNARTAS cube 3: 1 decor(s), body 90, visible only while set"
+    ]
+  },
+  {
+    "id": 32,
+    "symbol": "FLAG_DMKEY_SUP",
+    "kind": "inventory",
+    "name": "Key fragment of the Sups",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the emperor's palace last room (s80, var 148 = 3).",
+    "writtenBy": [
+      "s80 Otringal, Emperor's palace last room (found-object, =1, =0)",
+      "s103 Mosquibees Island, the scene on top of the mountain (=0)",
+      "s109 Francos Island, the village scene (=0)",
+      "s117 Wannies Island, mine temple (=0)"
+    ],
+    "readInScenes": [
+      88,
+      89,
+      93,
+      103,
+      109,
+      117
+    ],
+    "decors": []
+  },
+  {
+    "id": 33,
+    "symbol": "FLAG_DMKEY_MOSQUI",
+    "kind": "inventory",
+    "name": "Key fragment of the Mosquibees",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken on top of the mosquibee mountain (s103).",
+    "writtenBy": [
+      "s80 Otringal, Emperor's palace last room (=0)",
+      "s103 Mosquibees Island, the scene on top of the mountain (found-object, =1, =0)",
+      "s109 Francos Island, the village scene (=0)",
+      "s117 Wannies Island, mine temple (=0)"
+    ],
+    "readInScenes": [
+      80,
+      93,
+      103,
+      109,
+      117
+    ],
+    "decors": []
+  },
+  {
+    "id": 34,
+    "symbol": "FLAG_DMKEY_BLAFARD",
+    "kind": "inventory",
+    "name": "Key fragment of the Wannies",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the wannies' mine temple (s117).",
+    "writtenBy": [
+      "s80 Otringal, Emperor's palace last room (=0)",
+      "s103 Mosquibees Island, the scene on top of the mountain (=0)",
+      "s109 Francos Island, the village scene (=0)",
+      "s117 Wannies Island, mine temple (found-object, =1, =0)"
+    ],
+    "readInScenes": [
+      80,
+      93,
+      100,
+      103,
+      109,
+      111,
+      112,
+      117,
+      121
+    ],
+    "decors": []
+  },
+  {
+    "id": 35,
+    "symbol": "FLAG_CLE_REINE",
+    "kind": "inventory",
+    "name": "Key to the queen's passage",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the Building Company (s125); used at the throne (s104, var 48). Shares its slot with the flower (27).",
+    "writtenBy": [
+      "s104 Mosquibees Island, the Mosquibee Queen's throne (=0)",
+      "s125 Wannies Island, Building Company (found-object, =1)"
+    ],
+    "readInScenes": [
+      97,
+      104,
+      106,
+      125
+    ],
+    "decors": []
+  },
+  {
+    "id": 36,
+    "symbol": "FLAG_PIOCHE",
+    "kind": "inventory",
+    "name": "Pick-axe",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Bought in the Francos shop (s171). Shares its slot with the gallic acid (17).",
+    "writtenBy": [
+      "s171 Francos Island, Shop (found-object, =1)"
+    ],
+    "readInScenes": [
+      95,
+      109
+    ],
+    "decors": []
+  },
+  {
+    "id": 37,
+    "symbol": "FLAG_CLEF_BOURGMESTRE",
+    "kind": "inventory",
+    "name": "Burgomaster's key",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the Francos village (s109), used in the burgomaster's house (s175).",
+    "writtenBy": [
+      "s109 Francos Island, the village scene (=1, found-object)",
+      "s175 Francos Island, Burgermaster's house (=0)"
+    ],
+    "readInScenes": [
+      109,
+      175
+    ],
+    "decors": []
+  },
+  {
+    "id": 38,
+    "symbol": "FLAG_NOTE_BOURGMESTRE",
+    "kind": "inventory",
+    "name": "Burgomaster's notes",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the burgomaster's house (s175, var 147).",
+    "writtenBy": [
+      "s175 Francos Island, Burgermaster's house (=1, found-object)"
+    ],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 39,
+    "symbol": "FLAG_PROTECTION",
+    "kind": "inventory",
+    "name": "Protective spell",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "owned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Taken in the protection-spell cave (s184). Needs MagicPoint to cast (PERSO.CPP).",
+    "writtenBy": [
+      "s184 The protection spell cave, 2nd scene (=1, found-object)"
+    ],
+    "readInScenes": [
+      57,
+      184
+    ],
+    "decors": []
+  },
+  {
+    "id": 40,
+    "symbol": "FLAG_SCAPHANDRE (unused)",
+    "kind": "track",
+    "name": "Zoe position (track label)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New game"
+      },
+      {
+        "value": "1",
+        "meaning": "Zoe talked: \"Twinsen rush to Pharmacy\""
+      },
+      {
+        "value": "2",
+        "meaning": "Zoe outside door"
+      },
+      {
+        "value": "3",
+        "meaning": "Zoe walking to dinofly way point 1"
+      },
+      {
+        "value": "4",
+        "meaning": "Zoe walking to dinofly way point 2"
+      },
+      {
+        "value": "5",
+        "meaning": "Zoe walking to dinofly way point 3"
+      },
+      {
+        "value": "6",
+        "meaning": "Zoe walking to dinofly way point 4"
+      },
+      {
+        "value": "7",
+        "meaning": "Zoe walking to dinofly way point 5"
+      },
+      {
+        "value": "8",
+        "meaning": "Zoe walking to dinofly way point 6"
+      },
+      {
+        "value": "9",
+        "meaning": "Zoe walking to dinofly way point 7"
+      },
+      {
+        "value": "10",
+        "meaning": "Zoe walking to dinofly way point 8"
+      },
+      {
+        "value": "11",
+        "meaning": "Zoe walking to dinofly way point 9"
+      },
+      {
+        "value": "12",
+        "meaning": "Zoe walking to dinofly way point 10"
+      },
+      {
+        "value": "13",
+        "meaning": "Zoe walking to dinofly way point 11"
+      },
+      {
+        "value": "14",
+        "meaning": "Zoe walking to dinofly way point 12"
+      },
+      {
+        "value": "15",
+        "meaning": "Gave carpart to zoe and she mentions portable radio"
+      },
+      {
+        "value": "16",
+        "meaning": "Walking towards car"
+      },
+      {
+        "value": "17",
+        "meaning": "Walking towards car"
+      },
+      {
+        "value": "18",
+        "meaning": "Walking towards car"
+      },
+      {
+        "value": "19",
+        "meaning": "Walking towards car"
+      },
+      {
+        "value": "20",
+        "meaning": "Working on car"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "COMMON.H calls index 40 FLAG_SCAPHANDRE (\"the space suit is not in the inventory, so a scenario var\"), but no code reads that constant; the shipped scripts use it as Zoe's position. Its value is a track label: TRACK_TO_VAR_GAME copies Zoe's current label in and VAR_GAME_TO_TRACK sends her to it, which is why the trainer's list reads like waypoints.",
+    "writtenBy": [
+      "s0 Citadel Island, Twinsen's house (=4, =1, =2, +1, saves track label)",
+      "s1 Citadel Island, Twinsen's house Secret scene (=14, =20)",
+      "s3 Citadel Island, Tavern (=14, =20)",
+      "s7 Citadel Island, Mr. Paul House (=14, =20)",
+      "s8 Citadel Island, Ticket office (=14, =20)",
+      "s9 Citadel Island, Neighbor's house (+1, saves track label)",
+      "s14 Citadel Island, Shop (=14, =20)",
+      "s17 Citadel Island, Sewer (below Downtown) (=14, =20)",
+      "s42 Citadel Island, near Tavern (+1, saves track label)",
+      "s43 Citadel Island, near the Harbor (=20, +1, saves track label)",
+      "s46 Citadel Island, near Lighthouse (+1, saves track label)",
+      "s48 Citadel Island, downstairs the sewer grid (=14, =20)",
+      "s49 Citadel Island, near Dino-Fly (=20, =14, saves track label, =3, =15)"
+    ],
+    "readInScenes": [
+      0,
+      1,
+      3,
+      7,
+      8,
+      9,
+      14,
+      17,
+      42,
+      43,
+      46,
+      48,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 41,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Hacienda women's steam room",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New/Reset: Grobo in first area"
+      },
+      {
+        "value": "1",
+        "meaning": "Grobo outside womens steam room: Twinsen entered steam room"
+      },
+      {
+        "value": "2",
+        "meaning": "Grobo attacks: Twinsen entered womens steam room a second time"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Written by the Grobo in the hacienda scenes (s24, s25, s30, s32, s72); cleared when you leave.",
+    "writtenBy": [
+      "s24 White Leaf Desert, Hacienda, 1st scene (=1)",
+      "s25 White Leaf Desert, Turkish bath (women) (=1, =2, =0)",
+      "s30 White Leaf Desert, Turkish bath (men) (=0)",
+      "s32 White Leaf Desert, Secret passage in Turkish bath (mans) (=0)",
+      "s72 White Leaf Desert, near Bald Mountain (=0)"
+    ],
+    "readInScenes": [
+      24,
+      25,
+      29,
+      30,
+      32,
+      72
+    ],
+    "decors": []
+  },
+  {
+    "id": 42,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dino-Fly injured status",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Injured"
+      },
+      {
+        "value": "1",
+        "meaning": "Cured"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set to 1 (cured) by the Dino-Fly in s49 when Twinsen brings the cure.",
+    "writtenBy": [
+      "s49 Citadel Island, near Dino-Fly (=1)"
+    ],
+    "readInScenes": [
+      0,
+      22,
+      38,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 43,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Package centre",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Package in reception"
+      },
+      {
+        "value": "2",
+        "meaning": "Package centre: Pushed package onto final conveyor"
+      },
+      {
+        "value": "3",
+        "meaning": "Leaving package basement area"
+      },
+      {
+        "value": "4",
+        "meaning": "Grobo opens box"
+      },
+      {
+        "value": "5",
+        "meaning": "Paid guy to move box"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Package-centre conveyor / box state (s5, s6). 5 = paid the porter 102 kashes.",
+    "writtenBy": [
+      "s5 Citadel Island, Baggage claim building, 1st scene (=4, =3)",
+      "s6 Citadel Island, Baggage claim building, 2st scene (=2, =0, =1, =5)"
+    ],
+    "readInScenes": [
+      5,
+      6
+    ],
+    "decors": []
+  },
+  {
+    "id": 44,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Waiter in tavern cellar",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not in cellar"
+      },
+      {
+        "value": "1",
+        "meaning": "In cellar"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Toggled by the waiter in s3 and s4.",
+    "writtenBy": [
+      "s3 Citadel Island, Tavern (=0)",
+      "s4 Citadel Island, Cellar of the Tavern (=0, =1)"
+    ],
+    "readInScenes": [
+      3
+    ],
+    "decors": []
+  },
+  {
+    "id": 45,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Citadel shop keeper status",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not scared away"
+      },
+      {
+        "value": "1",
+        "meaning": "Scared away"
+      },
+      {
+        "value": "2",
+        "meaning": "Returned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set to 1 by the shopkeeper (s14) and to 2 when he comes back (s42).",
+    "writtenBy": [
+      "s14 Citadel Island, Shop (=1)",
+      "s42 Citadel Island, near Tavern (=2)"
+    ],
+    "readInScenes": [
+      14,
+      42
+    ],
+    "decors": []
+  },
+  {
+    "id": 46,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Citadel shop cash register",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not stolen"
+      },
+      {
+        "value": "1",
+        "meaning": "Stole money"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s14 Citadel Island, Shop (=1)"
+    ],
+    "readInScenes": [
+      14
+    ],
+    "decors": []
+  },
+  {
+    "id": 47,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Injured Wannie",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Wannie lying injured"
+      },
+      {
+        "value": "1",
+        "meaning": "Twinsen reached him (\"Help me...\")"
+      },
+      {
+        "value": "2",
+        "meaning": "Twinsen helped him and asked about the Queen"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Both writers are in the ferryman landing scene (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=1, =2)"
+    ],
+    "readInScenes": [
+      97
+    ],
+    "decors": []
+  },
+  {
+    "id": 48,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Throne door",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set when Twinsen uses the queen's key (item 35) at the throne room door (s104).",
+    "writtenBy": [
+      "s104 Mosquibees Island, the Mosquibee Queen's throne (=1)"
+    ],
+    "readInScenes": [
+      97,
+      104,
+      125
+    ],
+    "decors": []
+  },
+  {
+    "id": 49,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Package centre lower door",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set when Twinsen uses a little key on the lower door (s6).",
+    "writtenBy": [
+      "s6 Citadel Island, Baggage claim building, 2st scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 50,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Package centre hidden money box",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not collected"
+      },
+      {
+        "value": "1",
+        "meaning": "collected (chest in the secret room, s16)"
+      },
+      {
+        "value": "2",
+        "meaning": "guard lets Twinsen through to his own parcel (s5)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s5 Citadel Island, Baggage claim building, 1st scene (=2)",
+      "s16 Citadel Island, Baggage claim building Secret scene, 3st scene (=1)"
+    ],
+    "readInScenes": [
+      16
+    ],
+    "decors": []
+  },
+  {
+    "id": 51,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Stopping the rain",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New game"
+      },
+      {
+        "value": "1",
+        "meaning": "Speak to Weather Wizard"
+      },
+      {
+        "value": "2",
+        "meaning": "Spoke to Ralph"
+      },
+      {
+        "value": "3",
+        "meaning": "Killed Tralu and freed Ralph"
+      },
+      {
+        "value": "4",
+        "meaning": "Rain cleared and aliens landed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "The chapter-2 storm plot; tested by nearly every Citadel scene to decide whether the rain, Tralu's lighthouse and the aliens are active.",
+    "writtenBy": [
+      "s2 Citadel Island, Tralu 1st scene (=2, =3)",
+      "s21 Citadel Island, Tent of the Weather Wizard (=1)",
+      "s45 Citadel Island, near the tent of the Weather Wizard (=2)",
+      "s46 Citadel Island, near Lighthouse (=4)"
+    ],
+    "readInScenes": [
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      8,
+      9,
+      14,
+      15,
+      17,
+      21,
+      22,
+      37,
+      42,
+      43,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 52,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Citadel decor hidden by a flag nothing sets",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Only the island decor uses it: Citadel cube 7 (bodies 70, 71) and CITABAU cube 5 (body 35) are hidden when it is non-zero. No script writes it. The trainer's \"Unknown\".",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": [
+      "CITABAU cube 5: 1 decor(s), body 35, hidden while set",
+      "CITADEL cube 7: 5 decor(s), body 70/71, hidden while set"
+    ]
+  },
+  {
+    "id": 53,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Tralu: first door / switch",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "closed"
+      },
+      {
+        "value": "1",
+        "meaning": "open"
+      }
+    ],
+    "undocumentedValues": [
+      3,
+      4
+    ],
+    "notes": "Set by actor 4 in Tralu's first scene (s2), toggled between tracks 100 and 101.",
+    "writtenBy": [
+      "s2 Citadel Island, Tralu 1st scene (=1, =0)"
+    ],
+    "readInScenes": [
+      2
+    ],
+    "decors": []
+  },
+  {
+    "id": 54,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Pyramid key quest",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not given gallic acid"
+      },
+      {
+        "value": "1",
+        "meaning": "Neighbour says he needs gallic acid but there's none left on the island"
+      },
+      {
+        "value": "2",
+        "meaning": "Gave gallic acid to old man"
+      },
+      {
+        "value": "3",
+        "meaning": "Got pyramid key from old man"
+      },
+      {
+        "value": "4",
+        "meaning": "Used pyramid key to open door"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s9 Citadel Island, Neighbor's house (=2, =1, =3)",
+      "s17 Citadel Island, Sewer (below Downtown) (=4)"
+    ],
+    "readInScenes": [
+      9,
+      17,
+      35,
+      36,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 55,
+    "symbol": "",
+    "kind": "flag",
+    "name": "All four key fragments combined",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "combined"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by whichever island scene finishes the combination (s80, s103, s109, s117); read by the celebration temple (s93) and many islands. STATE_INVENTORY turns fragment slots 31-34 into the assembled key.",
+    "writtenBy": [
+      "s80 Otringal, Emperor's palace last room (=1)",
+      "s103 Mosquibees Island, the scene on top of the mountain (=1)",
+      "s109 Francos Island, the village scene (=1)",
+      "s117 Wannies Island, mine temple (=1)"
+    ],
+    "readInScenes": [
+      88,
+      89,
+      93,
+      100,
+      103,
+      109,
+      111,
+      112,
+      117,
+      121,
+      175
+    ],
+    "decors": []
+  },
+  {
+    "id": 56,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Lighthouse keeper / alien landing progress",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "3",
+        "meaning": "After lighthouse keeper runs away"
+      },
+      {
+        "value": "5",
+        "meaning": "After cut scene finishes and alien cut scene starts"
+      }
+    ],
+    "undocumentedValues": [
+      1,
+      2,
+      4
+    ],
+    "notes": "1 is set by the hero in s2 when talking to the keeper (actor 2) while the storm plot is still open.",
+    "writtenBy": [
+      "s2 Citadel Island, Tralu 1st scene (=1, =3)",
+      "s46 Citadel Island, near Lighthouse (=5)"
+    ],
+    "readInScenes": [
+      2,
+      21,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51
+    ],
+    "decors": []
+  },
+  {
+    "id": 57,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Stolen umbrella",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Before umbrella stolen"
+      },
+      {
+        "value": "1",
+        "meaning": "Umbrella stolen"
+      },
+      {
+        "value": "2",
+        "meaning": "Retrieved Umbrella"
+      },
+      {
+        "value": "3",
+        "meaning": "Returned Umbrella on Citadel"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s22 Citadel Island, Downtown Pharmacy (=1)",
+      "s48 Citadel Island, downstairs the sewer grid (=3, =2)"
+    ],
+    "readInScenes": [
+      22,
+      35,
+      48,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 58,
+    "symbol": "",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script or engine references.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 59,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Ferry ticket / crossing",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Purchased a ferry ticket"
+      },
+      {
+        "value": "3",
+        "meaning": "Boarded Ferry"
+      },
+      {
+        "value": "4",
+        "meaning": "Arrived at Desert island"
+      },
+      {
+        "value": "5",
+        "meaning": "Bought ferry ticket Desert Island"
+      },
+      {
+        "value": "7",
+        "meaning": "Entered ferry from Desert to Citadel"
+      },
+      {
+        "value": "8",
+        "meaning": "Arrived on Citadel Island"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 bought (Citadel office, s8), 5 bought (Desert office, s40), 3 boarded at the Citadel harbour (s43), 7 boarded at the Desert harbour (s65), 4 arrived Desert (s65), 8 arrived Citadel (s43).",
+    "writtenBy": [
+      "s8 Citadel Island, Ticket office (=1)",
+      "s40 White Leaf Desert, Ticket office (=5)",
+      "s43 Citadel Island, near the Harbor (=8, =3)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=4, =7)"
+    ],
+    "readInScenes": [
+      43,
+      59,
+      60,
+      65
+    ],
+    "decors": []
+  },
+  {
+    "id": 60,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Tralu boss fight",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Entered Tralu Boss area"
+      },
+      {
+        "value": "2",
+        "meaning": "Defeated Tralu Boss"
+      },
+      {
+        "value": "3",
+        "meaning": "Unlocked door for lighthouse keeper"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 set on entering his zone (s2), 2 when Tralu's life reaches 0, 3 after the key opens the lighthouse-keeper's door.",
+    "writtenBy": [
+      "s2 Citadel Island, Tralu 1st scene (=3, =1, =2)"
+    ],
+    "readInScenes": [
+      2
+    ],
+    "decors": []
+  },
+  {
+    "id": 61,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Becoming a wizard",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "3",
+        "meaning": "Paid wizard entrance fee"
+      },
+      {
+        "value": "4",
+        "meaning": "Received horn of blue triton (Gave rector flower)"
+      },
+      {
+        "value": "5",
+        "meaning": "received magic slate"
+      },
+      {
+        "value": "7",
+        "meaning": "Received wizard diploma"
+      }
+    ],
+    "undocumentedValues": [
+      1,
+      2,
+      6
+    ],
+    "notes": "3 paid 120 kashes, 4 gave the flower, 5 got the slate (s44), 7 got the diploma (s27). 1, 2 and 6 are tested but never set.",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=4, =3, =7)",
+      "s44 Citadel Island, outside the Dome of the Slate (=5)"
+    ],
+    "readInScenes": [
+      8,
+      27,
+      28,
+      40,
+      44,
+      56,
+      57,
+      58,
+      61,
+      62,
+      63,
+      66,
+      67,
+      68
+    ],
+    "decors": []
+  },
+  {
+    "id": 62,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Cure Dino-Fly",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Mr. Paul tells you to visit the wizard Ker'aooc - he knows how to cure dinofly"
+      },
+      {
+        "value": "2",
+        "meaning": "Ker'aooc house keeper says try school of magic"
+      },
+      {
+        "value": "3",
+        "meaning": "Arrived school of magic for first time. Rector appears"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set from the pharmacy (s22), the harbour (s43), the Dino-Fly (s49), the sewers (s48), Ker'aooc's house (s35) and the school (s27).",
+    "writtenBy": [
+      "s22 Citadel Island, Downtown Pharmacy (=1)",
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=3)",
+      "s35 White Leaf Desert, House of Ker'aooc the Healer (=2)",
+      "s43 Citadel Island, near the Harbor (=1)",
+      "s48 Citadel Island, downstairs the sewer grid (=1)",
+      "s49 Citadel Island, near Dino-Fly (=1)"
+    ],
+    "readInScenes": [
+      8,
+      10,
+      21,
+      22,
+      24,
+      27,
+      29,
+      30,
+      35,
+      36,
+      38,
+      39,
+      40,
+      43,
+      49,
+      55,
+      56,
+      57,
+      60,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      70,
+      71,
+      72
+    ],
+    "decors": []
+  },
+  {
+    "id": 63,
+    "symbol": "",
+    "kind": "quest",
+    "name": "School of Magic: blowgun test",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Hit all targets"
+      },
+      {
+        "value": "2",
+        "meaning": "Received Blowgun"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 hit all targets (training room s33), 2 blowgun awarded (s27).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=2)",
+      "s33 White Leaf Desert, School of Magic training room (=1)"
+    ],
+    "readInScenes": [
+      27,
+      33,
+      44
+    ],
+    "decors": []
+  },
+  {
+    "id": 64,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Ferryman's song",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Fainting in firefly scene"
+      },
+      {
+        "value": "2",
+        "meaning": "Gave pie to old dude and got key"
+      },
+      {
+        "value": "3",
+        "meaning": "Unlocked door to chapel"
+      },
+      {
+        "value": "4",
+        "meaning": "Monk says to call on ferry man services to get to mousquibees"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 fainted after the tart (s101), 2 gave the tart and got the key (s118), 3 opened the chapel (s118), 4 monk says to call the ferryman (s121).",
+    "writtenBy": [
+      "s101 Wannies Island, the house of the firefly tart-giving family (=1)",
+      "s118 Wannies Island, the city (=2, =3)",
+      "s121 Wannies Island, the city temple (=4)"
+    ],
+    "readInScenes": [
+      101,
+      116,
+      118,
+      121
+    ],
+    "decors": []
+  },
+  {
+    "id": 65,
+    "symbol": "",
+    "kind": "decor",
+    "name": "School of magic entrance doors",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Also swaps decor in the desert island cube 9: bodies 54 hidden and 61-63 shown when set.",
+    "writtenBy": [
+      "s61 White Leaf Desert, at the School of Magic (=1)"
+    ],
+    "readInScenes": [
+      61
+    ],
+    "decors": [
+      "DESERT cube 9: 2 decor(s), body 54, hidden while set",
+      "DESERT cube 9: 6 decor(s), body 61/62/63, visible only while set"
+    ]
+  },
+  {
+    "id": 66,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Map in neighbour's house",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Unreadable"
+      },
+      {
+        "value": "1",
+        "meaning": "Readable"
+      },
+      {
+        "value": "2",
+        "meaning": "Read"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Written by the neighbour (s9): 1 map readable after the acid, 2 read.",
+    "writtenBy": [
+      "s9 Citadel Island, Neighbor's house (=2, =1)"
+    ],
+    "readInScenes": [
+      9
+    ],
+    "decors": []
+  },
+  {
+    "id": 67,
+    "symbol": "-",
+    "kind": "quest",
+    "name": "Wannies island: hiding in a transport box",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not in box"
+      },
+      {
+        "value": "1",
+        "meaning": "inside the box"
+      },
+      {
+        "value": "2",
+        "meaning": "inside with the lid closed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Renamed: the scenes are the wannies' warehouse and box building (s99, s124, s126), not Otringal.",
+    "writtenBy": [
+      "s99 Wannies Island, the scene near the entrance of the mine (=0)",
+      "s124 Wannies Island, the box transport building (=0, =1, =2)",
+      "s126 Wannies Island, Warehouse (=0)"
+    ],
+    "readInScenes": [
+      126
+    ],
+    "decors": []
+  },
+  {
+    "id": 68,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Left Twinsen's house: Zoe cut scene",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Left twinsen house - zoe cutscene: area 31"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the Citadel Dino-Fly scene (s49) once Zoe has left.",
+    "writtenBy": [
+      "s49 Citadel Island, near Dino-Fly (=1)"
+    ],
+    "readInScenes": [
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 69,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Mosquibee rebellion progress",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Mousqibee cut scene \"notification of soldiers attacking\""
+      },
+      {
+        "value": "2",
+        "meaning": "Left cut scene area and entered throne room"
+      },
+      {
+        "value": "3",
+        "meaning": "Ferry man to Island of the wannies cut scene"
+      },
+      {
+        "value": "4",
+        "meaning": "Mousqibee rebels say queen captured"
+      }
+    ],
+    "undocumentedValues": [
+      5
+    ],
+    "notes": "2, 5 throne room (s104); 3 arrival (s105, needs gems); 1 blowtron test (s128); 4 hide-out (s129). Also toggles two decors in the Mosquibee cube 3.",
+    "writtenBy": [
+      "s104 Mosquibees Island, the Mosquibee Queen's throne (=2, =5)",
+      "s105 Mosquibees Island, the arrival scene (=3)",
+      "s128 Mosquibees Island, Bee test room (=1)",
+      "s129 Island Under Celebration, the hide out (=4)"
+    ],
+    "readInScenes": [
+      96,
+      97,
+      99,
+      101,
+      104,
+      105,
+      106,
+      116,
+      118,
+      121,
+      126,
+      128,
+      129
+    ],
+    "decors": [
+      "MOSQUIBE cube 3: 1 decor(s), body 42, hidden while set",
+      "MOSQUIBE cube 3: 1 decor(s), body 47, visible only while set"
+    ]
+  },
+  {
+    "id": 70,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Alien cut scene after the rain",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "Cut scene over"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the alien in s42.",
+    "writtenBy": [
+      "s42 Citadel Island, near Tavern (=1)"
+    ],
+    "readInScenes": [
+      42,
+      49
+    ],
+    "decors": []
+  },
+  {
+    "id": 71,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Citadel taxi (Lupin-Bourg bike)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not on the bike"
+      },
+      {
+        "value": "1",
+        "meaning": "on the bike"
+      },
+      {
+        "value": "2",
+        "meaning": "other destination chosen (s46, choice 415)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the taxi driver (actor 3 in s45, s46, s50 and actor 13 in s48) after the 8 kashes fare.",
+    "writtenBy": [
+      "s45 Citadel Island, near the tent of the Weather Wizard (=0, =1)",
+      "s46 Citadel Island, near Lighthouse (=0, =2, =1)",
+      "s48 Citadel Island, downstairs the sewer grid (=0, =1)",
+      "s50 Citadel Island, at the Cliffs of the Woodbridge (=0, =1)"
+    ],
+    "readInScenes": [
+      45,
+      46,
+      48,
+      50
+    ],
+    "decors": []
+  },
+  {
+    "id": 72,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Attacked children in the school",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Punched kid in red top and blue shorts"
+      },
+      {
+        "value": "2",
+        "meaning": "Punched grobo in school"
+      },
+      {
+        "value": "3",
+        "meaning": "Attacked sitting down or skipping child"
+      },
+      {
+        "value": "4",
+        "meaning": "Attacked blue shorts and grobo"
+      },
+      {
+        "value": "5",
+        "meaning": "Attacked blue shorts and skipping/sitting"
+      },
+      {
+        "value": "6",
+        "meaning": "Attacked grobo and skipping/sitting"
+      },
+      {
+        "value": "7",
+        "meaning": "Attacked all children"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Value = which of the three kids Twinsen hit (assigned per combination, 1-7).",
+    "writtenBy": [
+      "s37 Citadel Island, School (=3, =2, =6, =1, =5, =4, =7)",
+      "s48 Citadel Island, downstairs the sewer grid (=0)"
+    ],
+    "readInScenes": [
+      37,
+      48
+    ],
+    "decors": []
+  },
+  {
+    "id": 73,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Mosquibee blowtron",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Don't own"
+      },
+      {
+        "value": "1",
+        "meaning": "Own"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set when the blowtron is grabbed in the bee test room (s128).",
+    "writtenBy": [
+      "s128 Mosquibees Island, Bee test room (=1)"
+    ],
+    "readInScenes": [
+      101,
+      121,
+      125
+    ],
+    "decors": []
+  },
+  {
+    "id": 74,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Fix the car / get the horn",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New game"
+      },
+      {
+        "value": "1",
+        "meaning": "Got car part"
+      },
+      {
+        "value": "2",
+        "meaning": "Gave car part to Zoe"
+      },
+      {
+        "value": "3",
+        "meaning": "Zoe called on portable radio"
+      },
+      {
+        "value": "4",
+        "meaning": "Zoe tells you to try the car at the race track"
+      },
+      {
+        "value": "5",
+        "meaning": "Traded Flower for Horn of Triton"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 got the car part (s38), 2 gave it to Zoe (s49), 3 Zoe calls (s60), 4 Zoe says try the race track (s65), 5 horn traded for the flower (s27).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=5)",
+      "s38 White Leaf Desert, J. Baldino's House (=1)",
+      "s49 Citadel Island, near Dino-Fly (=2)",
+      "s60 White Leaf Desert, near J. Baldino's House (=3)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=4)"
+    ],
+    "readInScenes": [
+      38,
+      49,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72
+    ],
+    "decors": []
+  },
+  {
+    "id": 75,
+    "symbol": "",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script or engine references.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 76,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Door to fragment in the mine",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by a little key at the door (s112).",
+    "writtenBy": [
+      "s112 Wannies Island, near the temple on the main (=1)"
+    ],
+    "readInScenes": [
+      112
+    ],
+    "decors": []
+  },
+  {
+    "id": 77,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Grobo brother waypoint",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "At school"
+      },
+      {
+        "value": "2",
+        "meaning": "Citadel: Grobo brother way point"
+      },
+      {
+        "value": "3",
+        "meaning": "Citadel: Grobo brother way point?"
+      },
+      {
+        "value": "4",
+        "meaning": "Citadel: Grobo brother way point?"
+      },
+      {
+        "value": "5",
+        "meaning": "Normally vanishes at point 4"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s42 Citadel Island, near Tavern (=0)",
+      "s48 Citadel Island, downstairs the sewer grid (=1, =2, =3, =4, =5)"
+    ],
+    "readInScenes": [
+      42,
+      48
+    ],
+    "decors": []
+  },
+  {
+    "id": 78,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Grobo brother spawned",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not spawned"
+      },
+      {
+        "value": "1",
+        "meaning": "Spawned"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Cleared by five Citadel scenes on entry, set to 1 by the Grobo in s48.",
+    "writtenBy": [
+      "s5 Citadel Island, Baggage claim building, 1st scene (=0)",
+      "s15 Citadel Island, Miss Bloop's Private Museum (=0)",
+      "s22 Citadel Island, Downtown Pharmacy (=0)",
+      "s37 Citadel Island, School (=0)",
+      "s42 Citadel Island, near Tavern (=0)",
+      "s48 Citadel Island, downstairs the sewer grid (=1)"
+    ],
+    "readInScenes": [
+      5,
+      15,
+      22,
+      37,
+      42
+    ],
+    "decors": []
+  },
+  {
+    "id": 79,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Funfrock pizza scene",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "Funfrock Speech"
+      },
+      {
+        "value": "2",
+        "meaning": "Funfrock Inside afterwards"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 set in the celebration temple (s93) when the combined key is used, 2 set at the track label 31 in s95.",
+    "writtenBy": [
+      "s93 Celebration Island, inside the temple (=1)",
+      "s95 Celebration Island, the only outside scene (=2)"
+    ],
+    "readInScenes": [
+      95
+    ],
+    "decors": []
+  },
+  {
+    "id": 80,
+    "symbol": "",
+    "kind": "track",
+    "name": "Wizard pedlar position (track label)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "2",
+        "meaning": "New"
+      },
+      {
+        "value": "5",
+        "meaning": "New"
+      },
+      {
+        "value": "6",
+        "meaning": "New"
+      },
+      {
+        "value": "7",
+        "meaning": "New"
+      },
+      {
+        "value": "9",
+        "meaning": "New"
+      },
+      {
+        "value": "11",
+        "meaning": "New"
+      },
+      {
+        "value": "14",
+        "meaning": "New"
+      },
+      {
+        "value": "16",
+        "meaning": "New"
+      },
+      {
+        "value": "17",
+        "meaning": "New"
+      },
+      {
+        "value": "19",
+        "meaning": "New"
+      },
+      {
+        "value": "20",
+        "meaning": "New"
+      },
+      {
+        "value": "22",
+        "meaning": "New"
+      },
+      {
+        "value": "23",
+        "meaning": "New"
+      },
+      {
+        "value": "26",
+        "meaning": "New"
+      },
+      {
+        "value": "27",
+        "meaning": "New"
+      },
+      {
+        "value": "29",
+        "meaning": "New"
+      },
+      {
+        "value": "30",
+        "meaning": "New"
+      },
+      {
+        "value": "33",
+        "meaning": "New"
+      },
+      {
+        "value": "34",
+        "meaning": "New"
+      },
+      {
+        "value": "36",
+        "meaning": "New"
+      },
+      {
+        "value": "37",
+        "meaning": "New"
+      },
+      {
+        "value": "39",
+        "meaning": "New"
+      },
+      {
+        "value": "40",
+        "meaning": "New"
+      },
+      {
+        "value": "43",
+        "meaning": "New"
+      },
+      {
+        "value": "44",
+        "meaning": "New"
+      },
+      {
+        "value": "46",
+        "meaning": "New"
+      },
+      {
+        "value": "49",
+        "meaning": "New"
+      },
+      {
+        "value": "51",
+        "meaning": "New"
+      },
+      {
+        "value": "52",
+        "meaning": "New"
+      },
+      {
+        "value": "54",
+        "meaning": "New"
+      },
+      {
+        "value": "56",
+        "meaning": "New"
+      },
+      {
+        "value": "58",
+        "meaning": "New"
+      },
+      {
+        "value": "59",
+        "meaning": "New"
+      },
+      {
+        "value": "61",
+        "meaning": "New"
+      },
+      {
+        "value": "64",
+        "meaning": "New"
+      },
+      {
+        "value": "66",
+        "meaning": "New"
+      },
+      {
+        "value": "69",
+        "meaning": "New"
+      },
+      {
+        "value": "70",
+        "meaning": "New"
+      },
+      {
+        "value": "72",
+        "meaning": "New"
+      },
+      {
+        "value": "74",
+        "meaning": "New"
+      },
+      {
+        "value": "77",
+        "meaning": "New"
+      },
+      {
+        "value": "78",
+        "meaning": "New"
+      },
+      {
+        "value": "80",
+        "meaning": "New"
+      },
+      {
+        "value": "81",
+        "meaning": "New"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "The pedlar's track label, saved and restored across the desert scenes (TRACK_TO_VAR_GAME / VAR_GAME_TO_TRACK in 30 scenes). Tested against about 100 labels.",
+    "writtenBy": [
+      "s10 White Leaf Desert, Temple of Bú, 1st scene (saves track label)",
+      "s11 White Leaf Desert, Temple of Bú, 2nd scene (saves track label)",
+      "s24 White Leaf Desert, Hacienda, 1st scene (saves track label)",
+      "s27 White Leaf Desert, School of Magic, 2nd scene (saves track label)",
+      "s28 White Leaf Desert, School of Magic, 1st scene (saves track label)",
+      "s29 White Leaf Desert, Hacienda, 2st scene (saves track label)",
+      "s33 White Leaf Desert, School of Magic training room (saves track label)",
+      "s56 White Leaf Desert, near the Camel (saves track label)",
+      "s57 White Leaf Desert, at the Von Kournil tour (saves track label)",
+      "s58 White Leaf Desert, near Von Kournil tour (saves track label)",
+      "s60 White Leaf Desert, near J. Baldino's House (saves track label)",
+      "s61 White Leaf Desert, at the School of Magic (saves track label)",
+      "s62 White Leaf Desert, near car jump (saves track label)",
+      "s63 White Leaf Desert, near Temple of Bù (saves track label)",
+      "s64 White Leaf Desert, at the Bell (saves track label)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=23, =50, =72, =8, saves track label)",
+      "s66 White Leaf Desert, near Bald Mountain (saves track label)",
+      "s67 White Leaf Desert, at the Temple of Bù (saves track label)",
+      "s68 White Leaf Desert, near Temple of Bù (saves track label)",
+      "s69 White Leaf Desert, near to the Perl of Incandescence entrance (saves track label)",
+      "s70 White Leaf Desert, near Esmer Shuttle (saves track label)",
+      "s71 White Leaf Desert, near Bald Mountain (saves track label)",
+      "s72 White Leaf Desert, near Bald Mountain (saves track label)",
+      "s73 White Leaf Desert, at the island across from the Hacienda (saves track label)"
+    ],
+    "readInScenes": [
+      10,
+      11,
+      24,
+      27,
+      28,
+      29,
+      33,
+      56,
+      57,
+      58,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73
+    ],
+    "decors": []
+  },
+  {
+    "id": 81,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Wizard to Otringal",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Received Wizard diploma: Wizards disapeared"
+      },
+      {
+        "value": "2",
+        "meaning": "Accepted Sup invitation to go to Zeelich"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 diploma received and the wizards vanish (s27), 2 accepted Sup's invitation (s29).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=1)",
+      "s29 White Leaf Desert, Hacienda, 2st scene (=2)"
+    ],
+    "readInScenes": [
+      10,
+      21,
+      24,
+      28,
+      29,
+      30,
+      35,
+      36,
+      38,
+      39,
+      40,
+      55,
+      56,
+      57,
+      60,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      70,
+      71,
+      72
+    ],
+    "decors": []
+  },
+  {
+    "id": 82,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Ferryman taxi ride",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not on taxi"
+      },
+      {
+        "value": "1",
+        "meaning": "On taxi (cut scene not movie)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 while the ferry cut scene runs (paying gems, s97, s105, s132).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0, =1)",
+      "s105 Mosquibees Island, the arrival scene (=0, =1)",
+      "s132 Island Under Celebration, the arrival scene (=0, =1)"
+    ],
+    "readInScenes": [
+      97,
+      105,
+      132
+    ],
+    "decors": []
+  },
+  {
+    "id": 83,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Main story sub-stage (wizard, Baldino, return to Citadel, Sendell)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "new"
+      },
+      {
+        "value": "1",
+        "meaning": "as a wizard going to the spaceship"
+      },
+      {
+        "value": "2",
+        "meaning": "leaving spaceship, attacked"
+      },
+      {
+        "value": "3",
+        "meaning": "attacked leaving spaceship"
+      },
+      {
+        "value": "4",
+        "meaning": "entered Otringal spaceport as a wizard (Joe scene)"
+      },
+      {
+        "value": "5",
+        "meaning": "escaped the cell, Joe gone"
+      },
+      {
+        "value": "6",
+        "meaning": "used the itinerary token to go home"
+      },
+      {
+        "value": "7",
+        "meaning": "landed on the Citadel: Zoe calls"
+      },
+      {
+        "value": "8",
+        "meaning": "Zoe says to go to the school of magic"
+      },
+      {
+        "value": "9",
+        "meaning": "Dino-Fly lands in the desert oasis"
+      },
+      {
+        "value": "10",
+        "meaning": "rector: lightning spell, get Sendell's ball, the clam"
+      },
+      {
+        "value": "11",
+        "meaning": "got the pearl of incandescence"
+      },
+      {
+        "value": "12",
+        "meaning": "used the lightning spell to get Sendell's ball"
+      },
+      {
+        "value": "13",
+        "meaning": "Baldino calls from the Emerald Moon"
+      }
+    ],
+    "undocumentedValues": [
+      50
+    ],
+    "notes": "Also drives the CITABAU decors of Citadel cubes 2, 5 and 7 (about 30 objects shown when set). The Otringal control tower scene (s85) temporarily adds 50 to this var as a marker and subtracts it again on the next load (SUB when the value is >= 50), so a saved value of stage + 50 is possible there.",
+    "writtenBy": [
+      "s0 Citadel Island, Twinsen's house (=8)",
+      "s17 Citadel Island, Sewer (below Downtown) (=13)",
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=10)",
+      "s29 White Leaf Desert, Hacienda, 2st scene (=1)",
+      "s34 Citadel Island, Sendell's ball room (=12)",
+      "s41 White Leaf Desert, Esmer Shuttle (=2, =6)",
+      "s47 Citadel Island, at the Sendell's sign (=7)",
+      "s55 White Leaf Desert, near Dino-fly (=9)",
+      "s60 White Leaf Desert, near J. Baldino's House (=0)",
+      "s84 Otringal Prison (=5)",
+      "s85 Otringal, control tower entrance (=3, -50, +50)",
+      "s86 Otringal, the space port (=4)",
+      "s92 Otringal, the space port scene (=3)",
+      "s113 White Leaf Desert, Pearl of Incandescence room (=11)"
+    ],
+    "readInScenes": [
+      0,
+      7,
+      12,
+      17,
+      27,
+      30,
+      32,
+      37,
+      41,
+      47,
+      49,
+      55,
+      84,
+      85,
+      86,
+      92,
+      182
+    ],
+    "decors": [
+      "CITABAU cube 2: 2 decor(s), body 18/19, visible only while set",
+      "CITABAU cube 5: 9 decor(s), body 55/56, visible only while set",
+      "CITABAU cube 7: 18 decor(s), body 55/56, visible only while set",
+      "CITABAU cube 7: 1 decor(s), body 101, hidden while set",
+      "DESERT cube 5: 3 decor(s), body 38/40/41, hidden while set"
+    ]
+  },
+  {
+    "id": 84,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Otringal prison: mosquibee cell",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "cell locked"
+      },
+      {
+        "value": "1",
+        "meaning": "cell unlocked"
+      },
+      {
+        "value": "2",
+        "meaning": "mosquibee escaped"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s84 Otringal Prison (=2, =1, =0)"
+    ],
+    "readInScenes": [
+      84
+    ],
+    "decors": []
+  },
+  {
+    "id": 85,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Emerald Moon / Baldino escape",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "3",
+        "meaning": "used token in the Desert shuttle"
+      },
+      {
+        "value": "4",
+        "meaning": "landed on the Emerald Moon"
+      },
+      {
+        "value": "5",
+        "meaning": "wrong password"
+      },
+      {
+        "value": "6",
+        "meaning": "right password"
+      },
+      {
+        "value": "7",
+        "meaning": "Baldino's cell unlocked"
+      },
+      {
+        "value": "8",
+        "meaning": "after the cut scene"
+      },
+      {
+        "value": "9",
+        "meaning": "after Baldino and the CX guy"
+      },
+      {
+        "value": "10",
+        "meaning": "unlocked the door to the spaceship"
+      },
+      {
+        "value": "11",
+        "meaning": "crash-landed with Baldino"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s13 Emerald Moon, Outside Baldino's cell(room #15) (=9)",
+      "s23 Emerald Moon, next to outside Baldino's cell (=10)",
+      "s54 Emerald Moon, Baldino's cell (=7, =8)",
+      "s75 Emerald Moon, near circle entrance (=5, =4)",
+      "s114 White Leaf Desert, Esmer shuttle (=3)",
+      "s115 Emerald Moon, Esmer shuttle (=5, =6)",
+      "s138 Otringal, the Twinsen and Baldino crash site (=11)"
+    ],
+    "readInScenes": [
+      13,
+      23,
+      31,
+      53,
+      54,
+      75,
+      77,
+      114,
+      115,
+      138
+    ],
+    "decors": []
+  },
+  {
+    "id": 86,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Killed the green alien on the spaceship / guards triggered",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "Triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s41 White Leaf Desert, Esmer Shuttle (=1)",
+      "s92 Otringal, the space port scene (=1)"
+    ],
+    "readInScenes": [
+      92
+    ],
+    "decors": []
+  },
+  {
+    "id": 87,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Otringal prison: Joe status",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Joe there"
+      },
+      {
+        "value": "1",
+        "meaning": "Joe gone"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s83 Otringal, Prison entrance (=1, =0)",
+      "s84 Otringal Prison (=0, =1)",
+      "s90 Otringal, the Prison Exit scene (=0)"
+    ],
+    "readInScenes": [
+      83,
+      84
+    ],
+    "decors": []
+  },
+  {
+    "id": 88,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Otringal prison: guards killed (bitmask)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "guard 1 (actor 2)"
+      },
+      {
+        "value": "2",
+        "meaning": "guard 2 (actor 13)"
+      },
+      {
+        "value": "4",
+        "meaning": "guard 3 (actor 14)"
+      },
+      {
+        "value": "8",
+        "meaning": "guard 4 (actor 21)"
+      },
+      {
+        "value": "15",
+        "meaning": "all"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Each bit is ADDed when the matching actor's life reaches 0 (s84). The trainer's list of values is a different observation of this same mask.",
+    "writtenBy": [
+      "s84 Otringal Prison (+1, +2, +4, +8)"
+    ],
+    "readInScenes": [
+      84
+    ],
+    "decors": []
+  },
+  {
+    "id": 89,
+    "symbol": "",
+    "kind": "flag",
+    "name": "On the moving platform in the Temple of Bu",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not on it"
+      },
+      {
+        "value": "1",
+        "meaning": "on it"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Follows CARRY_BY / CARRY_OBJ_BY == 2 in s10 and s11.",
+    "writtenBy": [
+      "s10 White Leaf Desert, Temple of Bú, 1st scene (=1, =0)",
+      "s11 White Leaf Desert, Temple of Bú, 2nd scene (=1, =0)"
+    ],
+    "readInScenes": [
+      10,
+      11
+    ],
+    "decors": []
+  },
+  {
+    "id": 90,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emerald Moon: entrance panel toggle",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "off"
+      },
+      {
+        "value": "1",
+        "meaning": "on"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Flips 0/1 each time zone 6 is triggered in the Emerald Moon entrance scenes (s13, s23, s52, s53, s167, s168).",
+    "writtenBy": [
+      "s13 Emerald Moon, Outside Baldino's cell(room #15) (=1, =0)",
+      "s23 Emerald Moon, next to outside Baldino's cell (=1, =0)",
+      "s52 Emerald Moon, entrance circle symbol building (=1, =0)",
+      "s53 Emerald Moon, entrance X symbol building (=1, =0)",
+      "s167 Emerald Moon, entrance triangle symbol room (=1, =0)",
+      "s168 Emerald Moon, entrance square symbol room (=1, =0)"
+    ],
+    "readInScenes": [
+      13,
+      23,
+      31,
+      52,
+      53,
+      54,
+      75,
+      77,
+      167,
+      168
+    ],
+    "decors": []
+  },
+  {
+    "id": 91,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Wannies mine: object on the plate",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "yes"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 while Twinsen carries the crate (actor 17 in s100, actor 7 in s122) inside the trigger zone.",
+    "writtenBy": [
+      "s100 Wannies Island, the mine, 2nd room (=0, =1)",
+      "s122 Wannies Island, the mine, 1st room (=0, =1)"
+    ],
+    "readInScenes": [
+      100,
+      122
+    ],
+    "decors": []
+  },
+  {
+    "id": 92,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Otringal control tower: people killed (bitmask)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "nobody"
+      },
+      {
+        "value": "1",
+        "meaning": "left scientist"
+      },
+      {
+        "value": "2",
+        "meaning": "right scientist"
+      },
+      {
+        "value": "4",
+        "meaning": "soldier"
+      },
+      {
+        "value": "8",
+        "meaning": "Sup"
+      },
+      {
+        "value": "15",
+        "meaning": "everybody"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "ADDed in the control tower scene (s85) as each actor's life reaches 0.",
+    "writtenBy": [
+      "s85 Otringal, control tower entrance (=0, +1, +2, +4, +8)"
+    ],
+    "readInScenes": [
+      85
+    ],
+    "decors": []
+  },
+  {
+    "id": 93,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emerald Moon: yellow/black doors",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set when the door switch is hit (s23, s54).",
+    "writtenBy": [
+      "s23 Emerald Moon, next to outside Baldino's cell (=1, =0)",
+      "s54 Emerald Moon, Baldino's cell (=1, =0)"
+    ],
+    "readInScenes": [
+      13,
+      23,
+      54
+    ],
+    "decors": []
+  },
+  {
+    "id": 94,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Dino-Fly location",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "1",
+        "meaning": "start (Zoe cut scene)"
+      },
+      {
+        "value": "2",
+        "meaning": "landed at the Dome of the Slate"
+      },
+      {
+        "value": "3",
+        "meaning": "landed on the Desert island"
+      },
+      {
+        "value": "4",
+        "meaning": "landed on the island across from the hacienda"
+      },
+      {
+        "value": "5",
+        "meaning": "at the Dome of the Slate (take-off)"
+      },
+      {
+        "value": "6",
+        "meaning": "Desert island from the Citadel"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the Dino-Fly in s0, s44, s47, s49, s55, s73.",
+    "writtenBy": [
+      "s0 Citadel Island, Twinsen's house (=1)",
+      "s44 Citadel Island, outside the Dome of the Slate (=2, =5, =6)",
+      "s47 Citadel Island, at the Sendell's sign (=1)",
+      "s49 Citadel Island, near Dino-Fly (=5, =6, =1)",
+      "s55 White Leaf Desert, near Dino-fly (=3, =6, =5)",
+      "s73 White Leaf Desert, at the island across from the Hacienda (=5, =6, =4)"
+    ],
+    "readInScenes": [
+      44,
+      49,
+      55,
+      73
+    ],
+    "decors": []
+  },
+  {
+    "id": 95,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Read the wizard's note about finishing the spell",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not read"
+      },
+      {
+        "value": "1",
+        "meaning": "Read"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s21 Citadel Island, Tent of the Weather Wizard (=1)"
+    ],
+    "readInScenes": [
+      27
+    ],
+    "decors": []
+  },
+  {
+    "id": 96,
+    "symbol": "",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script or engine references.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 97,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emerald Moon: circle door",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set 1/0 by the diamond-building scene (s31); also swaps two door decors in the Emerald Moon cube 3.",
+    "writtenBy": [
+      "s31 Emerald Moon, entrance diamond shape building (=1, =0)"
+    ],
+    "readInScenes": [
+      31,
+      75
+    ],
+    "decors": [
+      "EMERAUDE cube 3: 1 decor(s), body 23, visible only while set",
+      "EMERAUDE cube 3: 1 decor(s), body 24, hidden while set"
+    ]
+  },
+  {
+    "id": 98,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emerald Moon: triangle door",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Same scene and decor pair as 97.",
+    "writtenBy": [
+      "s31 Emerald Moon, entrance diamond shape building (=1, =0)"
+    ],
+    "readInScenes": [
+      31,
+      75
+    ],
+    "decors": [
+      "EMERAUDE cube 3: 1 decor(s), body 24, hidden while set",
+      "EMERAUDE cube 3: 1 decor(s), body 23, visible only while set"
+    ]
+  },
+  {
+    "id": 99,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emerald Moon: square door",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Locked"
+      },
+      {
+        "value": "1",
+        "meaning": "Unlocked"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in s31; decor pair in the Emerald Moon cube 4.",
+    "writtenBy": [
+      "s31 Emerald Moon, entrance diamond shape building (=1, =0)"
+    ],
+    "readInScenes": [
+      31,
+      77
+    ],
+    "decors": [
+      "EMERAUDE cube 4: 1 decor(s), body 23, visible only while set",
+      "EMERAUDE cube 4: 1 decor(s), body 24, hidden while set"
+    ]
+  },
+  {
+    "id": 100,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emerald Moon: spaceship landed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not landed"
+      },
+      {
+        "value": "1",
+        "meaning": "Landed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in the shuttle scene (s115); shows two ship decors in the Emerald Moon cube 3.",
+    "writtenBy": [
+      "s115 Emerald Moon, Esmer shuttle (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "EMERAUDE cube 3: 2 decor(s), body 20/21, visible only while set"
+    ]
+  },
+  {
+    "id": 101,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal fence panel 4 destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in the prison exit scene (s90); swaps panel body 138 for the broken body 140 in Otringal cube 6.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1)"
+    ],
+    "readInScenes": [
+      90
+    ],
+    "decors": [
+      "OTRINGAL cube 6: 1 decor(s), body 138, hidden while set",
+      "OTRINGAL cube 6: 1 decor(s), body 140, visible only while set"
+    ]
+  },
+  {
+    "id": 102,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal fence panel 2 destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "As 101.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1)"
+    ],
+    "readInScenes": [
+      90
+    ],
+    "decors": [
+      "OTRINGAL cube 6: 1 decor(s), body 138, hidden while set",
+      "OTRINGAL cube 6: 1 decor(s), body 140, visible only while set"
+    ]
+  },
+  {
+    "id": 103,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal fence panel 1 destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "As 101.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1)"
+    ],
+    "readInScenes": [
+      90
+    ],
+    "decors": [
+      "OTRINGAL cube 6: 1 decor(s), body 138, hidden while set",
+      "OTRINGAL cube 6: 1 decor(s), body 140, visible only while set"
+    ]
+  },
+  {
+    "id": 104,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal fence panel 5 destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "As 101.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1)"
+    ],
+    "readInScenes": [
+      90
+    ],
+    "decors": [
+      "OTRINGAL cube 6: 1 decor(s), body 138, hidden while set",
+      "OTRINGAL cube 6: 1 decor(s), body 140, visible only while set"
+    ]
+  },
+  {
+    "id": 105,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal fence panel 6 destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "As 101.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1)"
+    ],
+    "readInScenes": [
+      90
+    ],
+    "decors": [
+      "OTRINGAL cube 6: 1 decor(s), body 138, hidden while set",
+      "OTRINGAL cube 6: 1 decor(s), body 140, visible only while set"
+    ]
+  },
+  {
+    "id": 106,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal fence panel 3 destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "As 101.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1)"
+    ],
+    "readInScenes": [
+      90
+    ],
+    "decors": [
+      "OTRINGAL cube 6: 1 decor(s), body 138, hidden while set",
+      "OTRINGAL cube 6: 1 decor(s), body 140, visible only while set"
+    ]
+  },
+  {
+    "id": 107,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Undergas elevator",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not taken elevator"
+      },
+      {
+        "value": "1",
+        "meaning": "Took elevator down"
+      },
+      {
+        "value": "2",
+        "meaning": "Taking right elevator up"
+      },
+      {
+        "value": "3",
+        "meaning": "Took left elevator back up"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Written in the elevator scenes (s120, s123); read by the scene next to it (s98).",
+    "writtenBy": [
+      "s120 The Elevator Platform Island, the only scene (=0)",
+      "s123 Wannies Island, inside the elevator (=1, =3, =2)"
+    ],
+    "readInScenes": [
+      98,
+      120,
+      123
+    ],
+    "decors": []
+  },
+  {
+    "id": 108,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Harbour boat animation state (Citadel and Desert)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "idle"
+      },
+      {
+        "value": "1-3",
+        "meaning": "boat positions"
+      },
+      {
+        "value": "4-6",
+        "meaning": "next positions"
+      }
+    ],
+    "undocumentedValues": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "notes": "Renamed: it is only written by the harbour scenes (s43 and s60), which choose the next state at random (RND(2)) when their boat reaches the end of a track; not a single cut scene.",
+    "writtenBy": [
+      "s43 Citadel Island, near the Harbor (=4, =5, =6, =3, =2, =1)",
+      "s60 White Leaf Desert, near J. Baldino's House (=4, =5, =6, =3, =2, =1)"
+    ],
+    "readInScenes": [
+      43,
+      60,
+      65
+    ],
+    "decors": []
+  },
+  {
+    "id": 109,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Wizard's outfit",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not owned"
+      },
+      {
+        "value": "1",
+        "meaning": "bought"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Bought for 50 kashes in the desert scenes (s62-s68); cleared in the men's bath (s30) when var 83 = 1. STATE_INVENTORY(4,1) makes the tunic the wizard's.",
+    "writtenBy": [
+      "s30 White Leaf Desert, Turkish bath (men) (=0)",
+      "s62 White Leaf Desert, near car jump (=1)",
+      "s63 White Leaf Desert, near Temple of Bù (=1)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s66 White Leaf Desert, near Bald Mountain (=1)",
+      "s67 White Leaf Desert, at the Temple of Bù (=1)",
+      "s68 White Leaf Desert, near Temple of Bù (=1)",
+      "s70 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s71 White Leaf Desert, near Bald Mountain (=1)",
+      "s72 White Leaf Desert, near Bald Mountain (=1)"
+    ],
+    "readInScenes": [
+      0,
+      13,
+      15,
+      23,
+      27,
+      29,
+      38,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      55,
+      56,
+      60,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73
+    ],
+    "decors": []
+  },
+  {
+    "id": 110,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal decor hidden outside chapters 6-8",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "decor shown"
+      },
+      {
+        "value": "1",
+        "meaning": "decor hidden"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 when CHAPTER < 6 or > 8 (s90, s138), 0 during chapters 6 to 8; hides four bodies (101-104) in Otringal cube 5.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1, =0)",
+      "s138 Otringal, the Twinsen and Baldino crash site (=1, =0)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "OTRINGAL cube 5: 4 decor(s), body 101/102/103/104, hidden while set"
+    ]
+  },
+  {
+    "id": 111,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Bu poster in the Citadel ticket office",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not read"
+      },
+      {
+        "value": "1",
+        "meaning": "Read"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s8 Citadel Island, Ticket office (=1)"
+    ],
+    "readInScenes": [
+      8
+    ],
+    "decors": []
+  },
+  {
+    "id": 112,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Otringal: guards recognise Twinsen and attack",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "guards ignore Twinsen"
+      },
+      {
+        "value": "1",
+        "meaning": "guards attack"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the Otringal harbour (s87, when var 124 = 1) and the celebration island guard (s95). Also toggles decors in Otringal cubes 3 and 4.",
+    "writtenBy": [
+      "s87 Otringal, near Harbor (=1)",
+      "s95 Celebration Island, the only outside scene (=1)"
+    ],
+    "readInScenes": [
+      78,
+      82,
+      86,
+      87,
+      89,
+      90,
+      92,
+      95,
+      136,
+      139,
+      150
+    ],
+    "decors": [
+      "OTRINGAL cube 3: 3 decor(s), body 61/62, visible only while set",
+      "OTRINGAL cube 3: 2 decor(s), body 63, hidden while set",
+      "OTRINGAL cube 4: 2 decor(s), body 80/81, visible only while set"
+    ]
+  },
+  {
+    "id": 113,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Otringal casino: jackpot room state",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "jackpot hit"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set 1 in the jackpot room (s133, VAR_CUBE(2) > 5), cleared in the casino entrance (s135) and lower city (s89).",
+    "writtenBy": [
+      "s89 Otringal, the Lower City scene (=0)",
+      "s133 Otringal, Casino jackpot room (=1)",
+      "s135 Otringal, Casino entrance (=0)"
+    ],
+    "readInScenes": [
+      89,
+      133,
+      135
+    ],
+    "decors": []
+  },
+  {
+    "id": 114,
+    "symbol": "",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script or engine references.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 115,
+    "symbol": "",
+    "kind": "track",
+    "name": "Otringal lowest elevators: which platform carries Twinsen",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "1-4",
+        "meaning": "carried by platform 3-6"
+      },
+      {
+        "value": "5",
+        "meaning": "none"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Written from zone 100 in s139, read by the elevator scene above it (s82).",
+    "writtenBy": [
+      "s139 Otringal, the lowest elevators (=1, =2, =3, =4, =5)"
+    ],
+    "readInScenes": [
+      82
+    ],
+    "decors": []
+  },
+  {
+    "id": 116,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Otringal lift / safari giraffe position",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "new"
+      },
+      {
+        "value": "1",
+        "meaning": "outside"
+      },
+      {
+        "value": "2",
+        "meaning": "inside"
+      },
+      {
+        "value": "3",
+        "meaning": "other stop"
+      },
+      {
+        "value": "4",
+        "meaning": "other stop"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Written by moving actors in s82, s89, s90, s139. Values 3 and 4 are missing from the trainer's list.",
+    "writtenBy": [
+      "s82 Otringal, the elevators to the Lower City (=3, =4, =2)",
+      "s89 Otringal, the Lower City scene (=1, =2)",
+      "s90 Otringal, the Prison Exit scene (=4, =3)",
+      "s139 Otringal, the lowest elevators (=2, =1, =3)"
+    ],
+    "readInScenes": [
+      82,
+      139
+    ],
+    "decors": []
+  },
+  {
+    "id": 117,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Baldino gave the super jet-pack",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not given"
+      },
+      {
+        "value": "1",
+        "meaning": "Given"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set at the crash site (s138).",
+    "writtenBy": [
+      "s138 Otringal, the Twinsen and Baldino crash site (=1)"
+    ],
+    "readInScenes": [
+      87,
+      89,
+      138
+    ],
+    "decors": []
+  },
+  {
+    "id": 118,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Desert island: healed the petanque player",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not healed"
+      },
+      {
+        "value": "1",
+        "meaning": "Healed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the player in s60.",
+    "writtenBy": [
+      "s60 White Leaf Desert, near J. Baldino's House (=1)"
+    ],
+    "readInScenes": [
+      60
+    ],
+    "decors": []
+  },
+  {
+    "id": 119,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Zoe by the car: Citadel cube 9 decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "decor shown"
+      },
+      {
+        "value": "1",
+        "meaning": "decor hidden"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the Dino-Fly scene (s49) once var 74 >= 3; hides the decor bodies 85 (CITADEL) and 114 (CITABAU) in cube 9.",
+    "writtenBy": [
+      "s49 Citadel Island, near Dino-Fly (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "CITABAU cube 9: 1 decor(s), body 114, hidden while set",
+      "CITADEL cube 9: 1 decor(s), body 85, hidden while set"
+    ]
+  },
+  {
+    "id": 120,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Francos gazogem factory: life container taken",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the pickup in the first secret room (s145).",
+    "writtenBy": [
+      "s145 Francos gazogem factory, 1st secret room (=1)"
+    ],
+    "readInScenes": [
+      145
+    ],
+    "decors": []
+  },
+  {
+    "id": 121,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Used the telescope on the hacienda roof",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not Used"
+      },
+      {
+        "value": "1",
+        "meaning": "Used"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s72 White Leaf Desert, near Bald Mountain (=1)"
+    ],
+    "readInScenes": [
+      44,
+      49,
+      55
+    ],
+    "decors": []
+  },
+  {
+    "id": 122,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Leontine taxi",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not taking"
+      },
+      {
+        "value": "1",
+        "meaning": "Taking"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set to 1 when boarding at the Otringal harbour (s87), reset on arrival at the celebration island (s95) and the Francos village (s109).",
+    "writtenBy": [
+      "s87 Otringal, near Harbor (=1)",
+      "s95 Celebration Island, the only outside scene (=0)",
+      "s109 Francos Island, the village scene (=0)"
+    ],
+    "readInScenes": [
+      87,
+      95,
+      109
+    ],
+    "decors": []
+  },
+  {
+    "id": 123,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Taxi to the Francos island available",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Can't take"
+      },
+      {
+        "value": "1",
+        "meaning": "Can take"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set at the lower city (s89).",
+    "writtenBy": [
+      "s89 Otringal, the Lower City scene (=1)"
+    ],
+    "readInScenes": [
+      87,
+      89,
+      95
+    ],
+    "decors": []
+  },
+  {
+    "id": 124,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Path to the Otringal rebels",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New game"
+      },
+      {
+        "value": "1",
+        "meaning": "Spoke to CX guy, yellow taxi spawns"
+      },
+      {
+        "value": "2",
+        "meaning": "Can take boat from Otringal"
+      },
+      {
+        "value": "3",
+        "meaning": "Talking to rick in bar about CX"
+      },
+      {
+        "value": "4",
+        "meaning": "Got ring of dissidents from Johnny rocket"
+      },
+      {
+        "value": "5",
+        "meaning": "Entered tourist shop rebel area"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s79 Otringal, Emperor's palace 1st room (=4)",
+      "s87 Otringal, near Harbor (=2)",
+      "s95 Celebration Island, the only outside scene (=1)",
+      "s137 Otringal, Bar - Rick's room (=3)",
+      "s148 Otringal, the Dissidents' hide out (=5)"
+    ],
+    "readInScenes": [
+      78,
+      79,
+      81,
+      82,
+      87,
+      89,
+      90,
+      95,
+      136,
+      137,
+      138,
+      139,
+      148
+    ],
+    "decors": []
+  },
+  {
+    "id": 125,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Yellow taxi: Celebration island to Francos",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "yellow taxi to francos from celebration island cut scene"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s87 Otringal, near Harbor (=1, =0)",
+      "s95 Celebration Island, the only outside scene (=1, =0)",
+      "s109 Francos Island, the village scene (=1, =0)"
+    ],
+    "readInScenes": [
+      87,
+      95,
+      109
+    ],
+    "decors": []
+  },
+  {
+    "id": 126,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Yellow taxi: Francos to Otringal",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Taking yellow taxi from Francos to Otringal"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s87 Otringal, near Harbor (=1, =0)",
+      "s95 Celebration Island, the only outside scene (=1, =0)",
+      "s109 Francos Island, the village scene (=1, =0)"
+    ],
+    "readInScenes": [
+      87,
+      95,
+      109
+    ],
+    "decors": []
+  },
+  {
+    "id": 127,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Gave the gazogem to Baldino",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not given"
+      },
+      {
+        "value": "1",
+        "meaning": "Given"
+      }
+    ],
+    "undocumentedValues": [
+      2
+    ],
+    "notes": "Set at the crash site (s138); the value 2 in the trainer's list is only tested, never set.",
+    "writtenBy": [
+      "s138 Otringal, the Twinsen and Baldino crash site (=1)"
+    ],
+    "readInScenes": [
+      48,
+      87,
+      89,
+      138,
+      143
+    ],
+    "decors": []
+  },
+  {
+    "id": 128,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Mosquibee arrival scene: actor 10 reached track 11",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Written once (s105, plus demo s216); never read. Unknown purpose.",
+    "writtenBy": [
+      "s105 Mosquibees Island, the arrival scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 129,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Boarded the boat to the elevator",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Boarded boat to elevator"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Toggled in the Francos platform scene (s107) and elevator island (s120); two decors in KNARTAS cube 1 and ASCENCE cube 1 are hidden when set.",
+    "writtenBy": [
+      "s107 Francos Island, the platform scene (=0, =1)",
+      "s120 The Elevator Platform Island, the only scene (=1, =0)"
+    ],
+    "readInScenes": [
+      107,
+      120
+    ],
+    "decors": [
+      "ASCENCE cube 1: 2 decor(s), body 31/35, hidden while set",
+      "KNARTAS cube 1: 1 decor(s), body 43, hidden while set"
+    ]
+  },
+  {
+    "id": 130,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Laser pistol quest",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Have nothing"
+      },
+      {
+        "value": "1",
+        "meaning": "Have crystal"
+      },
+      {
+        "value": "2",
+        "meaning": "Broken pistol"
+      },
+      {
+        "value": "3",
+        "meaning": "Working pistol"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 has the crystal (s95), 2 broken pistol (s148), 3 working pistol (s95). Matches inventory slot 9's model states.",
+    "writtenBy": [
+      "s95 Celebration Island, the only outside scene (=1, =3)",
+      "s148 Otringal, the Dissidents' hide out (=3, =2)"
+    ],
+    "readInScenes": [
+      95,
+      148
+    ],
+    "decors": []
+  },
+  {
+    "id": 131,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Otringal bar show",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "kiss on stage"
+      },
+      {
+        "value": "1",
+        "meaning": "singer about to come on stage"
+      },
+      {
+        "value": "2",
+        "meaning": "singer on stage"
+      },
+      {
+        "value": "3",
+        "meaning": "kiss about to come on stage"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Written by the bar actors (s134) and by the harbour/bar entrance (s87, s136), which reset it with RND(2).",
+    "writtenBy": [
+      "s87 Otringal, near Harbor (=0, =2)",
+      "s134 Otringal, Bar backstage (=0, =1, =2, =3)",
+      "s136 Otringal, Bar entrance (=0, =2)"
+    ],
+    "readInScenes": [
+      134,
+      136
+    ],
+    "decors": []
+  },
+  {
+    "id": 132,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Johnny Rocket position",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "by the swimming pool"
+      },
+      {
+        "value": "1",
+        "meaning": "in his room"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s81 Otringal, the Imperial Hotel (=1)"
+    ],
+    "readInScenes": [
+      81
+    ],
+    "decors": []
+  },
+  {
+    "id": 133,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal decor hidden before chapter 6",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "decor shown"
+      },
+      {
+        "value": "1",
+        "meaning": "decor hidden"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 when CHAPTER < 6 (s90, s138); hides body 105 in Otringal cube 5. Renamed: the trainer's \"left cell block\" is only an observation.",
+    "writtenBy": [
+      "s90 Otringal, the Prison Exit scene (=1, =0)",
+      "s138 Otringal, the Twinsen and Baldino crash site (=1, =0)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "OTRINGAL cube 5: 1 decor(s), body 105, hidden while set"
+    ]
+  },
+  {
+    "id": 134,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Wannies mine, 2nd room: gems collected (bitmask 1, 2, 4)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "gem A"
+      },
+      {
+        "value": "2",
+        "meaning": "gem B"
+      },
+      {
+        "value": "4",
+        "meaning": "gem C"
+      },
+      {
+        "value": "7",
+        "meaning": "all three"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "ADDs 1, 2 or 4 as each gem is taken (s100). Reset to 0 when the ferryman is paid in gems (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0)",
+      "s100 Wannies Island, the mine, 2nd room (+1, +2, +4)"
+    ],
+    "readInScenes": [
+      100
+    ],
+    "decors": []
+  },
+  {
+    "id": 135,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Wannies mine, 3rd room: gem",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in s111; reset with the other gem flags at the ferryman (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0)",
+      "s111 Wannies Island, the mine, 3rd room (=1)"
+    ],
+    "readInScenes": [
+      111
+    ],
+    "decors": []
+  },
+  {
+    "id": 136,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Wannies island near the temple: gems collected (bitmask 1, 2)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "gem A"
+      },
+      {
+        "value": "2",
+        "meaning": "gem B"
+      },
+      {
+        "value": "3",
+        "meaning": "both"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s112; reset at the ferryman (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0)",
+      "s112 Wannies Island, near the temple on the main (+1, +2)"
+    ],
+    "readInScenes": [
+      112
+    ],
+    "decors": []
+  },
+  {
+    "id": 137,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Mosquibee island arrival: gems (bitmask 1, 2)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "gem A"
+      },
+      {
+        "value": "2",
+        "meaning": "gem B"
+      },
+      {
+        "value": "3",
+        "meaning": "both"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s105.",
+    "writtenBy": [
+      "s105 Mosquibees Island, the arrival scene (=0, +1, +2)"
+    ],
+    "readInScenes": [
+      105
+    ],
+    "decors": []
+  },
+  {
+    "id": 138,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Mosquibee island arrival: gems near the bridge (bitmask 1, 2)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "gem A"
+      },
+      {
+        "value": "2",
+        "meaning": "gem B"
+      },
+      {
+        "value": "3",
+        "meaning": "both"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s105.",
+    "writtenBy": [
+      "s105 Mosquibees Island, the arrival scene (=0, +1, +2)"
+    ],
+    "readInScenes": [
+      105
+    ],
+    "decors": []
+  },
+  {
+    "id": 139,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Mosquibee gem in the spider area",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in the passage to the fragment (s149); reset in s105.",
+    "writtenBy": [
+      "s105 Mosquibees Island, the arrival scene (=0)",
+      "s149 Mosquibees Island, the passage to the fragment (=1)"
+    ],
+    "readInScenes": [
+      149
+    ],
+    "decors": []
+  },
+  {
+    "id": 140,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Island under Celebration arrival: gems (bitmask 1, 2)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "gem A"
+      },
+      {
+        "value": "2",
+        "meaning": "gem B"
+      },
+      {
+        "value": "3",
+        "meaning": "both"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s132.",
+    "writtenBy": [
+      "s132 Island Under Celebration, the arrival scene (=0, +1, +2)"
+    ],
+    "readInScenes": [
+      132
+    ],
+    "decors": []
+  },
+  {
+    "id": 141,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Island under Celebration upper scene: gems (bitmask 1, 2, 4)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "none"
+      },
+      {
+        "value": "1",
+        "meaning": "gem A"
+      },
+      {
+        "value": "2",
+        "meaning": "gem B"
+      },
+      {
+        "value": "4",
+        "meaning": "gem C"
+      },
+      {
+        "value": "7",
+        "meaning": "all three"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s131.",
+    "writtenBy": [
+      "s131 Island Under Celebration, the upper scene (+1, +2, +4)",
+      "s132 Island Under Celebration, the arrival scene (=0)"
+    ],
+    "readInScenes": [
+      131
+    ],
+    "decors": []
+  },
+  {
+    "id": 142,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Island under Celebration hide-out gem",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s129.",
+    "writtenBy": [
+      "s129 Island Under Celebration, the hide out (=1)",
+      "s132 Island Under Celebration, the arrival scene (=0)"
+    ],
+    "readInScenes": [
+      129
+    ],
+    "decors": []
+  },
+  {
+    "id": 143,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Carried by the turtle",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "riding the turtle"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 while CARRY_BY == 3 (s64) or 2 (s113).",
+    "writtenBy": [
+      "s64 White Leaf Desert, at the Bell (=1, =0)",
+      "s113 White Leaf Desert, Pearl of Incandescence room (=1, =0)"
+    ],
+    "readInScenes": [
+      64,
+      113
+    ],
+    "decors": []
+  },
+  {
+    "id": 144,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Otringal souvenir shop: wizard diploma sold",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "on sale"
+      },
+      {
+        "value": "1",
+        "meaning": "sold"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s147 Otringal, the Twinsunian souvenir shop (=0, =1)"
+    ],
+    "readInScenes": [
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 145,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Otringal souvenir shop: ferry ticket sold",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "on sale"
+      },
+      {
+        "value": "1",
+        "meaning": "sold"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s147 Otringal, the Twinsunian souvenir shop (=0, =1)"
+    ],
+    "readInScenes": [
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 146,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Otringal souvenir shop: umbrella sold",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "on sale"
+      },
+      {
+        "value": "1",
+        "meaning": "sold"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s147 Otringal, the Twinsunian souvenir shop (=0, =1)"
+    ],
+    "readInScenes": [
+      147
+    ],
+    "decors": []
+  },
+  {
+    "id": 147,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Burgomaster's notes found",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not found"
+      },
+      {
+        "value": "1",
+        "meaning": "Found"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in the burgomaster's house (s175); read by the village (s109).",
+    "writtenBy": [
+      "s175 Francos Island, Burgermaster's house (=1)"
+    ],
+    "readInScenes": [
+      109,
+      175
+    ],
+    "decors": []
+  },
+  {
+    "id": 148,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Sup fragment / emperor's palace",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "3",
+        "meaning": "Got sups key fragment"
+      },
+      {
+        "value": "4",
+        "meaning": "Broke window above Sup fragment"
+      }
+    ],
+    "undocumentedValues": [
+      2
+    ],
+    "notes": "3 got the Sup fragment (s80), 4 broke the window above it; tested 2 to 4 in the palace rooms s151-s166.",
+    "writtenBy": [
+      "s80 Otringal, Emperor's palace last room (=3, =4)"
+    ],
+    "readInScenes": [
+      80,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      158,
+      159,
+      160,
+      162,
+      163,
+      164,
+      165,
+      166
+    ],
+    "decors": []
+  },
+  {
+    "id": 149,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert island: extra props from chapter 4",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "props hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "props shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set to 1 by about 60 desert actors (bodies 15-17) when CHAPTER == 4; shown when set in desert cubes 4, 8, 9 and 10 (24 decors). Renamed: not \"Landed with Dino-Fly\".",
+    "writtenBy": [
+      "s55 White Leaf Desert, near Dino-fly (=1)",
+      "s56 White Leaf Desert, near the Camel (=1)",
+      "s61 White Leaf Desert, at the School of Magic (=1)",
+      "s66 White Leaf Desert, near Bald Mountain (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 4: 7 decor(s), body 15/16/17, visible only while set",
+      "DESERT cube 8: 4 decor(s), body 15/16/17, visible only while set",
+      "DESERT cube 9: 5 decor(s), body 15/16/17, visible only while set",
+      "DESERT cube 10: 8 decor(s), body 15/16/17, visible only while set"
+    ]
+  },
+  {
+    "id": 150,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Mosquibee island: Twinsen climbing the rope",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Twinsen climbing rope to mosquibee cutscene"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 during the cut scene (s105), cleared in the maze (s106).",
+    "writtenBy": [
+      "s105 Mosquibees Island, the arrival scene (=1, =0)",
+      "s106 Mosquibees Island, the maze (=0)"
+    ],
+    "readInScenes": [
+      106
+    ],
+    "decors": []
+  },
+  {
+    "id": 151,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Francos arrival flag",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not set"
+      },
+      {
+        "value": "1",
+        "meaning": "set on arrival"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the Francos arrival scene (s110), cleared by the mosquibee passage to CX (s176). Unknown purpose.",
+    "writtenBy": [
+      "s110 Francos Island, the arrival scene (=1)",
+      "s176 Mosquibees Island, the passage to Island CX (=0)"
+    ],
+    "readInScenes": [
+      176
+    ],
+    "decors": []
+  },
+  {
+    "id": 152,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Emperor's shuttle",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "new"
+      },
+      {
+        "value": "1",
+        "meaning": "taking the shuttle to the final fragment (s182)"
+      },
+      {
+        "value": "2",
+        "meaning": "landed at the palace (s189)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s182 Island CX, Esmer Shuttle (=1)",
+      "s189 Otringal, Esmer shuttle (=2)"
+    ],
+    "readInScenes": [
+      88,
+      110,
+      177,
+      189
+    ],
+    "decors": []
+  },
+  {
+    "id": 153,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Told the grand rector about the pearl and Sendell's ball",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Spoke to Grand rector about pearl and informed of sendells ball and informed of location"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "All three of 153-155 are set by the rector in the school (s27).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=1)"
+    ],
+    "readInScenes": [
+      27
+    ],
+    "decors": []
+  },
+  {
+    "id": 154,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Asked where the pearl was and was told: in the clam",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Asked grand rector where pearl was and told it's in clam"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=1)"
+    ],
+    "readInScenes": [
+      27
+    ],
+    "decors": []
+  },
+  {
+    "id": 155,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Told the rector about the pearl of incandescence",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      }
+    ],
+    "undocumentedValues": [
+      1
+    ],
+    "notes": "Set when Twinsen brings the pearl to the rector (s27, track 211).",
+    "writtenBy": [
+      "s27 White Leaf Desert, School of Magic, 2nd scene (=1)"
+    ],
+    "readInScenes": [
+      27
+    ],
+    "decors": []
+  },
+  {
+    "id": 156,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Otringal upper city: emperor's shuttle decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "decor hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shuttle decor shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 once var 152 >= 2 (s88); shows body 31 in Otringal cube 1. Renamed from \"Left emperor shuttle\".",
+    "writtenBy": [
+      "s88 Otringal, the Upper City scene (=0, =1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "OTRINGAL cube 1: 1 decor(s), body 31, visible only while set"
+    ]
+  },
+  {
+    "id": 157,
+    "symbol": "PLAY_THE_END",
+    "kind": "quest",
+    "name": "The End: Dark Monk destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "game running"
+      },
+      {
+        "value": "1",
+        "meaning": "ending: the Dark Monk is dead (s188)"
+      },
+      {
+        "value": "2",
+        "meaning": "set in the sewer scene (s48), Twinsen/Dino-Fly cut scene"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "COMMON.H: PLAY_THE_END = (ListVarGame[157] > 0). While set the engine keeps the ending music (LM_PLAY_MUSIC), skips voice transfers in the desert (MESSAGE.CPP), blocks saving (SAVEGAME.CPP) and 57 CITABAU decors in cube 5 appear.",
+    "writtenBy": [
+      "s48 Citadel Island, downstairs the sewer grid (=2)",
+      "s188 The Dark Monk statue, 4th scene (last) (=1)"
+    ],
+    "readInScenes": [
+      46,
+      48,
+      60
+    ],
+    "decors": [
+      "CITABAU cube 5: 57 decor(s), body 57/58/59/60/61/62/63/65/66/67/68/69/70/71/72/73/74/75/76/77, visible only while set"
+    ]
+  },
+  {
+    "id": 158,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Looked at the alien spaceship (cut scene)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Peered into spaceship on desert island and saw cut scene"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in s42 (Citadel) and s65 (Desert) when Twinsen uses the viewing zone.",
+    "writtenBy": [
+      "s42 Citadel Island, near Tavern (=0, =1)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=0, =1)"
+    ],
+    "readInScenes": [
+      42,
+      65,
+      114
+    ],
+    "decors": []
+  },
+  {
+    "id": 159,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Funfrock button and the children",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "1",
+        "meaning": "Funfrock pushed the button (s186)"
+      },
+      {
+        "value": "2",
+        "meaning": "children fall through the first scene (s185)"
+      },
+      {
+        "value": "3",
+        "meaning": "children fall through scene 3 and Funfrock teleports (s187)"
+      }
+    ],
+    "undocumentedValues": [
+      0
+    ],
+    "notes": "",
+    "writtenBy": [
+      "s185 The Dark Monk statue, the wizards, 1st scene (=2)",
+      "s186 The Dark Monk statue, the top, 2nd scene (=1)",
+      "s187 The Dark Monk statue, 3rd scene (=3)"
+    ],
+    "readInScenes": [
+      185,
+      186,
+      187
+    ],
+    "decors": []
+  },
+  {
+    "id": 160,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Emperor triggered the Moon",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "triggered (s181)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "GameOver() plays the DELUGE cinematic instead of the normal game over when this is > 0 (GAMEMENU.CPP).",
+    "writtenBy": [
+      "s181 Island CX, Room in the emperor (=1)"
+    ],
+    "readInScenes": [
+      80,
+      87,
+      93,
+      99,
+      108,
+      120,
+      123,
+      150,
+      181,
+      182
+    ],
+    "decors": []
+  },
+  {
+    "id": 161,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Joe's shell",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "1",
+        "meaning": "conversation in the Tralu dungeon (s20)"
+      },
+      {
+        "value": "2",
+        "meaning": "freed from the shell (s61)"
+      }
+    ],
+    "undocumentedValues": [
+      0
+    ],
+    "notes": "",
+    "writtenBy": [
+      "s20 Citadel Island, Tralu 3rd scene (=1)",
+      "s61 White Leaf Desert, at the School of Magic (=2)"
+    ],
+    "readInScenes": [
+      20,
+      61
+    ],
+    "decors": []
+  },
+  {
+    "id": 162,
+    "symbol": "",
+    "kind": "bits",
+    "name": "Dark Monk statue 1st scene: teleporters destroyed (bitmask)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "1",
+        "meaning": "teleporter 1 (actor 45)"
+      },
+      {
+        "value": "2",
+        "meaning": "teleporter 2 (actor 46)"
+      },
+      {
+        "value": "3",
+        "meaning": "both"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "ADDed when the statue boss's life reaches 0 (s185).",
+    "writtenBy": [
+      "s185 The Dark Monk statue, the wizards, 1st scene (+1, +2)"
+    ],
+    "readInScenes": [
+      185
+    ],
+    "decors": []
+  },
+  {
+    "id": 163,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue: top teleporter destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not destroyed"
+      },
+      {
+        "value": "1",
+        "meaning": "Destroyed"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s186.",
+    "writtenBy": [
+      "s186 The Dark Monk statue, the top, 2nd scene (=1)"
+    ],
+    "readInScenes": [
+      186
+    ],
+    "decors": []
+  },
+  {
+    "id": 164,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Citadel sewer cover A (cube 5)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set 1 by s42, s47, s49, cleared by s48; shows body 47 (CITADEL) or 64 (CITABAU) in cube 5. The demo build force-sets 164 and 165 to hide the sewer covers (EXTFUNC.CPP).",
+    "writtenBy": [
+      "s42 Citadel Island, near Tavern (=1)",
+      "s47 Citadel Island, at the Sendell's sign (=1)",
+      "s48 Citadel Island, downstairs the sewer grid (=0)",
+      "s49 Citadel Island, near Dino-Fly (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "CITABAU cube 5: 1 decor(s), body 64, visible only while set",
+      "CITADEL cube 5: 1 decor(s), body 47, visible only while set"
+    ]
+  },
+  {
+    "id": 165,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Citadel sewer cover B (cube 7)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set 1 by s48 and s49, cleared by s42; shows body 47 / 64 in cube 7.",
+    "writtenBy": [
+      "s42 Citadel Island, near Tavern (=0)",
+      "s48 Citadel Island, downstairs the sewer grid (=1)",
+      "s49 Citadel Island, near Dino-Fly (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "CITABAU cube 7: 1 decor(s), body 64, visible only while set",
+      "CITADEL cube 7: 1 decor(s), body 47, visible only while set"
+    ]
+  },
+  {
+    "id": 166,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Citadel cube 6: alien prop during chapter 2",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 when CHAPTER == 2 in s42, s43 and s46; shows body 56 (CITADEL) or 86 (CITABAU) in cube 6.",
+    "writtenBy": [
+      "s42 Citadel Island, near Tavern (=1, =0)",
+      "s43 Citadel Island, near the Harbor (=0, =1)",
+      "s46 Citadel Island, near Lighthouse (=1, =0)",
+      "s47 Citadel Island, at the Sendell's sign (=0)",
+      "s94 Empty water outside scene (=1, =0)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "CITABAU cube 6: 1 decor(s), body 86, visible only while set",
+      "CITADEL cube 6: 1 decor(s), body 56, visible only while set"
+    ]
+  },
+  {
+    "id": 167,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 6: harbour ferry prop",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "0 while the ferry ride runs (var 59 = 3) or in chapter 4, 1 otherwise (s47-s71); shows body 48 in desert cube 6.",
+    "writtenBy": [
+      "s47 Citadel Island, at the Sendell's sign (=0)",
+      "s59 White Leaf Desert, near Lighthouse (=0, =1)",
+      "s60 White Leaf Desert, near J. Baldino's House (=1, =0)",
+      "s64 White Leaf Desert, at the Bell (=1, =0)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=0, =1)",
+      "s66 White Leaf Desert, near Bald Mountain (=1, =0)",
+      "s70 White Leaf Desert, near Esmer Shuttle (=1, =0)",
+      "s71 White Leaf Desert, near Bald Mountain (=1, =0)",
+      "s94 Empty water outside scene (=1, =0)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 6: 1 decor(s), body 48, visible only while set"
+    ]
+  },
+  {
+    "id": 168,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Desert: tour / car-jump gate",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "off"
+      },
+      {
+        "value": "1",
+        "meaning": "on"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set by the car-jump actor in s62 (zone 5), cleared when bought back at the tour (s57, 40 zlitos). Unknown purpose.",
+    "writtenBy": [
+      "s57 White Leaf Desert, at the Von Kournil tour (=0)",
+      "s62 White Leaf Desert, near car jump (=1, =0)"
+    ],
+    "readInScenes": [
+      57
+    ],
+    "decors": []
+  },
+  {
+    "id": 169,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Pearl of Incandescence found",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "cave found (s113)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Cleared when the pearl is handed to the Weather Wizard (s21).",
+    "writtenBy": [
+      "s21 Citadel Island, Tent of the Weather Wizard (=0)",
+      "s113 White Leaf Desert, Pearl of Incandescence room (=1)"
+    ],
+    "readInScenes": [
+      21,
+      27,
+      113
+    ],
+    "decors": []
+  },
+  {
+    "id": 170,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Itinerary token held (Esmer shuttle ticket)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "no"
+      },
+      {
+        "value": "1",
+        "meaning": "holding it"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set with inventory slot 5's token model (s12, s85, s177), cleared by the Esmer shuttles (s41, s114, s182).",
+    "writtenBy": [
+      "s12 White Leaf Desert, Esmer Base (=1)",
+      "s41 White Leaf Desert, Esmer Shuttle (=0)",
+      "s85 Otringal, control tower entrance (=1)",
+      "s114 White Leaf Desert, Esmer shuttle (=0)",
+      "s177 Island CX, Stairs in the control tower (=1)",
+      "s182 Island CX, Esmer Shuttle (=0)"
+    ],
+    "readInScenes": [
+      12,
+      41,
+      85,
+      114,
+      177,
+      182
+    ],
+    "decors": []
+  },
+  {
+    "id": 171,
+    "symbol": "",
+    "kind": "flag",
+    "name": "As a wizard, alien asks to visit their planet",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "As wizard alien asking to visit their planet"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set at the hacienda (s29), read at the school (s27).",
+    "writtenBy": [
+      "s29 White Leaf Desert, Hacienda, 2st scene (=1)"
+    ],
+    "readInScenes": [
+      27
+    ],
+    "decors": []
+  },
+  {
+    "id": 172,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Read only by two desert actors",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Read by actors 7 and 8 of s62 (together with var 27) but never written by any script. Unknown.",
+    "writtenBy": [],
+    "readInScenes": [
+      62
+    ],
+    "decors": []
+  },
+  {
+    "id": 173,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Citadel cube 3 decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 in s47, 0 in s50; shows body 20 (CITADEL) or 28 (CITABAU) in cube 3.",
+    "writtenBy": [
+      "s47 Citadel Island, at the Sendell's sign (=1)",
+      "s50 Citadel Island, at the Cliffs of the Woodbridge (=0)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "CITABAU cube 3: 1 decor(s), body 28, visible only while set",
+      "CITADEL cube 3: 1 decor(s), body 20, visible only while set"
+    ]
+  },
+  {
+    "id": 174,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Attacked the guard in the Otringal tower on returning to the Citadel",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "New"
+      },
+      {
+        "value": "1",
+        "meaning": "Attacked guard in Otringal tower when returning to citadel"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "1 when the guard is hit (s85).",
+    "writtenBy": [
+      "s85 Otringal, control tower entrance (=0, =1)"
+    ],
+    "readInScenes": [
+      85
+    ],
+    "decors": []
+  },
+  {
+    "id": 175,
+    "symbol": "",
+    "kind": "quest",
+    "name": "Temple of Bu puzzle stage",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "reset"
+      },
+      {
+        "value": "1",
+        "meaning": "set"
+      },
+      {
+        "value": "2 and 3",
+        "meaning": "other steps"
+      }
+    ],
+    "undocumentedValues": [
+      2,
+      3
+    ],
+    "notes": "Set by the temple actors (s10, s11).",
+    "writtenBy": [
+      "s10 White Leaf Desert, Temple of Bú, 1st scene (=0, =1, =2, =3)",
+      "s11 White Leaf Desert, Temple of Bú, 2nd scene (=3)"
+    ],
+    "readInScenes": [
+      10,
+      11
+    ],
+    "decors": []
+  },
+  {
+    "id": 176,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Bu Meca-Penguin taken from the statue plinth",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not collected"
+      },
+      {
+        "value": "1",
+        "meaning": "Collected"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s11.",
+    "writtenBy": [
+      "s11 White Leaf Desert, Temple of Bú, 2nd scene (=1)"
+    ],
+    "readInScenes": [
+      11
+    ],
+    "decors": []
+  },
+  {
+    "id": 177,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue 3rd scene: switch 1",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in s187 (all of 177-181); each is tested > 0 there.",
+    "writtenBy": [
+      "s187 The Dark Monk statue, 3rd scene (=1)"
+    ],
+    "readInScenes": [
+      187
+    ],
+    "decors": []
+  },
+  {
+    "id": 178,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue 3rd scene: switch 2",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s187 The Dark Monk statue, 3rd scene (=1)"
+    ],
+    "readInScenes": [
+      187
+    ],
+    "decors": []
+  },
+  {
+    "id": 179,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue 3rd scene: switch 3",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s187 The Dark Monk statue, 3rd scene (=1)"
+    ],
+    "readInScenes": [
+      187
+    ],
+    "decors": []
+  },
+  {
+    "id": 180,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue 3rd scene: teleporter destroyed",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s187 The Dark Monk statue, 3rd scene (=1)"
+    ],
+    "readInScenes": [
+      187
+    ],
+    "decors": []
+  },
+  {
+    "id": 181,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue 3rd scene: switch 5",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s187 The Dark Monk statue, 3rd scene (=1)"
+    ],
+    "readInScenes": [
+      187
+    ],
+    "decors": []
+  },
+  {
+    "id": 182,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 4: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set to 1 by the desert scenes (s56, s59-s61) and 0 in s55; shows body 1 in desert cube 4. All of 182-190 are the desert \"neighbouring cube\" toggles; scene 94 (empty water) turns them all on.",
+    "writtenBy": [
+      "s55 White Leaf Desert, near Dino-fly (=0)",
+      "s56 White Leaf Desert, near the Camel (=1)",
+      "s59 White Leaf Desert, near Lighthouse (=1)",
+      "s60 White Leaf Desert, near J. Baldino's House (=1)",
+      "s61 White Leaf Desert, at the School of Magic (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 4: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 183,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 12: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 in desert cube 12.",
+    "writtenBy": [
+      "s56 White Leaf Desert, near the Camel (=1)",
+      "s57 White Leaf Desert, at the Von Kournil tour (=0)",
+      "s58 White Leaf Desert, near Von Kournil tour (=1)",
+      "s61 White Leaf Desert, at the School of Magic (=1)",
+      "s62 White Leaf Desert, near car jump (=1)",
+      "s63 White Leaf Desert, near Temple of Bù (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 12: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 184,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 16: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 in desert cube 16.",
+    "writtenBy": [
+      "s57 White Leaf Desert, at the Von Kournil tour (=1)",
+      "s58 White Leaf Desert, near Von Kournil tour (=0)",
+      "s62 White Leaf Desert, near car jump (=1)",
+      "s63 White Leaf Desert, near Temple of Bù (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 16: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 185,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 1: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 in desert cube 1.",
+    "writtenBy": [
+      "s55 White Leaf Desert, near Dino-fly (=1)",
+      "s59 White Leaf Desert, near Lighthouse (=0)",
+      "s60 White Leaf Desert, near J. Baldino's House (=1)",
+      "s64 White Leaf Desert, at the Bell (=1)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 1: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 186,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 17: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 (two decors) in desert cube 17.",
+    "writtenBy": [
+      "s57 White Leaf Desert, at the Von Kournil tour (=1)",
+      "s58 White Leaf Desert, near Von Kournil tour (=1)",
+      "s62 White Leaf Desert, near car jump (=1)",
+      "s63 White Leaf Desert, near Temple of Bù (=0)",
+      "s67 White Leaf Desert, at the Temple of Bù (=1)",
+      "s68 White Leaf Desert, near Temple of Bù (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 17: 2 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 187,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 2: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 in desert cube 2.",
+    "writtenBy": [
+      "s59 White Leaf Desert, near Lighthouse (=1)",
+      "s60 White Leaf Desert, near J. Baldino's House (=1)",
+      "s64 White Leaf Desert, at the Bell (=0)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s69 White Leaf Desert, near to the Perl of Incandescence entrance (=1)",
+      "s70 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 2: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 188,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 3: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 in desert cube 3.",
+    "writtenBy": [
+      "s64 White Leaf Desert, at the Bell (=1)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s69 White Leaf Desert, near to the Perl of Incandescence entrance (=0)",
+      "s70 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 3: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 189,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 7: coast decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 1 in desert cube 7.",
+    "writtenBy": [
+      "s64 White Leaf Desert, at the Bell (=1)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=1)",
+      "s66 White Leaf Desert, near Bald Mountain (=1)",
+      "s69 White Leaf Desert, near to the Perl of Incandescence entrance (=1)",
+      "s70 White Leaf Desert, near Esmer Shuttle (=0)",
+      "s71 White Leaf Desert, near Bald Mountain (=1)",
+      "s94 Empty water outside scene (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 7: 1 decor(s), body 1, visible only while set"
+    ]
+  },
+  {
+    "id": 190,
+    "symbol": "",
+    "kind": "decor",
+    "name": "Desert cube 13: decor",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "hidden"
+      },
+      {
+        "value": "1",
+        "meaning": "shown"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Body 74 in desert cube 13.",
+    "writtenBy": [
+      "s56 White Leaf Desert, near the Camel (=1)",
+      "s57 White Leaf Desert, at the Von Kournil tour (=1)",
+      "s58 White Leaf Desert, near Von Kournil tour (=1)",
+      "s61 White Leaf Desert, at the School of Magic (=1)",
+      "s62 White Leaf Desert, near car jump (=0)",
+      "s63 White Leaf Desert, near Temple of Bù (=1)",
+      "s66 White Leaf Desert, near Bald Mountain (=1)",
+      "s67 White Leaf Desert, at the Temple of Bù (=1)",
+      "s68 White Leaf Desert, near Temple of Bù (=1)"
+    ],
+    "readInScenes": [],
+    "decors": [
+      "DESERT cube 13: 1 decor(s), body 74, visible only while set"
+    ]
+  },
+  {
+    "id": 191,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Wannies mine: gem near the clover box",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in s100; reset at the ferryman (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0)",
+      "s100 Wannies Island, the mine, 2nd room (=1)"
+    ],
+    "readInScenes": [
+      100
+    ],
+    "decors": []
+  },
+  {
+    "id": 192,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Wannies mine: gem",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set in s100; reset at the ferryman (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0)",
+      "s100 Wannies Island, the mine, 2nd room (=1)"
+    ],
+    "readInScenes": [
+      100
+    ],
+    "decors": []
+  },
+  {
+    "id": 193,
+    "symbol": "",
+    "kind": "count",
+    "name": "Wannies island temple gems taken",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Set 1 then +1 in s112, reset at the ferryman (s97).",
+    "writtenBy": [
+      "s97 Wannies Island, the ferryman landing place scene (=0)",
+      "s112 Wannies Island, near the temple on the main (=1, +1)"
+    ],
+    "readInScenes": [
+      112
+    ],
+    "decors": []
+  },
+  {
+    "id": 194,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Citadel: spaceship / Joe scene at the Sendell sign",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "Triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set at track 101 in s47.",
+    "writtenBy": [
+      "s47 Citadel Island, at the Sendell's sign (=1)"
+    ],
+    "readInScenes": [
+      47
+    ],
+    "decors": []
+  },
+  {
+    "id": 195,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Dark Monk statue: wizards hole",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Not triggered"
+      },
+      {
+        "value": "1",
+        "meaning": "Triggered"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "s185.",
+    "writtenBy": [
+      "s185 The Dark Monk statue, the wizards, 1st scene (=1)"
+    ],
+    "readInScenes": [
+      185
+    ],
+    "decors": []
+  },
+  {
+    "id": 196,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 197,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 198,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 199,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 200,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 201,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 202,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 203,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 204,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 205,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 206,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 207,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 208,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 209,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 210,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 211,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 212,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 213,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 214,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 215,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 216,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 217,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 218,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 219,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 220,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 221,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 222,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 223,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 224,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 225,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 226,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 227,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 228,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 229,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 230,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 231,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 232,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 233,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 234,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "No script, engine or decor references (in the trainer's list all are \"Unknown\").",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 235,
+    "symbol": "FLAG_ACF",
+    "kind": "engine",
+    "name": "Movies seen: bits 0-15 of the ACF list",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Bit n of 235 + n / 16 is set by PlayAcf when the n-th ACF movie is played (PLAYACF.CPP); PlayAllAcf and the memory viewer (item 24) use it to replay movies (the INTRO is skipped). The trainer's per-value descriptions are movie combinations, not stages.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 236,
+    "symbol": "FLAG_ACF2",
+    "kind": "engine",
+    "name": "Movies seen: bits 16-31",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "As 235.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 237,
+    "symbol": "FLAG_ACF3",
+    "kind": "engine",
+    "name": "Movies seen: bits 32-47",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "As 235.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 238,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 239,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 240,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: Citadel sewers",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "The box actor tests it on entry and removes itself when set.",
+    "writtenBy": [
+      "s17 Citadel Island, Sewer (below Downtown) (=1)"
+    ],
+    "readInScenes": [
+      17
+    ],
+    "decors": []
+  },
+  {
+    "id": 241,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: Dome of the Slate",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s26 Citadel Island, Dome of the Slate (=1)"
+    ],
+    "readInScenes": [
+      26
+    ],
+    "decors": []
+  },
+  {
+    "id": 242,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: Wannies mine 2nd room (read only)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Only read (s100 actor 5) and never set by any script.",
+    "writtenBy": [],
+    "readInScenes": [
+      100
+    ],
+    "decors": []
+  },
+  {
+    "id": 243,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: Desert island (via the turtle)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s55 White Leaf Desert, near Dino-fly (=1)"
+    ],
+    "readInScenes": [
+      55
+    ],
+    "decors": []
+  },
+  {
+    "id": 244,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: Island under Celebration and Island CX",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Set from the hide-out (s129) and the CX secret passage (s180).",
+    "writtenBy": [
+      "s129 Island Under Celebration, the hide out (=1)",
+      "s180 Island CX, Secret passage (=1)"
+    ],
+    "readInScenes": [
+      129,
+      180
+    ],
+    "decors": []
+  },
+  {
+    "id": 245,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: Emerald Moon",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s13 Emerald Moon, Outside Baldino's cell(room #15) (=1)"
+    ],
+    "readInScenes": [
+      13
+    ],
+    "decors": []
+  },
+  {
+    "id": 246,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Clover box: island across from the hacienda",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "in place"
+      },
+      {
+        "value": "1",
+        "meaning": "taken"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [
+      "s73 White Leaf Desert, at the island across from the Hacienda (=1)"
+    ],
+    "readInScenes": [
+      73
+    ],
+    "decors": []
+  },
+  {
+    "id": 247,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 248,
+    "symbol": "",
+    "kind": "flag",
+    "name": "Demo only",
+    "source": "curated",
+    "demoOnly": true,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Only written in the demo scene 193.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 249,
+    "symbol": "FLAG_ESC",
+    "kind": "engine",
+    "name": "Scenario signal: cut scene skipped with ESC",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "normal"
+      },
+      {
+        "value": "1",
+        "meaning": "the player pressed ESC in a cinema scene"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "The engine sets it in ResetCinemaMode (OBJECT.CPP) and clears it when CinemaMode switches on (GERELIFE.CPP). Scripts test it after a cut scene to jump to its end. Scripts also reset it to 0 (15 writers). The trainer's \"took ferry\" descriptions came from watching this.",
+    "writtenBy": [
+      "s43 Citadel Island, near the Harbor (=0)",
+      "s44 Citadel Island, outside the Dome of the Slate (=0)",
+      "s45 Citadel Island, near the tent of the Weather Wizard (=0)",
+      "s46 Citadel Island, near Lighthouse (=0)",
+      "s48 Citadel Island, downstairs the sewer grid (=0)",
+      "s49 Citadel Island, near Dino-Fly (=0)",
+      "s50 Citadel Island, at the Cliffs of the Woodbridge (=0)",
+      "s55 White Leaf Desert, near Dino-fly (=0)",
+      "s65 White Leaf Desert, near Esmer Shuttle (=0)",
+      "s73 White Leaf Desert, at the island across from the Hacienda (=0)"
+    ],
+    "readInScenes": [
+      43,
+      44,
+      45,
+      46,
+      48,
+      49,
+      50,
+      55,
+      65,
+      73,
+      87,
+      95,
+      97,
+      105,
+      107,
+      109,
+      120,
+      132
+    ],
+    "decors": []
+  },
+  {
+    "id": 250,
+    "symbol": "-",
+    "kind": "unused",
+    "name": "Unused",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 251,
+    "symbol": "FLAG_CLOVER",
+    "kind": "count",
+    "name": "Clover leaves (current life boxes)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Quantity of clover leaves the hero has; capped at NbCloverBox and refilled by the engine (COMPORTE.CPP, OBJECT.CPP, EXTRA.CPP). Scripts only read it (== 0 in 8 places) and grow the cap with INC_CLOVER_BOX. The trainer's \"Number of lives\" is this.",
+    "writtenBy": [],
+    "readInScenes": [
+      12
+    ],
+    "decors": []
+  },
+  {
+    "id": 252,
+    "symbol": "FLAG_VEHICULE_PRIS",
+    "kind": "engine",
+    "name": "Vehicle taken",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Named in COMMON.H and the console (\"vehicletaken\") but nothing in the engine or scripts reads or writes it.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 253,
+    "symbol": "FLAG_CHAPTER",
+    "kind": "engine",
+    "name": "Chapter",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "initial"
+      },
+      {
+        "value": "1",
+        "meaning": "new game (s0)"
+      },
+      {
+        "value": "2",
+        "meaning": "aliens land (s46, lighthouse)"
+      },
+      {
+        "value": "3",
+        "meaning": "wizard to Otringal (s41)"
+      },
+      {
+        "value": "4",
+        "meaning": "returned to the Citadel (s47)"
+      },
+      {
+        "value": "5",
+        "meaning": "going to the Emerald Moon (s114)"
+      },
+      {
+        "value": "6",
+        "meaning": "Emerald Moon, X-symbol building (s53)"
+      },
+      {
+        "value": "7",
+        "meaning": "Wannies elevator scene (s98)"
+      },
+      {
+        "value": "8",
+        "meaning": "mosquibee passage to CX (s176)"
+      },
+      {
+        "value": "9",
+        "meaning": "Island CX shuttle (s182)"
+      },
+      {
+        "value": "10",
+        "meaning": "key fragments used in the Celebration temple (s93)"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "Each value is set by the scene named after it (SET_VAR_GAME(253, n); INC_CHAPTER is never used). The trainer's labels for 6 to 10 describe the same moments. LF_CHAPTER reads it. MAX_CHAPTER = 20: the engine indexes NecessaryChapterMoney[] (money bonus cap, 150 in chapter 4) and MessChapitreTwinsen[][] (hero's chapter idle chatter) with it; TEMPETE_ACTIVE is chapter < 2 or rain.",
+    "writtenBy": [
+      "s0 Citadel Island, Twinsen's house (=1)",
+      "s41 White Leaf Desert, Esmer Shuttle (=3)",
+      "s46 Citadel Island, near Lighthouse (=2)",
+      "s47 Citadel Island, at the Sendell's sign (=4)",
+      "s53 Emerald Moon, entrance X symbol building (=6)",
+      "s93 Celebration Island, inside the temple (=10)",
+      "s98 Wannies Island, the scene near the Elevator (=7)",
+      "s114 White Leaf Desert, Esmer shuttle (=5)",
+      "s176 Mosquibees Island, the passage to Island CX (=8)",
+      "s182 Island CX, Esmer Shuttle (=9)"
+    ],
+    "readInScenes": [
+      0,
+      1,
+      3,
+      4,
+      5,
+      7,
+      8,
+      9,
+      10,
+      12,
+      14,
+      15,
+      17,
+      20,
+      21,
+      22,
+      24,
+      25,
+      27,
+      29,
+      30,
+      32,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      55,
+      56,
+      57,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      70,
+      71,
+      72,
+      78,
+      82,
+      83,
+      84,
+      85,
+      86,
+      89,
+      90,
+      92,
+      93,
+      94,
+      95,
+      98,
+      104,
+      114,
+      120,
+      123,
+      138,
+      147,
+      150,
+      176,
+      182
+    ],
+    "decors": []
+  },
+  {
+    "id": 254,
+    "symbol": "FLAG_PLANETE_ESMER",
+    "kind": "engine",
+    "name": "Esmer rails (mine wagon uses Esmer rail bricks)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [
+      {
+        "value": "0",
+        "meaning": "Twinsun rails"
+      },
+      {
+        "value": "1",
+        "meaning": "Esmer rails"
+      }
+    ],
+    "undocumentedValues": [],
+    "notes": "GetNumBrickWagon (WAGON.CPP) swaps every RAIL_E_* brick for the plain rail when set. Written by the mine scenes: 1 in the Wannies mine (s100, s122), 0 in the Temple of Bu (s10, s11). The trainer's \"entered mine\" is wrong.",
+    "writtenBy": [
+      "s10 White Leaf Desert, Temple of Bú, 1st scene (=0)",
+      "s11 White Leaf Desert, Temple of Bú, 2nd scene (=0)",
+      "s100 Wannies Island, the mine, 2nd room (=1)",
+      "s122 Wannies Island, the mine, 1st room (=1)"
+    ],
+    "readInScenes": [],
+    "decors": []
+  },
+  {
+    "id": 255,
+    "symbol": "FLAG_DONT_USE",
+    "kind": "engine",
+    "name": "Reserved (inventory sentinel)",
+    "source": "curated",
+    "demoOnly": false,
+    "values": [],
+    "undocumentedValues": [],
+    "notes": "Used as the \"empty\" marker in TabIndir; never a real variable.",
+    "writtenBy": [],
+    "readInScenes": [],
+    "decors": []
+  }
+]

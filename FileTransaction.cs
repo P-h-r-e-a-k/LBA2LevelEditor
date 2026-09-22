@@ -12,9 +12,17 @@ internal sealed class FileTransaction
     private readonly List<Change> changes = new();
 
     // `verify` receives the file's bytes as read back from the temporary file and returns an error message or null.
+    // Two writes to the same path in one transaction is always a caller bug (their two temp files, both named
+    // `path + ".tmp"`, would collide during Commit -- one Move would silently consume the other's file, and the
+    // second Move would then fail with a confusing "file not found" deep inside Commit): callers that touch the
+    // same file more than once (HqrEntryStore.Compose, several entries of one archive) merge into one Write
+    // instead, so this throws early and clearly rather than committing half a transaction.
     public FileTransaction Write(string path, byte[] content, Func<byte[], string?>? verify = null)
     {
-        changes.Add(new Change(System.IO.Path.GetFullPath(path), content, verify));
+        var full = System.IO.Path.GetFullPath(path);
+        if (changes.Any(c => string.Equals(c.Path, full, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"{path} is already queued in this transaction; merge the two writes into one instead.");
+        changes.Add(new Change(full, content, verify));
         return this;
     }
 

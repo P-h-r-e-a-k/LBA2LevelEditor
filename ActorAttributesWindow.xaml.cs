@@ -13,20 +13,22 @@ namespace LBA2LevelEditor;
 // body/animation (with a filterable name-lookup dropdown), collision/
 // physics flags, and combat stats -- plus a rotating live preview of the
 // selected body and a jumping-off point to that actor's script editor.
-// Edits apply immediately (SetActorAttributes/SetActorPosition/
-// SetActorFlags are session-only: they update the live renderer and
-// survive panning, per RENDERER_API.H's own doc comments on those calls,
-// but aren't written to the game's SCENE.HQR yet -- that's a separate,
-// not-yet-built save path). MainWindow opens one of these per actor, each
-// its own taskbar entry, so several can be open side by side.
+// Apply always updates the live native session first (SetActorAttributes/
+// SetActorPosition/SetActorFlags), then also writes the edit into the
+// actor's own scene record in SCENE.HQR -- see TrySaveToFile and
+// Lba2ActorPersistence -- for every field except a body/animation the
+// actor's own kind of actor (FILE3D entity) doesn't already offer, which
+// stays session-only, with the status line saying so. An actor added this
+// session (Add Actor Here) has no kind of actor yet either: EntityPanel/
+// EntityCombo (shown only for one of these) let a "kind of actor" be picked
+// first, narrowing Body/Anim to what it offers, so Apply can add it to the
+// scene file too instead of leaving it session-only forever. MainWindow
+// opens one of these per actor, each its own taskbar entry, so several can
+// be open side by side; each remembers its own kind's last screen position
+// (WindowPlacement) and closes automatically if the main window does.
 public partial class ActorAttributesWindow : Window
 {
     public event Action<int>? OpenScriptRequested;
-
-    private sealed record NamedOption(int Index, string Display)
-    {
-        public override string ToString() => Display;
-    }
 
     private sealed class FlagCheckItem
     {
@@ -61,12 +63,26 @@ public partial class ActorAttributesWindow : Window
     // app's lifetime -- cached once per option kind across every
     // attributes window instance rather than re-read from disk each time
     // one opens.
-    private static IReadOnlyList<NamedOption>? cachedBodyOptions;
-    private static IReadOnlyList<NamedOption>? cachedAnimOptions;
+    private static IReadOnlyList<FilterableComboBox.Option>? cachedBodyOptions;
+    private static IReadOnlyList<FilterableComboBox.Option>? cachedAnimOptions;
     private static string? cachedBodyWarning;
 
-    private bool suppressBodyTextChanged;
-    private bool suppressAnimTextChanged;
+    // Same filterable dropdown as every other picker in the app (the main window's Island/Scene boxes, LBA1's
+    // own actor attributes window) instead of a second, separately-maintained copy of the same type-to-filter
+    // behaviour -- see FilterableComboBox's own comment for the WPF quirks it already works around.
+    private FilterableComboBox? bodyFilter, animFilter, entityFilter;
+
+    // The Entity picker's own options (every entity in the game's FILE3D table, named after its first body's
+    // own BODY2.HQD name when it has one) -- only shown/used for a brand-new actor (showingDummyBody), which has
+    // no "kind of actor" yet; an existing actor's entity is already fixed by the file, so it isn't editable here.
+    private IReadOnlyList<FilterableComboBox.Option> entityOptions = Array.Empty<FilterableComboBox.Option>();
+    // Body's own option list, narrowed to the chosen entity's own bodies once one is picked for a new actor
+    // (EntityChanged); the full cachedBodyOptions otherwise, exactly as before this feature existed.
+    private IReadOnlyList<FilterableComboBox.Option> bodyOptionsForActor = Array.Empty<FilterableComboBox.Option>();
+    // The entity chosen in EntityCombo for a brand-new actor -- null until one is picked, and irrelevant (never
+    // read) once the actor is no longer a placeholder. Threaded through to Lba2ActorPersistence.Save so it can
+    // add the actor to the scene file instead of refusing.
+    private int? newActorEntity;
 
     // Per-window (not shared/cached like cachedAnimOptions): this actor's
     // own animation list with its native moveset -- see
@@ -74,14 +90,8 @@ public partial class ActorAttributesWindow : Window
     // ahead of everything else. Falls back to cachedAnimOptions unchanged
     // (no separator) when the native lookup finds nothing, e.g. this
     // actor's scene isn't the one currently loaded.
-    private IReadOnlyList<NamedOption> animOptionsForActor = Array.Empty<NamedOption>();
+    private IReadOnlyList<FilterableComboBox.Option> animOptionsForActor = Array.Empty<FilterableComboBox.Option>();
 
-    // Debounces CommitPreviewChange() while typing a numeric index directly
-    // (rather than picking from the dropdown, which commits instantly via
-    // SelectionChanged below) -- committing on every keystroke would
-    // recalibrate against "1", then "12", then "123" as the user types a
-    // 3-digit index, each a valid-but-throwaway intermediate value.
-    private DispatcherTimer? textCommitTimer;
     private DispatcherTimer? resizeTimer;
 
     // previewAngle still advances by this many of the engine's 4096-per-turn
@@ -128,15 +138,7 @@ public partial class ActorAttributesWindow : Window
         Title = $"Actor {actorIndex} Attributes";
         TitleLabel.Text = $"Actor {actorIndex}";
 
-        // ComboBox doesn't expose TextChanged as its own CLR event (only
-        // TextBox does) -- for an editable ComboBox it's raised by the
-        // internal TextBox template part and bubbles up as a routed event,
-        // so it has to be picked up via AddHandler instead of a plain XAML
-        // attribute.
-        BodyCombo.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler(BodyCombo_TextChanged));
-        AnimCombo.AddHandler(TextBoxBase.TextChangedEvent, new TextChangedEventHandler(AnimCombo_TextChanged));
-
-        BodyCombo.ItemsSource = cachedBodyOptions ??= LoadOptions("BODY2.HQD", "BODY.HQR");
+        cachedBodyOptions ??= LoadOptions("BODY2.HQD", "BODY.HQR");
         // GenAnim (like GenBody) indexes a small per-actor "generic" table
         // (SearchAnim(), FICHE.CPP), not ANIM.HQR's own much larger raw
         // animation-data archive directly -- passing no HQR file here means
@@ -144,10 +146,29 @@ public partial class ActorAttributesWindow : Window
         // (~87 entries) instead of inflating it to ANIM.HQR's 2000+.
         cachedAnimOptions ??= LoadOptions("ANIM2.HQD", null);
         animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions);
-        AnimCombo.ItemsSource = animOptionsForActor;
 
-        textCommitTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-        textCommitTimer.Tick += (_, _) => { textCommitTimer!.Stop(); CommitPreviewChange(); };
+        bodyOptionsForActor = cachedBodyOptions!;
+        bodyFilter = new FilterableComboBox(BodyCombo, () => bodyOptionsForActor);
+        animFilter = new FilterableComboBox(AnimCombo, () => animOptionsForActor);
+        entityFilter = new FilterableComboBox(EntityCombo, () => entityOptions);
+        bodyFilter.Committed += CommitPreviewChange;
+        animFilter.Committed += CommitPreviewChange;
+        entityFilter.Committed += CommitEntityChange;
+        EntityCombo.LostFocus += (_, _) => CommitEntityChange();
+        // A typed number (rather than a picked entry, which the Committed events above already cover)
+        // commits when focus leaves the box -- not on every keystroke, which would recalibrate and re-render
+        // against unparseable mid-typing text constantly.
+        BodyCombo.LostFocus += (_, _) => { RevertIfInvalid(BodyCombo, cachedBodyOptions!, previewBody); CommitPreviewChange(); };
+        AnimCombo.LostFocus += (_, _) => { RevertIfInvalid(AnimCombo, animOptionsForActor, previewAnim); CommitPreviewChange(); };
+        // Re-fetches this actor's own native moveset every time the dropdown is actually opened, rather than
+        // only once at construction -- the native lookup only succeeds while this actor's scene happens to be
+        // the one currently loaded (see BuildAnimOptionsForActor's own comment), which frequently isn't true
+        // yet here but may become true by the time the user actually opens this dropdown.
+        AnimCombo.GotFocus += (_, _) => { animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions!); animFilter!.Refresh(); };
+        bodyFilter.Refresh();
+        animFilter.Refresh();
+        entityFilter.Refresh();
+
         resizeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         resizeTimer.Tick += (_, _) => { resizeTimer!.Stop(); RecalibratePreview(); };
 
@@ -196,7 +217,7 @@ public partial class ActorAttributesWindow : Window
     // the cross-validated (body) case -- see HqrArchive.CountEntries's own
     // comment for why -- ValidIndices' bounds-check filtering also happened
     // to let exactly one bogus entry at the boundary through for BODY.HQR.
-    private static IReadOnlyList<NamedOption> LoadOptions(string hqdFileName, string? hqrFileName)
+    private static IReadOnlyList<FilterableComboBox.Option> LoadOptions(string hqdFileName, string? hqrFileName)
     {
         var hqrCount = 0;
         if (hqrFileName is not null)
@@ -213,9 +234,9 @@ public partial class ActorAttributesWindow : Window
         var result = HqdDescriptions.Load(hqdFileName, hqrCount);
         if (hqdFileName.StartsWith("BODY", StringComparison.OrdinalIgnoreCase)) cachedBodyWarning = result.ValidationWarning;
 
-        var options = new List<NamedOption>(result.Names.Count);
+        var options = new List<FilterableComboBox.Option>(result.Names.Count);
         for (var i = 0; i < result.Names.Count; i++)
-            options.Add(new NamedOption(i, result.Names[i] is { } name ? $"{i}: {name}" : $"{i}"));
+            options.Add(new FilterableComboBox.Option(i, result.Names[i] is { } name ? $"{i}: {name}" : $"{i}"));
         return options;
     }
 
@@ -230,9 +251,13 @@ public partial class ActorAttributesWindow : Window
     // nothing, e.g. this actor's scene isn't the one currently loaded (see
     // that API's own doc comment) -- the dropdown still works, just
     // unsorted, rather than showing an empty or broken list.
-    private IReadOnlyList<NamedOption> BuildAnimOptionsForActor(IReadOnlyList<NamedOption> all)
+    private IReadOnlyList<FilterableComboBox.Option> BuildAnimOptionsForActor(IReadOnlyList<FilterableComboBox.Option> all)
+        => BuildAnimOptions(nativeRenderer.RendererLibrary?.GetActorNativeAnims(actorIndex) ?? Array.Empty<int>(), all, null);
+
+    // The list for a set of "natural" animations (raw ANIM.HQR indices): those first, then a separator, then the other named animations (only those `otherFits`
+    // accepts, when given).
+    private static IReadOnlyList<FilterableComboBox.Option> BuildAnimOptions(IReadOnlyList<int> native, IReadOnlyList<FilterableComboBox.Option> all, Func<int, bool>? otherFits)
     {
-        var native = nativeRenderer.RendererLibrary?.GetActorNativeAnims(actorIndex) ?? Array.Empty<int>();
         if (native.Count == 0) return all;
 
         // native holds raw ANIM.HQR indices across the archive's full ~2000+
@@ -249,20 +274,130 @@ public partial class ActorAttributesWindow : Window
         // Twinsen's own low-index range.
         var byIndex = all.ToDictionary(o => o.Index);
         var seen = new HashSet<int>();
-        var natural = new List<NamedOption>(native.Count);
+        var natural = new List<FilterableComboBox.Option>(native.Count);
         foreach (var index in native)
         {
             if (!seen.Add(index)) continue; // a fiche can list the same generic anim more than once
-            natural.Add(byIndex.TryGetValue(index, out var named) ? named : new NamedOption(index, index.ToString()));
+            natural.Add(byIndex.TryGetValue(index, out var named) ? named : new FilterableComboBox.Option(index, index.ToString()));
         }
         if (natural.Count == 0) return all;
-        var other = all.Where(o => !seen.Contains(o.Index)).ToList();
+        var other = all.Where(o => !seen.Contains(o.Index) && (otherFits is null || otherFits(o.Index))).ToList();
 
-        var merged = new List<NamedOption>(natural.Count + other.Count + 1);
+        var merged = new List<FilterableComboBox.Option>(natural.Count + other.Count + 1);
         merged.AddRange(natural);
-        merged.Add(new NamedOption(-1, "--- Other compatible animations ---"));
-        merged.AddRange(other);
+        if (other.Count > 0)
+        {
+            merged.Add(new FilterableComboBox.Option(-1, "--- Other compatible animations ---"));
+            merged.AddRange(other);
+        }
         return merged;
+    }
+
+    // ---- a body of its own kind of actor ------------------------------------------------------------------------------------------------------------
+    // An animation moves the bones of the body it was made for: an entity (a kind of actor: RESS.HQR entry 44) lists its bodies and its animations, and where it has
+    // bodies with different skeletons (bone counts) each has animations with as many groups. The list the actor was opened with is its own entity's; when another
+    // body is picked the list has to become that body's entity's (and an animation that isn't one of them, which the preview can't play or plays wrongly, gives
+    // way to that body's standing animation).
+
+    private Lba2EntityTable? entityTable;
+    private bool entityTableRead;
+    private HqrArchive? bodyArchive, animArchive;
+    private readonly Dictionary<int, int?> boneCounts = new(), groupCounts = new();
+    private int? syncedBody;
+
+    private static string GameDirectory => EditorSettings.Current.GameDirectory;
+
+    private int? BodyBones(int body)
+    {
+        if (boneCounts.TryGetValue(body, out var known)) return known;
+        int? count = null;
+        try
+        {
+            bodyArchive ??= HqrArchive.Open(Path.Combine(GameDirectory, "BODY.HQR"));
+            if (bodyArchive.IsValid(body)) count = LbaBodyStudio.Body.Read(bodyArchive.Read(body), 2).Bones.Count;
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException) { DebugLog.Log($"ActorAttributesWindow: body {body}: {error.Message}"); }
+        boneCounts[body] = count;
+        return count;
+    }
+
+    // How many groups (bones) an ANIM.HQR entry moves: the second U16 of the entry (what ObjectInitAnim reads).
+    private int? AnimGroups(int anim)
+    {
+        if (groupCounts.TryGetValue(anim, out var known)) return known;
+        int? count = null;
+        try
+        {
+            animArchive ??= HqrArchive.Open(Path.Combine(GameDirectory, "ANIM.HQR"));
+            if (animArchive.IsValid(anim) && animArchive.Read(anim) is { Length: >= 4 } bytes) count = BitConverter.ToUInt16(bytes, 2);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException) { DebugLog.Log($"ActorAttributesWindow: animation {anim}: {error.Message}"); }
+        groupCounts[anim] = count;
+        return count;
+    }
+
+    // Makes the animation list and the chosen animation agree with `body`; returns the animation to use (the current one when it belongs to the body).
+    private int SyncAnimationsToBody(int body, int currentAnim)
+    {
+        if (body < 0) return currentAnim;
+        if (!entityTableRead) { entityTable = Lba2EntityTable.Load(GameDirectory); entityTableRead = true; }
+        var bones = BodyBones(body);
+        // (a body that no entity has: the list stays as it is)
+        if (entityTable?.ChooseAnimations(body, bones, AnimGroups, currentAnim) is not { } choice) return currentAnim;
+
+        Func<int, bool>? otherFits = bones is { } b ? anim => AnimGroups(anim) == b : null;
+        var list = BuildAnimOptions(choice.Natural, cachedAnimOptions!, otherFits);
+        animOptionsForActor = list;
+        animFilter!.Refresh();
+        AnimCombo.Text = list.FirstOrDefault(o => o.Index == choice.Chosen)?.Display ?? choice.Chosen.ToString();
+        StatusLabel.Text = choice.Chosen == currentAnim
+            ? $"Animation list: the animations of this body's kind of actor ({choice.Natural.Count})."
+            : $"Animation {currentAnim} doesn't belong to this body; using {choice.Chosen}. The list is now this body's kind of actor's animations ({choice.Natural.Count}).";
+        return choice.Chosen;
+    }
+
+    // ---- a kind of actor, for a brand-new one (Add Actor Here) --------------------------------------------------------------------------------------
+    // A brand-new actor has no entity yet: the file needs one to be given a body/animation at all (they're small ids relative to an entity, not raw
+    // archive indices -- see Lba2ActorPersistence's own comment), so EntityPanel/EntityCombo (shown only while showingDummyBody) let the user pick one
+    // before Apply can save it. Picking an entity narrows BodyCombo to that entity's own bodies and re-syncs the animation the same way changing an
+    // existing actor's body already does (SyncAnimationsToBody), so Apply always sees a body/anim pair the chosen entity actually offers.
+
+    // Every entity in the game's FILE3D table, named after its first body's own BODY2.HQD name when it has one (there is no per-entity name list to
+    // read instead -- unlike BODY2.HQD/ANIM2.HQD, LBAPackageManager ships no LBA2 entity descriptions).
+    private static IReadOnlyList<FilterableComboBox.Option> BuildEntityOptions(Lba2EntityTable? table, IReadOnlyList<FilterableComboBox.Option> bodyOptions)
+    {
+        if (table is null) return Array.Empty<FilterableComboBox.Option>();
+        var bodyNames = bodyOptions.ToDictionary(o => o.Index, o => o.Display);
+        static string NameOnly(string display) { var colon = display.IndexOf(':'); return colon >= 0 ? display[(colon + 2)..] : display; }
+        return table.Entities.Select(e =>
+        {
+            var name = e.Bodies.Count > 0 && bodyNames.TryGetValue(e.Bodies[0].Body, out var display) ? NameOnly(display) : null;
+            return new FilterableComboBox.Option(e.Id, name is not null ? $"{e.Id}: {name}" : $"{e.Id}");
+        }).ToList();
+    }
+
+    private void CommitEntityChange()
+    {
+        if (int.TryParse(ParseLeadingIndex(EntityCombo.Text), out var id)) EntityChanged(id);
+    }
+
+    private void EntityChanged(int entityId)
+    {
+        if (!entityTableRead) { entityTable = Lba2EntityTable.Load(GameDirectory); entityTableRead = true; }
+        var entity = entityTable?.Entities.FirstOrDefault(e => e.Id == entityId);
+        newActorEntity = entityId;
+        if (entity is null)
+        {
+            StatusLabel.Text = $"Entity {entityId} isn't in this game's kind-of-actor table.";
+            return;
+        }
+        var bodyIds = entity.Bodies.Select(b => b.Body).Distinct().ToList();
+        bodyOptionsForActor = bodyIds.Count > 0 ? cachedBodyOptions!.Where(o => bodyIds.Contains(o.Index)).ToList() : cachedBodyOptions!;
+        bodyFilter!.Refresh();
+        var defaultBody = entity.Bodies.Count > 0 ? entity.Bodies.OrderBy(b => b.Generic).First().Body : 0;
+        BodyCombo.Text = bodyOptionsForActor.FirstOrDefault(o => o.Index == defaultBody)?.Display ?? cachedBodyOptions!.FirstOrDefault(o => o.Index == defaultBody)?.Display ?? defaultBody.ToString();
+        CommitPreviewChange();
+        StatusLabel.Text = $"New actor: Apply adds it to this scene as entity {entityId}; Close discards it.";
     }
 
     private static string ParseLeadingIndex(string text)
@@ -288,16 +423,9 @@ public partial class ActorAttributesWindow : Window
         PositionYBox.Text = y.ToString();
         PositionZBox.Text = z.ToString();
         BetaBox.Text = beta.ToString();
-        // Suppressed: setting .Text here would otherwise run it through the
-        // same live-filter TextChanged handler typing does, narrowing
-        // BodyCombo/AnimCombo's dropdown to just whatever matches the
-        // current numeric value before the user has ever opened it.
-        suppressBodyTextChanged = true;
+        syncedBody = body;
         BodyCombo.Text = cachedBodyOptions!.FirstOrDefault(o => o.Index == body)?.Display ?? body.ToString();
-        suppressBodyTextChanged = false;
-        suppressAnimTextChanged = true;
         AnimCombo.Text = animOptionsForActor.FirstOrDefault(o => o.Index == anim)?.Display ?? anim.ToString();
-        suppressAnimTextChanged = false;
         LifePointBox.Text = lifePoint.ToString();
         ArmourBox.Text = armor.ToString();
         HitForceBox.Text = hitForce.ToString();
@@ -317,171 +445,52 @@ public partial class ActorAttributesWindow : Window
         var half = (flagItems.Count + 1) / 2;
         FlagsListLeft.ItemsSource = flagItems.Take(half).ToList();
         FlagsListRight.ItemsSource = flagItems.Skip(half).ToList();
+
+        // What Apply compares against to work out which fields actually changed (see Lba2ActorPersistence.Save's
+        // own comment on why only changed fields are written back to the file).
+        savedSnapshot = new Lba2ActorPersistence.Snapshot(x, y, z, beta, body, anim, lifePoint, armor, hitForce, move, flags);
+
+        // A brand-new actor needs a "kind of actor" chosen before it can be saved to the game files at all (see
+        // EntityChanged's own comment) -- shown only here, not for an actor the file already has one for.
+        if (showingDummyBody)
+        {
+            if (!entityTableRead) { entityTable = Lba2EntityTable.Load(GameDirectory); entityTableRead = true; }
+            entityOptions = BuildEntityOptions(entityTable, cachedBodyOptions!);
+            entityFilter!.Refresh();
+            EntityPanel.Visibility = Visibility.Visible;
+            if (entityTable?.Entities.FirstOrDefault() is { } defaultEntity)
+            {
+                EntityCombo.Text = entityOptions.FirstOrDefault(o => o.Index == defaultEntity.Id)?.Display ?? defaultEntity.Id.ToString();
+                EntityChanged(defaultEntity.Id);
+            }
+            else
+            {
+                EntityCombo.Text = "no kind-of-actor data for this game -- can't be saved to the game files yet";
+                newActorEntity = null;
+            }
+        }
+        else
+        {
+            EntityPanel.Visibility = Visibility.Collapsed;
+            bodyOptionsForActor = cachedBodyOptions!;
+            newActorEntity = null;
+        }
     }
 
-    // CaretIndex/SelectAll live on the ComboBox's internal editable TextBox
-    // template part, not on ComboBox itself.
-    private static TextBox? GetEditableTextBox(ComboBox combo)
-    {
-        combo.ApplyTemplate();
-        return combo.Template?.FindName("PART_EditableTextBox", combo) as TextBox;
-    }
+    // What was last either loaded from, or successfully saved to, the scene file -- null until the first
+    // successful load (LoadCurrentValues failing early, above, leaves it null; Apply then knows there is nothing
+    // to safely compare against and skips trying to persist at all rather than guessing every field "changed").
+    private Lba2ActorPersistence.Snapshot? savedSnapshot;
 
-    // Live-filters a combo's dropdown to items whose display text contains
-    // what's typed so far (case-insensitive) -- with 400+ body names and
-    // ~90 animation names, scrolling to find one by eye is slow; typing
-    // part of a name narrows the list immediately. Only ItemsSource is
-    // touched, never SelectedItem/SelectedIndex, so the user's own typed
-    // text and caret position come through untouched.
-    private static void FilterCombo(ComboBox combo, IReadOnlyList<NamedOption> allOptions, ref bool suppress)
+    // On losing focus, text that doesn't parse to a whole number at all reverts to whatever is already
+    // committed (CommitPreviewChange itself only ever silently no-ops on unparseable text; it never reverts
+    // the display). A number that isn't one of the dropdown's own named entries is left as typed -- Apply
+    // accepts any whole number for body/animation regardless of whether the picker happens to have a name
+    // for it, so the box does too.
+    private static void RevertIfInvalid(ComboBox combo, IReadOnlyList<FilterableComboBox.Option> options, int committedValue)
     {
-        if (suppress) return;
-        var text = combo.Text;
-        var caret = GetEditableTextBox(combo)?.CaretIndex ?? text.Length;
-        var filtered = string.IsNullOrWhiteSpace(text)
-            ? allOptions
-            : allOptions.Where(o => o.Display.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
-
-        suppress = true;
-        combo.ItemsSource = filtered;
-        combo.Text = text;
-        var editBox = GetEditableTextBox(combo);
-        if (editBox is not null) editBox.CaretIndex = caret;
-        combo.IsDropDownOpen = combo.IsKeyboardFocused && filtered.Count > 0 && filtered.Count < allOptions.Count;
-        suppress = false;
-    }
-
-    // Restores the full, unfiltered list on refocusing the combo (e.g. the
-    // user filtered down to one entry, picked it, then clicks back in to
-    // pick a different one -- without this they'd only ever see that one
-    // leftover match), and selects the current text so the very next
-    // keystroke starts a fresh filter instead of appending to it.
-    private static void ResetComboFilter(ComboBox combo, IReadOnlyList<NamedOption> allOptions, ref bool suppress)
-    {
-        suppress = true;
-        var text = combo.Text;
-        combo.ItemsSource = allOptions;
-        combo.Text = text;
-        suppress = false;
-        GetEditableTextBox(combo)?.SelectAll();
-    }
-
-    // Real user typing (not one of FilterCombo/ResetComboFilter's own
-    // suppressed Text assignments) also schedules a debounced commit -- see
-    // textCommitTimer's own comment for why debounced rather than instant.
-    private void BodyCombo_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        FilterCombo(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-        if (!suppressBodyTextChanged) { textCommitTimer!.Stop(); textCommitTimer.Start(); }
-    }
-    private void AnimCombo_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        FilterCombo(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
-        if (!suppressAnimTextChanged) { textCommitTimer!.Stop(); textCommitTimer.Start(); }
-    }
-    private void BodyCombo_GotFocus(object sender, RoutedEventArgs e) => ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-    // Re-fetches this actor's own native moveset every time the dropdown is
-    // actually opened, rather than only once when the window was
-    // constructed -- the native side's own lookup only succeeds while this
-    // actor's scene happens to be the one currently loaded (see
-    // RendererGetActorNativeAnims's own comment), which frequently isn't
-    // true yet at window-open time but may become true by the time the user
-    // actually opens this dropdown (e.g. after panning the main view, or
-    // after the native side's own opportunistic per-scene-load cache -- see
-    // CachedNativeAnims -- has since been populated). Confirmed by report
-    // that without this, the "natural moveset" section looked suspiciously
-    // identical across different actors: most were silently falling back to
-    // the one-time, scene-not-loaded-yet full-archive list from
-    // construction and never getting another chance to correct itself.
-    private void AnimCombo_GotFocus(object sender, RoutedEventArgs e)
-    {
-        animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions!);
-        ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
-    }
-
-    // Picking an item from the dropdown updates the ComboBox's own Text to
-    // match it, which fires the *same* TextChangedEvent typing does (see
-    // that handler's own comment on why it's wired this way) -- so without
-    // this, FilterCombo immediately narrowed ItemsSource down to just the
-    // one just-picked entry, leaving every subsequent dropdown open showing
-    // only that one item until the text was cleared by hand. Restoring the
-    // full list right after (suppressed, so it doesn't re-fire filtering)
-    // undoes that narrowing regardless of whether it happened, since a
-    // selection is never itself a filter request -- only typing is.
-    // Re-running ResetComboFilter a second time, deferred to Background
-    // priority, is what actually fixes the dropdown-sticks-to-one-entry
-    // regression: an editable ComboBox syncs its own Text to match the
-    // newly-picked item as part of the very same selection operation, which
-    // fires the *same* TextChanged event typing does (see FilterCombo's own
-    // comment) -- but WPF doesn't guarantee that sync happens before this
-    // SelectionChanged handler runs. When it lands after (which real mouse
-    // clicks on a dropdown popup item appear to do, unlike keyboard Down+
-    // Enter selection -- the two weren't actually equivalent, despite
-    // looking that way when this was first "fixed" and verified only via
-    // keyboard selection), the immediate ResetComboFilter below runs too
-    // early: it restores the full list, then the late TextChanged fires and
-    // FilterCombo narrows it right back down to just the picked entry,
-    // which is exactly the regression reported. Re-running ResetComboFilter
-    // once more after every dispatcher-queued work from this same selection
-    // (including that late TextChanged) has already run undoes that,
-    // regardless of which order this particular selection happened to use --
-    // it's a no-op when the immediate call above already had the last word.
-    // Also fixes a second, related bug found while cleaning up the main
-    // window's own new Island/Scene pickers (same underlying mechanism,
-    // just never previously exercised here): picking an item from an
-    // already-*filtered* list (type a few letters, then click one of the
-    // narrowed-down matches) left the text box blank instead of showing the
-    // picked item's text -- WPF's own automatic selection-to-text sync for
-    // an editable ComboBox apparently loses track of what to display when
-    // ItemsSource gets swapped back to the full list (by ResetComboFilter)
-    // while that sync is still in-flight. Setting Text ourselves from the
-    // actual selected item, rather than trusting that sync to happen at
-    // all, sidesteps it entirely instead of chasing WPF's own internal
-    // timing.
-    private void BodyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (suppressBodyTextChanged) return;
-        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: BodyCombo selection changed, text='{BodyCombo.Text}'");
-        if (BodyCombo.SelectedItem is NamedOption selected) { suppressBodyTextChanged = true; BodyCombo.Text = selected.Display; suppressBodyTextChanged = false; }
-        CommitPreviewChange();
-        ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged);
-        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            ResetComboFilter(BodyCombo, cachedBodyOptions!, ref suppressBodyTextChanged)));
-    }
-    private void AnimCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (suppressAnimTextChanged) return;
-        DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: AnimCombo selection changed, text='{AnimCombo.Text}'");
-        if (AnimCombo.SelectedItem is NamedOption selected) { suppressAnimTextChanged = true; AnimCombo.Text = selected.Display; suppressAnimTextChanged = false; }
-        CommitPreviewChange();
-        ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged);
-        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            ResetComboFilter(AnimCombo, animOptionsForActor, ref suppressAnimTextChanged)));
-    }
-    // If focus leaves the box without landing on a real, resolvable entry
-    // (typed text that doesn't match any known index, or was left mid-
-    // filter), put back whatever was last actually committed rather than
-    // leaving unresolvable text sitting there -- CommitPreviewChange itself
-    // only ever silently no-ops on unparseable text, it never reverts it.
-    private static void RevertIfUnresolved(ComboBox combo, int committedValue, IReadOnlyList<NamedOption> allOptions, ref bool suppress)
-    {
-        // -1 is valid for the body box: an actor with no body.
-        if (int.TryParse(ParseLeadingIndex(combo.Text), out var value) && (value == -1 || allOptions.Any(o => o.Index == value))) return;
-        var match = allOptions.FirstOrDefault(o => o.Index == committedValue);
-        suppress = true;
-        combo.ItemsSource = allOptions;
-        combo.Text = match?.Display ?? committedValue.ToString();
-        suppress = false;
-    }
-    private void BodyCombo_LostFocus(object sender, RoutedEventArgs e)
-    {
-        RevertIfUnresolved(BodyCombo, previewBody, cachedBodyOptions!, ref suppressBodyTextChanged);
-        CommitPreviewChange();
-    }
-    private void AnimCombo_LostFocus(object sender, RoutedEventArgs e)
-    {
-        RevertIfUnresolved(AnimCombo, previewAnim, animOptionsForActor, ref suppressAnimTextChanged);
-        CommitPreviewChange();
+        if (int.TryParse(ParseLeadingIndex(combo.Text), out _)) return;
+        combo.Text = options.FirstOrDefault(o => o.Index == committedValue)?.Display ?? committedValue.ToString();
     }
 
     // Runs whenever the body/animation selection is actually committed
@@ -495,6 +504,9 @@ public partial class ActorAttributesWindow : Window
     {
         if (!int.TryParse(ParseLeadingIndex(BodyCombo.Text), out var body)) return;
         var anim = int.TryParse(ParseLeadingIndex(AnimCombo.Text), out var parsedAnim) ? parsedAnim : 0;
+        // a different body: its own kind of actor's animations, and an animation that belongs to it
+        if (syncedBody is { } before && body != before) anim = SyncAnimationsToBody(body, anim);
+        syncedBody = body;
         if (previewCalibration.HasValue && body == previewBody && anim == previewAnim) return; // no real change
 
         previewBody = body;
@@ -616,8 +628,27 @@ public partial class ActorAttributesWindow : Window
             && int.TryParse(move, out imove);
     }
 
+    // Explore mode looks but doesn't change: the fields stay readable, the preview still plays, and Apply is off.
+    public void MakeViewOnly()
+    {
+        ApplyButton.IsEnabled = false;
+        ApplyButton.ToolTip = "Explore mode only looks; switch to Build mode to change the actor.";
+        Title += " (view only)";
+    }
+    // Ctrl+S applies, the same as every other window's own "save" shortcut (ActorScriptWindow, the scene
+    // editors, ...) -- except when a text box has focus, so it does not fight that box's own text-editing
+    // undo/selection or, for BodyCombo/AnimCombo, its live filtering.
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control || e.Key != Key.S || !ApplyButton.IsEnabled) return;
+        if (Keyboard.FocusedElement is TextBoxBase) return;
+        Apply_Click(sender, e);
+        e.Handled = true;
+    }
+
     private void Apply_Click(object sender, RoutedEventArgs e)
     {
+        using var busy = UiBusy.Cursor();
         DebugLog.Log($"ActorAttributesWindow[{actorIndex}]: Apply clicked");
         var library = nativeRenderer.RendererLibrary;
         if (library is null) { StatusLabel.Text = "Renderer unavailable."; return; }
@@ -641,23 +672,55 @@ public partial class ActorAttributesWindow : Window
         // replace just the exposed ones, rather than reconstructing the
         // whole word from only what's checked here.
         var okFlags = false;
+        var newFlags = 0u;
         if (library.GetActorFlags(actorIndex, out var currentFlags))
         {
             var knownMask = flagItems.Aggregate(0u, (mask, item) => mask | item.Bit);
-            var newFlags = (currentFlags & ~knownMask) | flagItems.Where(i => i.IsChecked).Aggregate(0u, (mask, item) => mask | item.Bit);
+            newFlags = (currentFlags & ~knownMask) | flagItems.Where(i => i.IsChecked).Aggregate(0u, (mask, item) => mask | item.Bit);
             okFlags = library.SetActorFlags(actorIndex, newFlags);
         }
 
-        StatusLabel.Text = okAttrs && okPos && okFlags
-            ? "Applied for this session. Not yet saved to the game's files."
-            : "Failed to apply -- this actor may no longer be valid (e.g. after switching islands).";
+        if (!okAttrs || !okPos || !okFlags)
+        {
+            StatusLabel.Text = "Failed to apply -- this actor may no longer be valid (e.g. after switching islands).";
+        }
+        else
+        {
+            showingDummyBody = false;
+            RenderPreviewFrame();
+            StatusLabel.Text = TrySaveToFile(x, y, z, beta, body, anim, lifePoint, armor, hitForce, move, newFlags);
+        }
+    }
 
-        // A successful SetActorAttributes is exactly what clears the native
-        // side's own IsPlaceholderBody (see its own comment) -- mirror that
-        // here so the preview switches from the dummy body over to this
-        // actor's own real body/anim on the very next render rather than
-        // waiting for the window to be closed and reopened.
-        if (okAttrs) { showingDummyBody = false; RenderPreviewFrame(); }
+    // Writes the edit into the actor's own scene record too, so it survives closing the app -- not just the
+    // live session SetActorAttributes/SetActorPosition/SetActorFlags above already updated. Returns the status
+    // line to show (never throws: every failure here is reported, not fatal, since the session-only apply above
+    // already succeeded regardless of whether this does).
+    private string TrySaveToFile(int x, int y, int z, int beta, int body, int anim, int lifePoint, int armor, int hitForce, int move, uint flags)
+    {
+        var library = nativeRenderer.RendererLibrary;
+        if (savedSnapshot is not { } original || library is null) return "Applied for this session. Not yet saved to the game's files.";
+        if (Lba2ActorPersistence.Locate(library, actorIndex) is not { } located)
+            return "Applied for this session, but couldn't be saved to the game files (this actor's scene isn't the one currently loaded right now).";
+
+        var updated = new Lba2ActorPersistence.Snapshot(x, y, z, beta, body, anim, lifePoint, armor, hitForce, move, flags);
+        var error = Lba2ActorPersistence.Save(GameDirectory, located.Scene, located.IndexInScene, original, updated, out var bodyAnimNote, newActorEntity);
+        if (error is not null) return $"Applied for this session, but not saved to the game files: {error}";
+
+        // The actor is now in the scene file: it isn't "new" any more, so the Entity picker (only ever offered
+        // for one that wasn't yet) has nothing further to do, and a later Apply falls into the ordinary
+        // existing-actor path above on its own (indexInScene now points at a real Actors[] entry).
+        if (newActorEntity is not null) { newActorEntity = null; EntityPanel.Visibility = Visibility.Collapsed; }
+
+        savedSnapshot = updated with
+        {
+            // The two fields Save may have refused (bodyAnimNote set): keep the snapshot at what the file still
+            // actually has, so a later Apply that leaves the box exactly as it is now doesn't count as "unchanged"
+            // and skip retrying it -- e.g. once the entity table gains that body some other way.
+            Body = bodyAnimNote?.Contains("body", StringComparison.Ordinal) == true ? original.Body : updated.Body,
+            Anim = bodyAnimNote?.Contains("animation", StringComparison.Ordinal) == true ? original.Anim : updated.Anim,
+        };
+        return bodyAnimNote is null ? "Saved to the game's files." : $"Saved to the game's files, except: {bodyAnimNote} (stays session-only).";
     }
 
     private void EditScript_Click(object sender, RoutedEventArgs e) => OpenScriptRequested?.Invoke(actorIndex);

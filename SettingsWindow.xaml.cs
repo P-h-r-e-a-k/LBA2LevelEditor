@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using LBA2LevelEditor.Scenes;
 using Microsoft.Win32;
 
 namespace LBA2LevelEditor;
@@ -16,6 +17,22 @@ public partial class SettingsWindow : Window
         GameDirectoryBox.Text = EditorSettings.Current.GameDirectory;
         Lba1DirectoryBox.Text = EditorSettings.Current.Lba1Directory;
         LowercaseNamesCheck.IsChecked = EditorSettings.Current.LowercaseScriptNames;
+        UndoStepsBox.Text = EditorSettings.Current.UndoMaxSteps.ToString();
+        UndoMegabytesBox.Text = EditorSettings.Current.UndoMaxMegabytes.ToString();
+        RefreshUndoHistorySize();
+    }
+
+    private void RefreshUndoHistorySize()
+    {
+        var steps = SceneHistory.UndoCount + SceneHistory.RedoCount;
+        var mb = SceneHistory.CurrentBytes / (1024.0 * 1024.0);
+        UndoHistorySizeText.Text = steps == 0 ? "Nothing stored yet." : $"{steps} step{(steps == 1 ? "" : "s")} stored, {mb:0.0} MB.";
+    }
+
+    private void ClearUndoHistory_Click(object sender, RoutedEventArgs e)
+    {
+        SceneHistory.Clear();
+        RefreshUndoHistorySize();
     }
 
     private void Browse_Click(object sender, RoutedEventArgs e)
@@ -42,6 +59,7 @@ public partial class SettingsWindow : Window
     {
         ValidationText.Text = "";
         Lba1ValidationText.Text = "";
+        UndoValidationText.Text = "";
 
         // Either folder can stay blank (a user may own only one of the games); anything filled in must be the real thing.
         var path = GameDirectoryBox.Text.Trim();
@@ -56,6 +74,16 @@ public partial class SettingsWindow : Window
             Lba1ValidationText.Text = "Not an LBA1 folder (needs SCENE, LBA_GRI, LBA_BLL, LBA_BRK, RESS).";
             return;
         }
+        if (!int.TryParse(UndoStepsBox.Text.Trim(), out var undoSteps) || undoSteps < 1)
+        {
+            UndoValidationText.Text = "Steps to remember must be a whole number of 1 or more.";
+            return;
+        }
+        if (!int.TryParse(UndoMegabytesBox.Text.Trim(), out var undoMegabytes) || undoMegabytes < 1)
+        {
+            UndoValidationText.Text = "Storage limit must be a whole number of 1 or more.";
+            return;
+        }
 
         var settings = EditorSettings.Current;
         GameDirectoryChanged = !string.Equals(settings.GameDirectory, path, StringComparison.OrdinalIgnoreCase);
@@ -64,6 +92,8 @@ public partial class SettingsWindow : Window
         settings.Lba1Directory = lba1Path;
         ScriptNamesChanged = settings.LowercaseScriptNames != (LowercaseNamesCheck.IsChecked == true);
         settings.LowercaseScriptNames = LowercaseNamesCheck.IsChecked == true;
+        settings.UndoMaxSteps = undoSteps;
+        settings.UndoMaxMegabytes = undoMegabytes;
         settings.Save();
         DialogResult = true;
     }

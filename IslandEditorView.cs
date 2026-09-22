@@ -36,11 +36,11 @@ internal sealed class IslandEditorView
 
     private static readonly (string Group, (Tool Tool, string Name, string Tip)[] Items)[] ToolGroups =
     {
-        ("VIEW", new[]
+        ("View", new[]
         {
             (Tool.Navigate, "Move the view", "No editing: drag to orbit, the wheel zooms, the middle button pans (the view is never changed by clicking)"),
         }),
-        ("HEIGHT", new[]
+        ("Height", new[]
         {
             (Tool.Raise, "Raise", "Hold to build the ground up under the brush"),
             (Tool.Lower, "Lower", "Hold to dig the ground down"),
@@ -51,7 +51,7 @@ internal sealed class IslandEditorView
             (Tool.Terrace, "Terrace", "Snaps heights to multiples of the Terrace step"),
             (Tool.Relief, "Relief x", "Exaggerates (>1) or flattens (<1) the relief under the brush around its mean height"),
         }),
-        ("LIGHT & SHADOW", new[]
+        ("Light & shadow", new[]
         {
             (Tool.PaintLight, "Set light", "Paints the brightness (0-15) given by the Light value"),
             (Tool.Darken, "Add shadow", "Hold to darken: paint a shadow"),
@@ -61,7 +61,7 @@ internal sealed class IslandEditorView
             (Tool.BlobShadow, "Blob shadow", "Click to drop a round shadow (the Light value sets its depth)"),
             (Tool.WaterDepth, "Water depth", "Sets how far Twinsen sinks on water and marsh polygons (0-15 steps of 200 units)"),
         }),
-        ("GROUND", new[]
+        ("Ground", new[]
         {
             (Tool.Eyedropper, "Pick triangle", "Click to take the texture, game code and diagonal of a triangle"),
             (Tool.PaintTexture, "Paint picked", "Paints the picked triangle's texture (and diagonal if ticked) onto the cells"),
@@ -69,7 +69,7 @@ internal sealed class IslandEditorView
             (Tool.PaintCode, "Paint game code", "Sets what the ground does (water, lava, electric, conveyor ...) without touching the picture"),
             (Tool.FixDiagonals, "Fix diagonals", "Re-cuts the cells under the brush along their flatter diagonal (after big height edits)"),
         }),
-        ("OBJECTS", new[]
+        ("Objects", new[]
         {
             (Tool.SelectDecor, "Select / move", "Click an object to select it, drag to move it, Delete removes it"),
             (Tool.AddDecor, "Add object", "Click to place a new object (the Body number of the island's OBL file)"),
@@ -132,8 +132,8 @@ internal sealed class IslandEditorView
     private readonly TextBox shadowDepthBox = new() { Text = "5" };
     private readonly CheckBox terrainShadowBox = new() { Content = "Terrain casts shadows", IsChecked = true };
     private readonly CheckBox decorShadowBox = new() { Content = "Objects cast shadows" };
-    private readonly TextBlock info = new() { Foreground = Brushes.Gainsboro, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
-    private readonly Canvas profile = new() { Height = 96, Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), ClipToBounds = true };
+    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
+    private readonly Canvas profile = new() { Height = 96, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), ClipToBounds = true };
     private readonly Image atlasImage = new() { Width = 256, Height = 256, Stretch = Stretch.Fill };
     private readonly Canvas atlasCanvas = new() { Width = 256, Height = 256 };
     private readonly Rectangle atlasSelection = new() { Stroke = Brushes.Yellow, StrokeThickness = 1, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
@@ -145,7 +145,7 @@ internal sealed class IslandEditorView
     private readonly StackPanel decorPanel = new();
     private bool loadingFields;
     private string? currentName;
-    private static readonly Brush Fore = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
+    private static readonly Brush Fore = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
 
     public event Action<string>? StatusChanged;
     public event Action? Saved;
@@ -187,16 +187,16 @@ internal sealed class IslandEditorView
 
     // ---- layout ---------------------------------------------------------------------------------------------------------------------------
 
-    private static Brush Muted => new SolidColorBrush(Color.FromRgb(0x89, 0x95, 0x8B));
+    private static Brush Muted => new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A));
 
     private static readonly Style ButtonStyle = (Style)System.Windows.Markup.XamlReader.Parse(
         "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>" +
-        "<Setter Property='Foreground' Value='#D5D8C6'/><Setter Property='Background' Value='#1F2B25'/><Setter Property='BorderBrush' Value='#3E4C44'/>" +
+        "<Setter Property='Foreground' Value='#10243E'/><Setter Property='Background' Value='#C3DBF5'/><Setter Property='BorderBrush' Value='#A9C3E0'/>" +
         "<Setter Property='Padding' Value='9,3'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>" +
         "<Border x:Name='B' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' Padding='{TemplateBinding Padding}'>" +
         "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers>" +
-        "<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='B' Property='Background' Value='#2C3C33'/></Trigger>" +
-        "<Trigger Property='IsPressed' Value='True'><Setter TargetName='B' Property='Background' Value='#3A4F43'/></Trigger>" +
+        "<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='B' Property='Background' Value='#C3DBF5'/></Trigger>" +
+        "<Trigger Property='IsPressed' Value='True'><Setter TargetName='B' Property='Background' Value='#A9C3E0'/></Trigger>" +
         "<Trigger Property='IsEnabled' Value='False'><Setter TargetName='B' Property='Opacity' Value='0.45'/></Trigger>" +
         "</ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>");
 
@@ -237,7 +237,7 @@ internal sealed class IslandEditorView
         var stack = new StackPanel { Margin = new Thickness(14, 10, 14, 14) };
         stack.Children.Add(actions);
         stack.Children.Add(liveNote);
-        stack.Children.Add(Section("TOP-DOWN MAP", mapRow, open: false, out _));
+        stack.Children.Add(Section("Top-down map", mapRow, open: false, out _));
         var tools = new StackPanel();
         foreach (var (group, items) in ToolGroups)
         {
@@ -253,13 +253,13 @@ internal sealed class IslandEditorView
             }
             tools.Children.Add(grid);
         }
-        stack.Children.Add(Section("TOOLS", tools, open: true, out _));
+        stack.Children.Add(Section("Tools", tools, open: true, out _));
 
         var brush = new StackPanel();
         brush.Children.Add(SliderRow("Radius", radius, "vertices (cells); [ and ] change it"));
         brush.Children.Add(SliderRow("Hardness", hardness, "how much of the radius is full strength"));
         brush.Children.Add(SliderRow("Strength", strength, "rate while held"));
-        stack.Children.Add(Section("BRUSH", brush, open: true, out _));
+        stack.Children.Add(Section("Brush", brush, open: true, out _));
 
         var settings = new StackPanel();
         settings.Children.Add(FieldRow("Level", levelBox, "world units; the height Flatten pulls to"));
@@ -273,12 +273,12 @@ internal sealed class IslandEditorView
         horizontalBox.Foreground = followBox.Foreground = diagonalBox.Foreground = Fore;
         terrainShadowBox.Foreground = decorShadowBox.Foreground = Fore;
         settings.Children.Add(horizontalBox); settings.Children.Add(followBox); settings.Children.Add(diagonalBox);
-        stack.Children.Add(Section("TOOL SETTINGS", settings, open: true, out _));
+        stack.Children.Add(Section("Tool settings", settings, open: true, out _));
 
-        stack.Children.Add(Section("UNDER THE POINTER", info, open: true, out _));
+        stack.Children.Add(Section("Under the pointer", info, open: true, out _));
 
         BuildDecorPanel();
-        stack.Children.Add(Section("SELECTED OBJECT", decorPanel, open: true, out _));
+        stack.Children.Add(Section("Selected object", decorPanel, open: true, out _));
 
         var bake = new StackPanel();
         bake.Children.Add(FieldRow("Azimuth °", azimuthBox, "direction the light comes from (the cube's BetaLight is 360 - azimuth)"));
@@ -300,14 +300,14 @@ internal sealed class IslandEditorView
         BakeButton("Shadows under objects", "Bakes a footprint shadow under every object at least 2 cells across (like the retail buildings)", (_, _) => FootprintsAll(false));
         BakeButton("Remove all shadows", "Lifts every shadowed vertex back to the plain lighting", (_, _) => RemoveAllShadows());
         bake.Children.Add(bakeButtons);
-        stack.Children.Add(Section("BAKED LIGHT AND SHADOWS", bake, open: false, out _));
+        stack.Children.Add(Section("Baked light and shadows", bake, open: false, out _));
 
         var atlas = new StackPanel();
         atlas.Children.Add(new TextBlock { Text = "Drag a square, then use Paint atlas tile.", Foreground = Muted, FontSize = 10, Margin = new Thickness(0, 0, 0, 4) });
         atlasCanvas.Children.Add(atlasImage); atlasCanvas.Children.Add(atlasSelection);
         atlasCanvas.MouseLeftButtonDown += AtlasDown; atlasCanvas.MouseMove += AtlasMove; atlasCanvas.MouseLeftButtonUp += (_, _) => atlasCanvas.ReleaseMouseCapture();
         atlas.Children.Add(new Border { BorderBrush = Muted, BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left });
-        stack.Children.Add(Section("GROUND ATLAS", atlas, open: false, out openAtlas));
+        stack.Children.Add(Section("Ground atlas", atlas, open: false, out openAtlas));
         Panel = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = stack };
 
         // map area: the map and the profile strip
@@ -360,9 +360,9 @@ internal sealed class IslandEditorView
         box.ToolTip = tip; box.Padding = new Thickness(3);
         if (box is TextBox)
         {
-            box.Background = new SolidColorBrush(Color.FromRgb(0x0F, 0x15, 0x12));
-            box.Foreground = new SolidColorBrush(Color.FromRgb(0xDC, 0xE0, 0xC8));
-            box.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x47, 0x40));
+            box.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+            box.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+            box.BorderBrush = new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0));
         }
         Grid.SetColumn(box, 1);
         grid.Children.Add(box);
@@ -498,7 +498,7 @@ internal sealed class IslandEditorView
     {
         if (island is null) return;
         var problems = IslandValidator.Validate(island);
-        MessageBox.Show(Owner, problems.Count == 0 ? "No problems found." : string.Join("\n", problems.Take(30).Select(p => (p.IsError ? "ERROR  " : "note   ") + p.Message)), "Island check", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(Owner, problems.Count == 0 ? "No problems found." : string.Join("\n", problems.Take(30).Select(p => (p.IsError ? "Error  " : "note   ") + p.Message)), "Island check", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void Weld()

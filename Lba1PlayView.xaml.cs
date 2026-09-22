@@ -484,12 +484,12 @@ public partial class Lba1PlayView : UserControl
             var cell = new Border
             {
                 Margin = new Thickness(3), Padding = new Thickness(6, 5, 6, 5), CornerRadius = new CornerRadius(3),
-                Background = i == inventorySelect ? new SolidColorBrush(Color.FromRgb(0x3A, 0x55, 0x4A)) : new SolidColorBrush(Color.FromRgb(0x13, 0x1B, 0x18)),
-                BorderBrush = i == inventorySelect ? Brushes.Gold : new SolidColorBrush(Color.FromRgb(0x34, 0x40, 0x39)), BorderThickness = new Thickness(i == inventorySelect ? 2 : 1),
+                Background = i == inventorySelect ? new SolidColorBrush(Color.FromRgb(0x1B, 0x6E, 0xC2)) : new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)),
+                BorderBrush = i == inventorySelect ? Brushes.Gold : new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0)), BorderThickness = new Thickness(i == inventorySelect ? 2 : 1),
                 Child = new TextBlock
                 {
                     Text = owned ? ItemName(i) : "—", FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis,
-                    Foreground = owned ? new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA)) : new SolidColorBrush(Color.FromRgb(0x55, 0x60, 0x58)),
+                    Foreground = owned ? (i == inventorySelect ? Brushes.White : new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E))) : new SolidColorBrush(Color.FromRgb(0x7C, 0x93, 0xAC)),
                 },
             };
             InventoryGrid.Children.Add(cell);
@@ -594,7 +594,7 @@ public partial class Lba1PlayView : UserControl
     }
 
     private string Speaker(int actor)
-        => actor == 0 ? "TWINSEN" : $"ACTOR {actor}";
+        => actor == 0 ? "Twinsen" : $"Actor {actor}";
 
     private void ShowDialogue()
     {
@@ -617,7 +617,7 @@ public partial class Lba1PlayView : UserControl
                 Foreground = i == choiceIndex ? Brushes.White : new SolidColorBrush(TextColour(box.Colour)),
             });
         }
-        DialogueHint.Text = box.Choices.Count > 0 ? "UP / DOWN choose   SPACE confirm" : "SPACE continue";
+        DialogueHint.Text = box.Choices.Count > 0 ? "Up / Down choose   Space confirm" : "Space continue";
     }
 
     // ---- drawing ----
@@ -709,7 +709,7 @@ public partial class Lba1PlayView : UserControl
             var border = new Border
             {
                 Child = text, Padding = new Thickness(8, 5, 8, 5), CornerRadius = new CornerRadius(5),
-                Background = new SolidColorBrush(Color.FromArgb(225, 11, 15, 18)), BorderBrush = new SolidColorBrush(TextColour(speaker.CoulObj)), BorderThickness = new Thickness(1),
+                Background = new SolidColorBrush(Color.FromArgb(225, 30, 41, 64)), BorderBrush = new SolidColorBrush(TextColour(speaker.CoulObj)), BorderThickness = new Thickness(1),
             };
             border.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             Canvas.SetLeft(border, above.X - border.DesiredSize.Width / 2);
@@ -932,7 +932,7 @@ internal sealed class Lba1PlayHostWindow : Window
     {
         Title = "LBA1 - play scene";
         Width = 1180; Height = 780; MinWidth = 760; MinHeight = 480;
-        Background = new SolidColorBrush(Color.FromRgb(0x10, 0x14, 0x18));
+        Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
         var view = new Lba1PlayView(game, images, directory);
         Content = view;
         Loaded += (_, _) => view.Start(scene);

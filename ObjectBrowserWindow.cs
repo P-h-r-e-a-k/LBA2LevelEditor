@@ -18,10 +18,10 @@ internal sealed class ObjectBrowserWindow : Window
     private sealed record Source(string Title, int Game, string Directory, string File, bool Static);
 
     private readonly ComboBox sourceBox = new() { Width = 200, Margin = new Thickness(0, 0, 10, 0) };
-    private readonly ListBox list = new() { Width = 130, FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), Foreground = new SolidColorBrush(Color.FromRgb(0xC5, 0xC6, 0xB9)) };
+    private readonly ListBox list = new() { Width = 130, FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
     private readonly Image view = new() { Stretch = Stretch.Uniform };
-    private readonly TextBlock info = new() { Foreground = Brushes.Gainsboro, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-    private readonly TextBlock status = new() { Foreground = Brushes.Gainsboro, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly CheckBox wire = new() { Content = "Wireframe" };
 
     private Source? source;
@@ -40,8 +40,8 @@ internal sealed class ObjectBrowserWindow : Window
         Title = "Objects and bodies";
         Width = 1100; Height = 780;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0x14, 0x1B, 0x19));
-        Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE6, 0xDA));
+        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
+        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
         BuildLayout();
         var sources = new List<Source>();
         if (Lba1Game.IsInstalled(lba1Directory ?? "") && File.Exists(System.IO.Path.Combine(lba1Directory!, "BODY.HQR"))) sources.Add(new("LBA1 bodies", 1, lba1Directory!, "BODY.HQR", false));
@@ -57,7 +57,7 @@ internal sealed class ObjectBrowserWindow : Window
         var root = new DockPanel();
         var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 6, 8, 6) };
         DockPanel.SetDock(top, Dock.Top);
-        top.Children.Add(new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Foreground = Brushes.Gray });
+        top.Children.Add(new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Foreground = UiBrushes.Muted });
         top.Children.Add(sourceBox);
         foreach (var (text, tip, handler) in new (string, string, RoutedEventHandler)[]
         {
@@ -73,7 +73,7 @@ internal sealed class ObjectBrowserWindow : Window
         wire.Foreground = Foreground; wire.VerticalAlignment = VerticalAlignment.Center; wire.Checked += (_, _) => Draw(); wire.Unchecked += (_, _) => Draw();
         top.Children.Add(wire);
         root.Children.Add(top);
-        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x13, 0x11)), Child = status };
+        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(bottom);
 
@@ -87,7 +87,7 @@ internal sealed class ObjectBrowserWindow : Window
         DockPanel.SetDock(right, Dock.Right);
         root.Children.Add(right);
 
-        var host = new Border { Background = new SolidColorBrush(Color.FromRgb(0x19, 0x1E, 0x27)), Child = view };
+        var host = new Border { Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)), Child = view };
         host.MouseLeftButtonDown += (_, e) => { drag = e.GetPosition(host); host.CaptureMouse(); };
         host.MouseMove += (_, e) => { if (drag is { } d && host.IsMouseCaptured) { var p = e.GetPosition(host); yaw += (float)(p.X - d.X) * 0.012f; drag = p; Draw(); } };
         host.MouseLeftButtonUp += (_, _) => { drag = null; host.ReleaseMouseCapture(); };
@@ -144,7 +144,7 @@ internal sealed class ObjectBrowserWindow : Window
         var w = (int)Math.Max(200, view.ActualWidth); var h = (int)Math.Max(200, view.ActualHeight);
         try
         {
-            using var bitmap = Renderer.Render(body, palette, w, h, yaw, wire.IsChecked == true);
+            using var bitmap = Renderer.Render(body, palette, w, h, yaw, wire.IsChecked == true, background: Renderer.ViewBackground, gridLine: Renderer.ViewGrid);
             using var stream = new MemoryStream();
             bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
             stream.Position = 0;
@@ -193,13 +193,8 @@ internal sealed class ObjectBrowserWindow : Window
             var bytes = File.ReadAllBytes(dialog.FileName);
             var check = Body.Read(bytes, source.Game, true);   // throws unless it is a body the engine limits allow
             if (MessageBox.Show(this, $"Replace entry {index} of {source.File} with this body ({check.Vertices.Count} points, {check.Faces.Count} polygons)? A .bak of the archive is kept.", Title, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            archive.SetEntry(index, HqrWriter.CompressedEntry(bytes, 1));
-            var path = System.IO.Path.Combine(source.Directory, source.File);
-            new FileTransaction().Write(path, archive.ToBytes(), saved =>
-            {
-                try { return HqrFile.Parse(saved).Read(index).AsSpan().SequenceEqual(bytes) ? null : "the replaced body differs after the save"; }
-                catch (Exception e) { return "the saved archive does not parse: " + e.Message; }
-            }).Commit();
+            archive.SetStored(index, bytes);
+            Scenes.HqrEntryStore.Save((Scenes.SceneGame)source.Game, source.Directory, $"Replace {source.File} entry {index}", new[] { new Scenes.HqrEntryStore.Edit(source.File, index, bytes) });
             Show(index);
             status.Text = $"Replaced entry {index} of {source.File} (the original archive is kept as .bak).";
         }
