@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // A small modal list with a filter box, for choosing one thing out of many (an entity, a scene slot ...). Built in code.
 internal sealed class ListPickWindow : Window

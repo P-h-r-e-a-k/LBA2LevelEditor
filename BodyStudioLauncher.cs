@@ -1,6 +1,6 @@
 using Forms = System.Windows.Forms;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Launches LBA Body Studio's MainForm (BodyStudio/MainForm.cs, absorbed
 // from the standalone LbaBodyStudio project) as its own top-level window

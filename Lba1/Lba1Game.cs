@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 internal sealed record Lba1SceneInfo(int Index, int Island, int ActorCount, int ZoneCount, IReadOnlyList<int> Exits);
 

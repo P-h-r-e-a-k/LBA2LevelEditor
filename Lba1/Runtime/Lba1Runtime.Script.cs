@@ -1,6 +1,6 @@
-using static LBA2LevelEditor.Lba1.Runtime.Lba1Const;
+using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // GERELIFE.C (life scripts) and GERETRAK.C (track scripts). Scripts run on each actor's own copy of its bytecode, because
 // the engine rewrites it while it runs (SWIF / ONEIF change their opcode, WAIT_NB_SECOND keeps its timer in the bytes).

@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // The patch table at the end of an LBA2 scene record (U32 count, then per patch S16 size + S16 offset).
 //

@@ -1,6 +1,6 @@
-using static LBA2LevelEditor.Lba1.Runtime.Lba1Const;
+using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 internal sealed partial class Lba1Runtime
 {

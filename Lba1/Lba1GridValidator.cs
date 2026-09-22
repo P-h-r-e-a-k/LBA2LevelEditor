@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Checks an LBA1 grid (LBA_GRI entry) against its block library (LBA_BLL entry) the way the engine will read them
 // (GRILLE.C: InitGrille, LoadUsedBrick, CopyMapToCube / DecompColonne).

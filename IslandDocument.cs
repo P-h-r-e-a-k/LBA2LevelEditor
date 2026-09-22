@@ -3,7 +3,7 @@ using System.Windows.Media.Imaging;
 using System.IO;
 using System.Buffers.Binary;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 internal sealed class IslandDocument
 {

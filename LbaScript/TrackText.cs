@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // A compiled script plus the named positions it defines (function names, C
 // labels, LABEL(n) symbols) as byte offsets -- what other actors' scripts

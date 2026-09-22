@@ -4,7 +4,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Renders Assets/DummyBody.lm2 -- a real LBA2 body payload, in the same raw
 // format a BODY.HQR entry decodes to -- directly through the absorbed Body

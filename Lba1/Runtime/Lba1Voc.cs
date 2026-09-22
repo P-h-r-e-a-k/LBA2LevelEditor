@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // LBA1's sound effects (SAMPLES.HQR) are Creative Voice Files. This turns one into a plain PCM WAV that Windows can play:
 // 8-bit unsigned mono blocks joined together, at the rate of the first data block.

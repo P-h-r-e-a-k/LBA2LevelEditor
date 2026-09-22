@@ -1,7 +1,7 @@
 using System.Text;
-using LBA2LevelEditor;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -26,7 +26,7 @@ internal static partial class GameFlagMining
         var entries = HqrArchive.CountEntries(scenePath);
         var text = HqrArchive.Open(Path.Combine(root, "TEXT.HQR"));
         var language = DetectEnglish(text);
-        var sceneNames = ReadHqd(@"E:\dump\LBA2LevelEditor\Assets\FileDesc\SCENE2.HQD");
+        var sceneNames = ReadHqd(@"E:\dump\LBAAssembler\Assets\FileDesc\SCENE2.HQD");
         var banks = new Dictionary<int, TextBank>();
         TextBank Bank(int island)
         {
@@ -134,7 +134,7 @@ internal static partial class GameFlagMining
         var entries = HqrArchive.CountEntries(scenePath);
         var text = HqrArchive.Open(Path.Combine(root, "TEXT.HQR"));
         var language = DetectEnglish(text);
-        var sceneNames = ReadHqd(@"E:\dump\LBA2LevelEditor\Assets\FileDesc\SCENE2.HQD");
+        var sceneNames = ReadHqd(@"E:\dump\LBAAssembler\Assets\FileDesc\SCENE2.HQD");
         var banks = new Dictionary<int, TextBank>();
         TextBank Bank(int island)
         {

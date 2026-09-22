@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Two things every one of the app's secondary windows should do the same way, so there is one place that
 // does them rather than each window repeating its own version:

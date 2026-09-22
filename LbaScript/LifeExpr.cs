@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Boolean condition expressions of the life language.
 //

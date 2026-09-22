@@ -1,6 +1,6 @@
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 internal enum SceneIssueSeverity { Error, Warning }
 

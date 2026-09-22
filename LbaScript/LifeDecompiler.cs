@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Cross-script names for operands that point into another actor's script (or
 // this actor's *track* from its life script): SET_TRACK / SET_TRACK_OBJ take a

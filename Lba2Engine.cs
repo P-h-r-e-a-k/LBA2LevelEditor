@@ -3,7 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The LBA2 community engine (native/lba2-classic-community) built as the full playable game, lba2cc.exe. It is a complete
 // port of the game (all of its assembly is C++), so "playing a scene" in the editor means running it against the game
@@ -29,7 +29,7 @@ internal static class Lba2Engine
                 foreach (var dir in new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "native"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBA2LevelEditor", "native"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "native"),
                 })
                 {
                     var path = Path.Combine(dir, $"lba2cc.{key}.exe");
@@ -131,7 +131,7 @@ internal static class Lba2Play
         try { Directory.CreateDirectory(user); return user; }
         catch (Exception error) when (error is UnauthorizedAccessException or IOException)
         {
-            user = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBA2LevelEditor", "lba2-play");
+            user = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "lba2-play");
             try { Directory.CreateDirectory(user); return user; }
             catch (Exception second) when (second is UnauthorizedAccessException or IOException) { problem = $"Couldn't create {user}: {second.Message}"; return null; }
         }

@@ -1,7 +1,7 @@
-using LBA2LevelEditor.Scenes;
-using static LBA2LevelEditor.Lba1.Runtime.Lba1Const;
+using LBAAssembler.Scenes;
+using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // EXTRA.C: the small flying and lying things of a scene: bonuses (money, life, magic, keys, clover leaves) dropped by
 // creatures and zones, projectiles thrown by actors, and Twinsen's magic ball with its homing return.

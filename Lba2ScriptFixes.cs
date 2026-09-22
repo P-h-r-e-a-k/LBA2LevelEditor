@@ -1,6 +1,6 @@
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Tools > LBA2: Fix scripting errors. Patches three known retail SCENE.HQR script bugs (docs/LBA2_SCRIPT_BUGS.md):
 //   * scene 36 (White Leaf Desert Bazaar): buying the holomap calls found_object(0) but never sets

@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // LBA1's films (.FLA, on the CD): a 16-byte header (version "V1.3", frame count, frames a second, size), a list of the
 // sound effects used, then frames. A frame is a list of "passes": a palette, a sound to start or stop, an information code,

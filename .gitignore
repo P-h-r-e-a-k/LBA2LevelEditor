@@ -16,5 +16,5 @@ obj
 *.suo
 debug.log
 release/*
-!release/LBA2LevelEditor.exe
+!release/LBAAssembler.exe
 settings.json

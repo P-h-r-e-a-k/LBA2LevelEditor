@@ -1,6 +1,6 @@
-# LBA2 Level Workshop
+# LBA Assembler
 
-A native Windows WPF viewer and editor for Little Big Adventure 2.
+A native Windows WPF viewer and editor for Little Big Adventure 1 and 2.
 
 ## Run
 
@@ -24,11 +24,11 @@ replaced when the exe changes), `Body Exports\` (Body Studio's default output fo
 trace of what the UI and the native engine are each doing, timestamped and interleaved, rotated to `editor.log.old`
 past 5 MB; `DebugLog`/`NativeDebugLog`, on in every build **while this is under test** - see that file's own comment
 for turning it off before a formal release). If the folder isn't writable it falls back to
-`%AppData%\LBA2LevelEditor` / `%LOCALAPPDATA%\LBA2LevelEditor`; a `settings.json` found only in `%AppData%` from an
+`%AppData%\LBAAssembler` / `%LOCALAPPDATA%\LBAAssembler`; a `settings.json` found only in `%AppData%` from an
 earlier version is copied next to the exe on first run.
 
 The one thing outside the folder is not ours: a single-file .NET app unpacks WPF's own native libraries to
-`%TEMP%\.net\LBA2LevelEditor` on launch (a disposable cache the .NET host manages). To redirect it, set the
+`%TEMP%\.net\LBAAssembler` on launch (a disposable cache the .NET host manages). To redirect it, set the
 `DOTNET_BUNDLE_EXTRACT_BASE_DIR` environment variable before starting the exe (for example from a `.cmd` file).
 
 ## Release build (single executable)
@@ -41,7 +41,7 @@ cd ..\..
 dotnet publish -p:PublishProfile=SingleFile
 ```
 
-This writes `release\LBA2LevelEditor.exe`: self-contained (no .NET install needed), with the native renderer, the dummy
+This writes `release\LBAAssembler.exe`: self-contained (no .NET install needed), with the native renderer, the dummy
 body and the scene/body/animation name lists embedded. Debug logging is off in that build unless
 `LBA2_EDITOR_DEBUG_LOG` names a file.
 
@@ -180,12 +180,12 @@ The **Game** selector under the menu switches between LBA2 and LBA1; set the LBA
   elf's body resolves and it turns to face the hero).
   The elf, Floppy the third elf, greets Twinsen (`Lba1DialogueText`, `Lba1PinkElf.Greeting`): text 287 of Principal Island's dialogue ("Hi, I'm Floppy the third elf, after
   all these years somebody has finally found me. Please help yourself to anything you find here."), appended after the fisherman's question (286) to the bank of all five
-  languages (English, French, German, Spanish, Italian; the four others hold the English until translated, and a translation later replaces it in place). The elf's script
+  languages (English, French, German, Spanish, Italian; the ones without a translation yet hold the English until one replaces it in place). The elf's script
   says it with `message(287)` once, the first time Twinsen is within 2500 units (game flag 226; nothing in the game's own scripts uses 220..254), and again whenever action is
   pressed within 1500 units, one press one greeting (a scene variable, 13, is held while the button is down). The game's text is in the DOS code page (CP 850, an
   e-acute is 0x82), which `Lba1DialogueText.Bytes` writes. The tool `elfxliff <folder>` writes the greeting as XLIFF 1.2, one file per language, with empty targets and notes
   for the translator (`translations/lba1-floppy-greeting.{fr,de,es,it}.xlf`); translations go into `Lba1PinkElf.Translations` (language number: 1 French, 2 German, 3 Spanish,
-  4 Italian). Tests: `store surprise` (text banks, the elf's script, upgrade of a first-version elf, a translation replacing the placeholder) and `runtime doors`
+  4 Italian - Italian done: "Ciao, sono Floppy, il terzo elfo! ..."). Tests: `store surprise` (text banks, the elf's script, upgrade of a first-version elf, a translation replacing the placeholder) and `runtime doors`
   (the greeting once, again on action, not on a held button, not from far away).
   Third, the boat trips of the three fishermen are opened up for chapter 6. How a trip works: the fisherman asks where to go
   (`add_choice` / `ask_choice`), takes 10 Kashes and sets the scene variable 0 (`var_cube(0)`) to the destination; his boat
@@ -724,7 +724,7 @@ the LBA1 view and the software view. Turn it off to see the plain markers.
 **Debug builds only:** to run a second instance against a *copy* of the game files (for testing) without touching your
 real settings, set `LBA2_EDITOR_SETTINGS_DIR` to a folder containing a `settings.json` with that copy as `GameDirectory`.
 The override is compiled out of Release builds (`#if DEBUG` in `EditorSettings.cs`); unset, settings live in
-`%AppData%\LBA2LevelEditor` as usual.
+`%AppData%\LBAAssembler` as usual.
 
 ## Source assets
 

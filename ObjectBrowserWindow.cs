@@ -6,9 +6,9 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using LbaBodyStudio;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Tools > LBA1 / LBA2: objects and bodies. Every body of BODY.HQR (both games) and LBA2's fixed objects (OBJFIX.HQR: the items, the holomap globes ...)
 // drawn by Body Studio's renderer, textures and game lighting included; drag to turn. Export a body as the game's own payload or as a .obj,

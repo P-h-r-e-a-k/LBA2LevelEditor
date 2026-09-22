@@ -1,7 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // A stand-in for the game folder that the native renderer reads while terrain edits haven't been saved: every file of the
 // game folder hard-linked (or copied, where a link can't be made), except the island being edited, which is a real copy that

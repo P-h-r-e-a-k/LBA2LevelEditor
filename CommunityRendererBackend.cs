@@ -5,7 +5,7 @@ using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows.Media;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 internal sealed class CommunityRendererBackend
 {
@@ -50,7 +50,7 @@ internal sealed class CommunityRendererBackend
         rendererLibraryPath = Path.Combine(repoRoot, "out", "build", "windows_ucrt64", "SOURCES", "3DEXT", "liblba2_renderer.dll");
         this.gameDirectory = gameDirectory;
         saveDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Twinsen", "LBA2", "save");
-        outputDirectory = Path.Combine(Path.GetTempPath(), "LBA2LevelEditor", "native-renders");
+        outputDirectory = Path.Combine(Path.GetTempPath(), "LBAAssembler", "native-renders");
         try { RendererLibrary = new RendererLibraryApi(rendererLibraryPath); } catch { RendererLibrary = null; }
     }
 

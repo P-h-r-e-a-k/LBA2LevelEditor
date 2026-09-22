@@ -4,7 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The zone inspector (DETAILS tab): pick a zone from the map or the list, see and edit its bounds,
 // its size and its type-specific data (for a cube change, the scene it leads to), and write the

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 public sealed class ScriptCompileException : Exception
 {

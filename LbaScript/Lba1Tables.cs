@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Opcode tables of Little Big Adventure 1's life and track scripts. The two games share the VM design
 // (same IF-chain / jump-by-offset model, END_COMPORTEMENT-terminated blocks) but not the numbering or

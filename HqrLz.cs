@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The LZ scheme of compressed HQR entries (methods 1 and 2), mirroring HqrArchive's decoder: groups of eight
 // items led by a flag byte (bit set = literal byte, clear = back-reference), a back-reference being a u16 with

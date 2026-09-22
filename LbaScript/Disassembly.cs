@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // A plain listing of a life and a track script, one instruction per line with its byte offset: the
 // "Disassembly" pane of the script window for games without the native decoder (LBA1).

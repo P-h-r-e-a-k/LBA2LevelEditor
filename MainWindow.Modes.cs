@@ -4,7 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The three modes of the main window.
 //   Explore  the scene is only looked at: the camera, zoom, layers, selecting actors and zones. Nothing can be changed.
@@ -84,7 +84,7 @@ public partial class MainWindow
     {
         if (!modeReady) return;
         // The game folder in the title: the editor saves into it, so any test or user can see which one is in use.
-        Title = $"LBA Level Workshop  -  {(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
+        Title = $"LBA Assembler  -  {(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
         BuildViewBar.Visibility = TerrainEditable ? Visibility.Visible : Visibility.Collapsed;
         var wantTerrain = editMode == EditMode.Build && buildTerrainView && TerrainEditable && ShowTerrainEditor();
         terrainToolsActive = wantTerrain;

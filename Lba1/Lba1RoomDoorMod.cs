@@ -1,7 +1,7 @@
 using System.IO;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Connects LBA1's unused bedroom (scene 61, "Some room (cut-out ?)") to the bricked-up arch on the east side of a
 // Lupin Burg house (scene 13), the way the game connects its other houses (the Rabbibunny house, scene 28, is the

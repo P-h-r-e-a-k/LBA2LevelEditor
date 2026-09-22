@@ -2,7 +2,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Wires an editable ComboBox up with type-to-filter narrowing and safe
 // mouse-click selection, for the main window's Island/Scene pickers.

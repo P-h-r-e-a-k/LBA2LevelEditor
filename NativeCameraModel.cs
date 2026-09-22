@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The native renderer's camera as a pinhole model fitted from its own projection (lba2_renderer_project_point), so the main
 // window can turn a mouse position into a point on the ground (for editing the terrain in the 3D view) and project points

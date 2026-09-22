@@ -4,10 +4,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using LBA2LevelEditor.Assets;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Assets;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Tools > Bricks and sprites: the game's run-length pictures (LBA1 and LBA2 bricks, LBA1 sprites) with a small pixel editor, PNG export and
 // import (colours snap to the game's palette) and save back into the game file (a .bak of the original, the other pictures untouched).

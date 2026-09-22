@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using LBA2LevelEditor;
+using LBAAssembler;
 
 namespace ScriptRoundTrip;
 
@@ -103,10 +103,10 @@ internal static class Lba2PlayTests
                 else if (!File.Exists(target)) CreateHardLinkW(target, file, IntPtr.Zero);
             }
             var before = ObjectsIn(engine, dir, user, 5);
-            var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, dir);
+            var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, dir);
             var scene = store.Load(5);
             var (x, y, z) = (scene.Hero.X + 512, scene.Hero.Y, scene.Hero.Z);
-            LBA2LevelEditor.Scenes.SceneOps.AddActor(scene, LBA2LevelEditor.Scenes.SceneOps.BlankActor(LBA2LevelEditor.Scenes.SceneGame.Lba2, x, y, z));
+            LBAAssembler.Scenes.SceneOps.AddActor(scene, LBAAssembler.Scenes.SceneOps.BlankActor(LBAAssembler.Scenes.SceneGame.Lba2, x, y, z));
             store.Save(5, scene);
             var after = ObjectsIn(engine, dir, user, 5);
             var ok = before > 0 && after == before + 1;

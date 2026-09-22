@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Windows;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // A scene's whole isometric map as one BGRA bitmap plus the mapping from world coordinates.
 // Canvas position of a world point (X, Y, Z): see Project.

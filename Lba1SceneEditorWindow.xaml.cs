@@ -6,11 +6,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Lba1.Runtime;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Lba1;
+using LBAAssembler.Lba1.Runtime;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Edits one LBA1 scene as data (SceneDocument): its actors, zones and track points are drawn on the scene's map and can
 // be picked, dragged, added and deleted, their numbers edited, and every step undone. Nothing reaches the game files

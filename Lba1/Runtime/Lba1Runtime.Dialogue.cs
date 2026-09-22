@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // What the player sees a script say: a dialogue box (MESSAGE, zone texts, BIG_MESSAGE, choices) or a bubble over an actor
 // (SAY_MESSAGE). Colour is a palette family (0..15; the text is drawn from colour * 16 to colour * 16 + 12).

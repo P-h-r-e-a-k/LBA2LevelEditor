@@ -8,9 +8,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using LBA2LevelEditor.Terrain;
+using LBAAssembler.Terrain;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The island terrain editor, hosted by the main window's Build mode (it is not a window of its own). An island (.ILE) from
 // above, edited with brushes: heights (with levelling tools for uneven islands), the baked light and shadows, the ground

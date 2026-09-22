@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 /// <summary>
 /// Interaction logic for App.xaml

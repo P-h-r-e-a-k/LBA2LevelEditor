@@ -1,7 +1,7 @@
-using LBA2LevelEditor.Lba1.Runtime;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Lba1.Runtime;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // A blank scene for an existing slot: an empty world with a flat floor to stand on and Twinsen standing on it, nothing
 // else. Scenes can't be added to the game, so "new" means "replace this slot"; the slot keeps its island, text bank,

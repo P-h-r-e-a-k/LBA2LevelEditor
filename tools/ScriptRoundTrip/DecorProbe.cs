@@ -1,6 +1,6 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Scenes;
-using LBA2LevelEditor.Terrain;
+using LBAAssembler;
+using LBAAssembler.Scenes;
+using LBAAssembler.Terrain;
 
 namespace ScriptRoundTrip;
 

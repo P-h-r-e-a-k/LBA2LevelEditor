@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Best-effort breadcrumb trail for tracing intermittent crashes -- the kind
 // that show up once or twice then stop reproducing (confirmed: adding an

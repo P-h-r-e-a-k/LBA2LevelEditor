@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // One editable value of a zone, with the label the inspector shows for it.
 internal sealed record ZoneField(string Label, Func<ZoneData, int> Get, Action<ZoneData, int> Set, string? Hint = null);

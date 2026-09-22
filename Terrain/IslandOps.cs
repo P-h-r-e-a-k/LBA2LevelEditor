@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 // Which vertices an operation touches and how strongly (0..1): a round brush, a rectangle or the whole island.
 // Vertices are island-wide grid coordinates (0..1024, one per 512 world units); only vertices of present cubes count.

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // One dialogue file of TEXT.HQR (MESSAGE.C InitDial): the entry pair "order" (the U16 text ids in the order they are stored)
 // and "text" (U16 start offsets, then the strings). Text in the game is plain 8-bit characters, '@' starts a new line and

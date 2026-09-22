@@ -9,10 +9,10 @@ using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using System.Threading;
 using System.Threading.Tasks;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.Lba1;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 public partial class MainWindow : Window
 {

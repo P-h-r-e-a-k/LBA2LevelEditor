@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // A decompiled script: its C text plus, for every instruction of the script, the
 // lines of that text it was written on. The comment layer uses this to put a

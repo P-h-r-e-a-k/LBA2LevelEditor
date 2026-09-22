@@ -1,7 +1,7 @@
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // LBA2 interior scenes that lead into one another through cube-change zones (a factory's rooms, a control tower and the palace behind it) drawn as
 // one map, the way Lba1Areas joins LBA1's. Which scenes belong together is written down in `Links` (LBA2's scenes carry no indoor / outdoor

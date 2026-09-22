@@ -1,8 +1,8 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Lba1.Runtime;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.Lba1.Runtime;
+using LBAAssembler.Lba1;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -405,7 +405,7 @@ internal static class RuntimeTests
     }
 
     // Where Twinsen stands to ask a mushroom (actors 4..15): 500 away on the side that is furthest from the other mushrooms (one asks the first in its list within reach).
-    private static (int X, int Z) Beside(LBA2LevelEditor.Scenes.SceneModel room, int mushroom)
+    private static (int X, int Z) Beside(LBAAssembler.Scenes.SceneModel room, int mushroom)
     {
         var m = room.Actors[mushroom];
         (int X, int Z) best = (m.X - 500, m.Z);

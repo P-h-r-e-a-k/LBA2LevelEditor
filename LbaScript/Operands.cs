@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // A parsed call argument: number, bare identifier (constant or symbol),
 // "@offset" raw byte offset, or string literal.

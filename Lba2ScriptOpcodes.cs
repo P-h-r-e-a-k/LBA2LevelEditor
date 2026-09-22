@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Autocomplete data for the actor script editor (ActorScriptWindow). Ported
 // from the native engine's own opcode tables and disassembler, not

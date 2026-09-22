@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // The integer math LBA1's game logic runs on, ported from LIB386/LIB_3D (P_FUNC.ASM, P_TRIGO.ASM, P_ANIM.ASM):
 // a 1024-step angle, a sine table scaled by 16384, floor square roots, and the interpolators the engine uses for

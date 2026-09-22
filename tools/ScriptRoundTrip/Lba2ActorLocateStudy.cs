@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 

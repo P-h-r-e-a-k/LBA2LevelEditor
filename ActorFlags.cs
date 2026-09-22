@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // T_OBJET.Flags (COMMON.H) -- the designer-authored subset only. Excludes
 // SPRITE_3D/ANIM_3DS (structural: they change which other on-disk fields

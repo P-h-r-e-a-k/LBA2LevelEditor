@@ -1,6 +1,6 @@
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // A ready-made actor: the header fields and scripts of a kind of actor the games use over and over, built for a given
 // actor number and position. Prefabs are modelled on real retail actors (each one is tested to reproduce the actor it

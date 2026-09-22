@@ -1,6 +1,6 @@
-using static LBA2LevelEditor.Lba1.Runtime.Lba1Const;
+using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // The player's side of the game: the inventory (game flags 0..27 say what Twinsen owns; text bank 2 names and describes
 // each), what the keys do (PERSO.C: 1 magic ball, 2 sabre, 3 horn, 4 protopack, Shift the inventory), and the objects

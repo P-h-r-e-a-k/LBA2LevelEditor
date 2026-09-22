@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Poses a body from bone frames the way LBA1's renderer does: every bone has a rotation matrix built from
 // its parent's (rotating about X, then Z, then Y) and its points are rotated about the pivot point, which

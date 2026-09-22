@@ -19,17 +19,19 @@ public sealed class MainForm : Form
     readonly CheckBox pairImage=new(){Text="The picture holds a front view (left) and a back view (right)",AutoSize=true},symmetric=new(){Text="Make the figure symmetric (copy the left half)",AutoSize=true},lit=new(){Text="Game lighting: shade the body like the game's own characters",Checked=true,AutoSize=true};
     readonly Dictionary<int,BodyStyleStats> styleStats=[];
     readonly ModelView preview=new(){Dock=DockStyle.Fill};
-    readonly PictureBox reference=new(){Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Renderer.ViewBackground};
-    readonly Label status=new(){Dock=DockStyle.Bottom,Height=52,Padding=new Padding(16,8,16,8),Text="Choose an image, generate, then inspect the preview before exporting."};
+    // A dark neutral backdrop, not the 3D view's light-blue one: a loaded picture is usually a silhouette on a transparent background,
+    // and a light backdrop shows through the transparent parts and the antialiased edges, washing out what should read as black.
+    readonly PictureBox reference=new(){Dock=DockStyle.Fill,SizeMode=PictureBoxSizeMode.Zoom,BackColor=Renderer.KeyBackground};
+    readonly Label status=new(){Dock=DockStyle.Bottom,Height=52,Padding=new Padding(16,8,16,8),Text="Choose an image, generate, then inspect the preview before exporting.",BackColor=Renderer.PanelBackground,ForeColor=Renderer.Text};
     readonly Button generate=new(){Text="Generate preview",AutoSize=true},export=new(){Text="Export selected games",AutoSize=true,Enabled=false};
     readonly ComboBox previewGame=Combo("LBA1","LBA2");
     readonly List<Generated> generated=[];
     Settings? generatedSettings;
     public MainForm()
     {
-        Text="LBA Body Studio — Image to character body";Size=new(1400,930);MinimumSize=new(1050,720);Font=new Font("Segoe UI",10);StartPosition=FormStartPosition.CenterScreen;
-        var main=new SplitContainer(){Width=1350,Dock=DockStyle.Fill,FixedPanel=FixedPanel.Panel1,SplitterDistance=390,Panel1MinSize=360};Controls.Add(main);Controls.Add(status);
-        var fields=new TableLayoutPanel(){Dock=DockStyle.Fill,AutoScroll=true,ColumnCount=1,Padding=new Padding(18),BackColor=Color.FromArgb(243,245,248)};main.Panel1.Controls.Add(fields);
+        Text="LBA Assembler — Body Studio";Size=new(1400,930);MinimumSize=new(1050,720);Font=new Font("Segoe UI",10);StartPosition=FormStartPosition.CenterScreen;BackColor=Color.White;
+        var main=new SplitContainer(){Width=1350,Dock=DockStyle.Fill,FixedPanel=FixedPanel.Panel1,SplitterDistance=390,Panel1MinSize=360,BackColor=Renderer.Border};Controls.Add(main);Controls.Add(status);
+        var fields=new TableLayoutPanel(){Dock=DockStyle.Fill,AutoScroll=true,ColumnCount=1,Padding=new Padding(18),BackColor=Renderer.PanelBackground};main.Panel1.Controls.Add(fields);
         void Add(Control c){c.Margin=new Padding(0,0,0,10);c.Dock=DockStyle.Top;fields.Controls.Add(c);}
         void Label(string text){Add(new Label(){Text=text,AutoSize=true,Font=new Font(Font,FontStyle.Bold)});}
         void Field(string text,Control c){Add(new Label(){Text=text,AutoSize=true,Margin=new Padding(0,2,0,3)});Add(c);}
@@ -61,12 +63,20 @@ public sealed class MainForm : Form
         var toolbar=new FlowLayoutPanel(){Dock=DockStyle.Fill,Padding=new Padding(8)};previewGame.Width=95;toolbar.Controls.Add(previewGame);
         var wire=new CheckBox(){Text="Wireframe",AutoSize=true};var bones=new CheckBox(){Text="Bones",AutoSize=true};var front=new Button(){Text="Front",AutoSize=true};var back=new Button(){Text="Back",AutoSize=true};toolbar.Controls.Add(wire);toolbar.Controls.Add(bones);toolbar.Controls.Add(front);toolbar.Controls.Add(back);right.Controls.Add(toolbar);
         var closeUp=new CheckBox(){Text="Head close-up",AutoSize=true};toolbar.Controls.Add(closeUp);closeUp.CheckedChanged+=(_,_)=>{preview.HeadOnly=closeUp.Checked;preview.Invalidate();};
-        var tabs=new TabControl(){Dock=DockStyle.Fill};var modelTab=new TabPage("3D body");modelTab.Controls.Add(preview);var imageTab=new TabPage("Reference image");imageTab.Controls.Add(reference);tabs.TabPages.Add(modelTab);tabs.TabPages.Add(imageTab);right.Controls.Add(tabs);
+        var tabs=new TabControl(){Dock=DockStyle.Fill,DrawMode=TabDrawMode.OwnerDrawFixed,Padding=new Point(16,5)};
+        tabs.DrawItem+=(_,e)=>
+        {
+            bool selected=e.Index==tabs.SelectedIndex;
+            using var back=new SolidBrush(selected?Color.White:Renderer.ButtonBackground);e.Graphics.FillRectangle(back,e.Bounds);
+            using var edge=new Pen(Renderer.Border);e.Graphics.DrawRectangle(edge,e.Bounds.X,e.Bounds.Y,e.Bounds.Width-1,e.Bounds.Height-1);
+            TextRenderer.DrawText(e.Graphics,tabs.TabPages[e.Index].Text,tabs.Font,e.Bounds,Renderer.Text,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
+        };
+        var modelTab=new TabPage("3D body");modelTab.Controls.Add(preview);var imageTab=new TabPage("Reference image");imageTab.Controls.Add(reference);tabs.TabPages.Add(modelTab);tabs.TabPages.Add(imageTab);right.Controls.Add(tabs);
         wire.CheckedChanged+=(_,_)=>{preview.Wire=wire.Checked;preview.Invalidate();};bones.CheckedChanged+=(_,_)=>{preview.Bones=bones.Checked;preview.Invalidate();};front.Click+=(_,_)=>{preview.Yaw=negative.Checked?0:MathF.PI;preview.Invalidate();};back.Click+=(_,_)=>{preview.Yaw=negative.Checked?MathF.PI:0;preview.Invalidate();};previewGame.SelectedIndexChanged+=(_,_)=>ShowGenerated();
         generate.Click+=async(_,_)=>await Generate();export.Click+=async(_,_)=>await Export();
         save.Click+=(_,_)=>{using var d=new SaveFileDialog(){Filter="Body Studio project|*.json",FileName="body-project.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>File.WriteAllText(d.FileName,JsonSerializer.Serialize(ReadSettings(),new JsonSerializerOptions{WriteIndented=true})));};
         load.Click+=(_,_)=>{using var d=new OpenFileDialog(){Filter="Body Studio project|*.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>{Apply(JsonSerializer.Deserialize<Settings>(File.ReadAllText(d.FileName))??throw new InvalidDataException("Empty project."));LoadImage();});};
-        Apply(new Settings(){OutputFolder=Path.Combine(AppContext.BaseDirectory,"Body Exports"),Lba1Folder=LBA2LevelEditor.EditorSettings.Current.Lba1Directory,Lba2Folder=LBA2LevelEditor.EditorSettings.Current.GameDirectory});
+        Apply(new Settings(){OutputFolder=Path.Combine(AppContext.BaseDirectory,"Body Exports"),Lba1Folder=LBAAssembler.EditorSettings.Current.Lba1Directory,Lba2Folder=LBAAssembler.EditorSettings.Current.GameDirectory});
         // Any setting change invalidates the export snapshot until regenerated.
         foreach(Control c in Descendants(fields))
         {
@@ -74,6 +84,34 @@ public sealed class MainForm : Form
             if(c is NumericUpDown n)n.ValueChanged+=(_,_)=>InvalidateGeneration();
             if(c is ComboBox cb)cb.SelectedIndexChanged+=(_,_)=>InvalidateGeneration();
             if(c is CheckBox ch)ch.CheckedChanged+=(_,_)=>InvalidateGeneration();
+        }
+        ApplyTheme();
+    }
+    // Matches the rest of the app's own light theme (Theme.xaml) instead of plain WinForms defaults. Runs once, over every
+    // control the form ends up with, rather than colouring each one where it's built.
+    void ApplyTheme()
+    {
+        foreach(var c in Descendants(this))
+        {
+            switch(c)
+            {
+                case TextBox tb: tb.BackColor=Renderer.FieldBackground;tb.ForeColor=Renderer.Text;tb.BorderStyle=BorderStyle.FixedSingle;break;
+                case NumericUpDown nu: nu.BackColor=Renderer.FieldBackground;nu.ForeColor=Renderer.Text;nu.BorderStyle=BorderStyle.FixedSingle;break;
+                case ComboBox combo: combo.BackColor=Renderer.FieldBackground;combo.ForeColor=Renderer.Text;combo.FlatStyle=FlatStyle.Flat;break;
+                case Button b when b!=generate&&b!=export:
+                    b.FlatStyle=FlatStyle.Flat;b.BackColor=Renderer.ButtonBackground;b.ForeColor=Renderer.Text;
+                    b.FlatAppearance.BorderColor=Renderer.ButtonBorder;b.FlatAppearance.MouseOverBackColor=Renderer.ButtonHover;
+                    break;
+                case CheckBox chk: chk.BackColor=Color.Transparent;chk.ForeColor=Renderer.Text;break;
+                // Description text (the only labels with a wrap width) reads softer than headings and field names.
+                case Label lbl when lbl!=status: lbl.BackColor=Color.Transparent;lbl.ForeColor=lbl.MaximumSize.Width>0?Renderer.TextMuted:Renderer.Text;break;
+                case Panel p: p.BackColor=Renderer.PanelBackground;break;
+            }
+        }
+        foreach(var b in new[]{generate,export})
+        {
+            b.FlatStyle=FlatStyle.Flat;b.BackColor=Renderer.Accent;b.ForeColor=Color.White;b.Font=new Font(Font,FontStyle.Bold);
+            b.FlatAppearance.BorderColor=Renderer.Accent;b.FlatAppearance.MouseOverBackColor=ControlPaint.Light(Renderer.Accent,0.25f);
         }
     }
     static IEnumerable<Control> Descendants(Control c){foreach(Control child in c.Controls){yield return child;foreach(var d in Descendants(child))yield return d;}}

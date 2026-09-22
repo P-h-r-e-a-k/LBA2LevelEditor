@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // The sprites of SPRITES.HQR (doors, keys, boxes, bonus items ...), drawn in the same run-length format as bricks:
 // width, height, hot-spot x and y (signed, relative to the sprite's anchor), then the lines.

@@ -1,6 +1,6 @@
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // Where a script refers to an actor or a track point: (actor whose script it is, life or track, byte offset, what).
 internal sealed record SceneReference(int Actor, ScriptKind Kind, int Offset, ArgRole Role, int Target)

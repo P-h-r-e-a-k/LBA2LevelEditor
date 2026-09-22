@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 internal sealed record IslandProblem(bool IsError, string Message);
 

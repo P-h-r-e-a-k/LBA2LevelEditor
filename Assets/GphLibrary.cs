@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.IO;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Assets;
+namespace LBAAssembler.Assets;
 
 // A file of run-length pictures ("graphs"): the bricks of LBA1 (LBA_BRK.HQR) and LBA2 (the brick range of LBA_BKG.HQR), the sprites of LBA1
 // (SPRITES.HQR). Reads pictures, replaces them and saves the archive back (a .bak of the original, other entries byte for byte).

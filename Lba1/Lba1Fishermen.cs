@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // The boat trips of LBA1's three fishermen, opened up for chapter 6.
 //

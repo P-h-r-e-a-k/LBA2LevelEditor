@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Writes/updates a per-game-folder .HQD sidecar (LBAPackageManager's own plain-text entry-description format --
 // see HqdDescriptions) whenever the editor adds a new HQR entry of its own, so that entry has a name too, not

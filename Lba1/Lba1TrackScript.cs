@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Walks an LBA1 track (movement) script only far enough to find the scene track points
 // it steers the actor through, so the map can draw the patrol route.

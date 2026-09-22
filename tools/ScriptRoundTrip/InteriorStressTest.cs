@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using LBA2LevelEditor;
+using LBAAssembler;
 
 namespace ScriptRoundTrip;
 
@@ -14,7 +14,7 @@ internal static class InteriorStressTest
         var loops = args.Length > 2 ? int.Parse(args[2]) : 100;
         var sameThread = args.Length > 3 && args[3] == "same";
         var dll = Environment.GetEnvironmentVariable("LBA2_RENDERER_DLL") ??
-                  @"E:\dump\LBA2LevelEditor\native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll";
+                  @"E:\dump\LBAAssembler\native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll";
         using var lib = new RendererLibraryApi(dll);
         if (!lib.IsLoaded) { Console.WriteLine($"could not load {dll}"); return 2; }
         if (!lib.SetDataRoot(sandbox) || !lib.Initialize()) { Console.WriteLine("native init failed"); return 2; }

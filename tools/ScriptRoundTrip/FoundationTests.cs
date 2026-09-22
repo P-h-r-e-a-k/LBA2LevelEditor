@@ -1,5 +1,5 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -173,18 +173,18 @@ internal static class FoundationTests
             if (!archive.IsValid(i)) continue;
             grids++;
             var grid = archive.Read(i);
-            var cells = LBA2LevelEditor.Lba1.Lba1GridCodec.Decode(grid);
-            var edits = new List<LBA2LevelEditor.Lba1.Lba1GridCell>();
+            var cells = LBAAssembler.Lba1.Lba1GridCodec.Decode(grid);
+            var edits = new List<LBAAssembler.Lba1.Lba1GridCell>();
             for (var z = 0; z < 64; z++)
                 for (var x = 0; x < 64; x++)
                 {
                     var b = (z * 64 + x) * 25 * 2;
-                    edits.Add(new LBA2LevelEditor.Lba1.Lba1GridCell(x, 0, z, cells[b], cells[b + 1]));
+                    edits.Add(new LBAAssembler.Lba1.Lba1GridCell(x, 0, z, cells[b], cells[b + 1]));
                 }
-            var rewritten = LBA2LevelEditor.Lba1.Lba1GridEdit.SetCells(grid, edits);
-            Check(LBA2LevelEditor.Lba1.Lba1GridCodec.Decode(rewritten).AsSpan().SequenceEqual(cells), $"grid {i}: every cell, collision code of empty cells included, survives a full re-encode");
+            var rewritten = LBAAssembler.Lba1.Lba1GridEdit.SetCells(grid, edits);
+            Check(LBAAssembler.Lba1.Lba1GridCodec.Decode(rewritten).AsSpan().SequenceEqual(cells), $"grid {i}: every cell, collision code of empty cells included, survives a full re-encode");
             Check(grid.AsSpan(grid.Length - 32).SequenceEqual(rewritten.AsSpan(rewritten.Length - 32)), $"grid {i}: the used-blocks bitmap is unchanged");
-            for (var c = 0; c < 4096; c++) if (LBA2LevelEditor.Lba1.Lba1GridCodec.ColumnCells(rewritten, c % 64, c / 64) != 25) { Check(false, $"grid {i}: column {c} doesn't hold 25 cells"); break; }
+            for (var c = 0; c < 4096; c++) if (LBAAssembler.Lba1.Lba1GridCodec.ColumnCells(rewritten, c % 64, c / 64) != 25) { Check(false, $"grid {i}: column {c} doesn't hold 25 cells"); break; }
         }
         Console.WriteLine($"grid round trip: {grids} grids re-encoded");
     }
@@ -241,25 +241,25 @@ internal static class PatchStudy
             if (!archive.IsValid(i)) continue;
             var record = archive.Read(i);
             var model = SceneSerializer.Parse(SceneGame.Lba2, record);
-            var rec = LBA2LevelEditor.LbaScript.SceneRecord.Parse(record);
+            var rec = LBAAssembler.LbaScript.SceneRecord.Parse(record);
             scenes++;
             var n = BitConverter.ToInt32(model.Tail, 0);
             if (model.Tail.Length != 4 + 4 * n) { badTail++; Console.WriteLine($"scene {i - 1}: tail {model.Tail.Length} bytes but count {n}"); continue; }
             var tailStart = record.Length - model.Tail.Length;
 
             // instruction start -> op, per blob
-            var decoded = new List<(int Start, int Len, LBA2LevelEditor.LbaScript.ScriptKind Kind, int Actor, Dictionary<int, int> Ops)>();
+            var decoded = new List<(int Start, int Len, LBAAssembler.LbaScript.ScriptKind Kind, int Actor, Dictionary<int, int> Ops)>();
             foreach (var a in rec.Actors)
             {
-                foreach (var kind in new[] { LBA2LevelEditor.LbaScript.ScriptKind.Life, LBA2LevelEditor.LbaScript.ScriptKind.Track })
+                foreach (var kind in new[] { LBAAssembler.LbaScript.ScriptKind.Life, LBAAssembler.LbaScript.ScriptKind.Track })
                 {
-                    var pos = kind == LBA2LevelEditor.LbaScript.ScriptKind.Life ? a.LifePos : a.TrackPos;
-                    var len = kind == LBA2LevelEditor.LbaScript.ScriptKind.Life ? a.LifeLen : a.TrackLen;
-                    var code = (kind == LBA2LevelEditor.LbaScript.ScriptKind.Life ? rec.Life(a) : rec.Track(a)).ToArray();
+                    var pos = kind == LBAAssembler.LbaScript.ScriptKind.Life ? a.LifePos : a.TrackPos;
+                    var len = kind == LBAAssembler.LbaScript.ScriptKind.Life ? a.LifeLen : a.TrackLen;
+                    var code = (kind == LBAAssembler.LbaScript.ScriptKind.Life ? rec.Life(a) : rec.Track(a)).ToArray();
                     var ops = new Dictionary<int, int>();
                     try
                     {
-                        var ins = kind == LBA2LevelEditor.LbaScript.ScriptKind.Life ? LBA2LevelEditor.LbaScript.Bytecode.DecodeLife(code) : LBA2LevelEditor.LbaScript.Bytecode.DecodeTrack(code);
+                        var ins = kind == LBAAssembler.LbaScript.ScriptKind.Life ? LBAAssembler.LbaScript.Bytecode.DecodeLife(code) : LBAAssembler.LbaScript.Bytecode.DecodeTrack(code);
                         foreach (var x in ins) ops[x.Offset] = x.Op;
                     }
                     catch { }
@@ -267,9 +267,9 @@ internal static class PatchStudy
                 }
             }
             foreach (var d in decoded)
-                foreach (var op in d.Ops.Values.Where(o => d.Kind == LBA2LevelEditor.LbaScript.ScriptKind.Life))
+                foreach (var op in d.Ops.Values.Where(o => d.Kind == LBAAssembler.LbaScript.ScriptKind.Life))
                 {
-                    var name = LBA2LevelEditor.LbaScript.Opcodes.Life((byte)op)?.Name ?? $"op{op}";
+                    var name = LBAAssembler.LbaScript.Opcodes.Life((byte)op)?.Name ?? $"op{op}";
                     if (name is "SWIF" or "SNIF" or "ONEIF" or "NEVERIF" or "OR_IF" or "IF" or "SET_VAR_CUBE" or "SET_VAR_GAME") instrCounts[name] = instrCounts.GetValueOrDefault(name) + 1;
                 }
 
@@ -285,11 +285,11 @@ internal static class PatchStudy
                 {
                     var rel = offset - hit.Start;
                     if (hit.Ops.TryGetValue(rel, out var op))
-                        key = $"{hit.Kind} opcode {(hit.Kind == LBA2LevelEditor.LbaScript.ScriptKind.Life ? LBA2LevelEditor.LbaScript.Opcodes.Life((byte)op)?.Name : LBA2LevelEditor.LbaScript.Opcodes.Track((byte)op)?.Name)} size {size}";
+                        key = $"{hit.Kind} opcode {(hit.Kind == LBAAssembler.LbaScript.ScriptKind.Life ? LBAAssembler.LbaScript.Opcodes.Life((byte)op)?.Name : LBAAssembler.LbaScript.Opcodes.Track((byte)op)?.Name)} size {size}";
                     else
                     {
                         var before = hit.Ops.Keys.Where(o => o < rel).DefaultIfEmpty(-1).Max();
-                        var name = before >= 0 ? (hit.Kind == LBA2LevelEditor.LbaScript.ScriptKind.Life ? LBA2LevelEditor.LbaScript.Opcodes.Life((byte)hit.Ops[before])?.Name : LBA2LevelEditor.LbaScript.Opcodes.Track((byte)hit.Ops[before])?.Name) : "?";
+                        var name = before >= 0 ? (hit.Kind == LBAAssembler.LbaScript.ScriptKind.Life ? LBAAssembler.LbaScript.Opcodes.Life((byte)hit.Ops[before])?.Name : LBAAssembler.LbaScript.Opcodes.Track((byte)hit.Ops[before])?.Name) : "?";
                         key = $"{hit.Kind} inside an instruction: operand of {name}, +{rel - before} size {size}";
                     }
                 }
@@ -363,7 +363,7 @@ internal static class GridValidatorStudy
         {
             if (!grids.IsValid(i) || !libraries.IsValid(i)) continue;
             scenes++;
-            var report = LBA2LevelEditor.Lba1.Lba1GridValidator.Validate(grids.Read(i), libraries.Read(i), SizeOf);
+            var report = LBAAssembler.Lba1.Lba1GridValidator.Validate(grids.Read(i), libraries.Read(i), SizeOf);
             biggest = Math.Max(biggest, report.BrickBytes);
             foreach (var issue in report.Issues)
             {
@@ -371,7 +371,7 @@ internal static class GridValidatorStudy
                 else { warnings++; var key = System.Text.RegularExpressions.Regex.Replace(issue.Where + ": " + issue.Message, @"\d+", "#"); kinds[key] = kinds.GetValueOrDefault(key) + 1; }
             }
         }
-        Console.WriteLine($"grids: {scenes} checked, {errors} errors, {warnings} warnings; the largest brick load is {biggest} of {LBA2LevelEditor.Lba1.Lba1GridValidator.MaxBrickBytes} bytes");
+        Console.WriteLine($"grids: {scenes} checked, {errors} errors, {warnings} warnings; the largest brick load is {biggest} of {LBAAssembler.Lba1.Lba1GridValidator.MaxBrickBytes} bytes");
         foreach (var kv in kinds.OrderByDescending(k => k.Value).Take(10)) Console.WriteLine($"    {kv.Value,5}  {kv.Key}");
         return errors == 0 ? 0 : 1;
     }
@@ -390,7 +390,7 @@ internal static class EmptyPosStudy
         for (var i = 0; i < 120; i++)
         {
             if (!grids.IsValid(i)) continue;
-            var cells = LBA2LevelEditor.Lba1.Lba1GridCodec.Decode(grids.Read(i));
+            var cells = LBAAssembler.Lba1.Lba1GridCodec.Decode(grids.Read(i));
             long c = 0;
             for (var k = 0; k < cells.Length; k += 2)
             {
@@ -412,8 +412,8 @@ internal static class GridDiffStudy
 {
     public static int Run(string[] args)
     {
-        var a = LBA2LevelEditor.Lba1.Lba1GridCodec.Decode(HqrArchive.Open(args[1]).Read(int.Parse(args[3])));
-        var b = LBA2LevelEditor.Lba1.Lba1GridCodec.Decode(HqrArchive.Open(args[2]).Read(int.Parse(args[3])));
+        var a = LBAAssembler.Lba1.Lba1GridCodec.Decode(HqrArchive.Open(args[1]).Read(int.Parse(args[3])));
+        var b = LBAAssembler.Lba1.Lba1GridCodec.Decode(HqrArchive.Open(args[2]).Read(int.Parse(args[3])));
         int changed = 0, lostCodes = 0, newCodes = 0;
         for (var z = 0; z < 64; z++) for (var x = 0; x < 64; x++) for (var y = 0; y < 25; y++)
         {

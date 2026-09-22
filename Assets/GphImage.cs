@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Assets;
+namespace LBAAssembler.Assets;
 
 // The game's run-length picture ("graph"): bricks of both games and the sprites of LBA1. Header: width, height, hot-spot x, hot-spot y
 // (signed bytes); then one record per line: a run count and the runs. A run's first byte holds its type in the top two bits (0 skip

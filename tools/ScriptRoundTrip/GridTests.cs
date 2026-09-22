@@ -1,6 +1,6 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler;
+using LBAAssembler.Grids;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 

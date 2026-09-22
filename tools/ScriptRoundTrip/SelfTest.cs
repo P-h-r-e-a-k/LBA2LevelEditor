@@ -1,4 +1,4 @@
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
 namespace ScriptRoundTrip;
 

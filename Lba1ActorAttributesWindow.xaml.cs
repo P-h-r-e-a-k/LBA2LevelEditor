@@ -3,9 +3,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The LBA1 counterpart of ActorAttributesWindow: position, facing, entity / body / animation (with names),
 // life, armour, hit force, move type and flags of one scene actor, a rotating preview of its body, and a way

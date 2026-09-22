@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 internal static partial class LifeText
 {

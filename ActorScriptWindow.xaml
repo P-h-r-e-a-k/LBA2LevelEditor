@@ -1,4 +1,4 @@
-<Window x:Class="LBA2LevelEditor.ActorScriptWindow"
+<Window x:Class="LBAAssembler.ActorScriptWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Actor Script" Height="760" Width="1180" MinHeight="420" MinWidth="820"

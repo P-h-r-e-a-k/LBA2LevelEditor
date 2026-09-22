@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // Constants of the LBA1 engine (COMMON.H, DEFINES.H, LIB_SYS.H).
 internal static class Lba1Const

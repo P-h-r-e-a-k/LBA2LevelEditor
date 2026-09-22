@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Writes several files as one unit: each gets a one-time `.bak` copy of what it held before, its new content is
 // written beside it and checked, and only then are the files swapped in. If a swap fails part-way the files

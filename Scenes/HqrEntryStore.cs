@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // Direct entry-level edits to an HQR archive (or a whole small text sidecar), for anything that isn't a scene:
 // grid and block libraries, brick and sprite pictures, the object browser's Replace, and the extra files a scene

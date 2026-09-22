@@ -1,10 +1,10 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Assets;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Lba1.Runtime;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.Assets;
+using LBAAssembler.Grids;
+using LBAAssembler.Lba1;
+using LBAAssembler.Lba1.Runtime;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -77,7 +77,7 @@ internal static class StoreTests
                     Check(scene.Actors.Count == before - 1, $"{game} scene {s}: an actor is gone");
                     var issues = SceneValidator.Validate(scene, store.ValidationOptions()).Where(i => i.Severity == SceneIssueSeverity.Error).ToList();
                     if (issues.Count > 0) { bad++; Console.WriteLine($"  {game} scene {s}: {issues[0]}"); }
-                    var stale = SceneOps.ReferencesTo(scene, LBA2LevelEditor.LbaScript.ArgRole.Obj, before - 1);
+                    var stale = SceneOps.ReferencesTo(scene, LBAAssembler.LbaScript.ArgRole.Obj, before - 1);
                     Check(stale.Count == 0, $"{game} scene {s}: nothing refers to the old last actor number after the shift");
                 }
             }
@@ -91,13 +91,13 @@ internal static class StoreTests
             var scene = store.Load(13);
             var index = ActorPrefabs.Place(scene, ActorPrefabs.DoorEast, 51 * 512, 256, 12 * 512 - 256);
             SceneOps.DeleteActor(scene, 8, retarget: 0);
-            using var _ = LBA2LevelEditor.LbaScript.Opcodes.Use(LBA2LevelEditor.LbaScript.Opcodes.Lba1);
-            var life = LBA2LevelEditor.LbaScript.Bytecode.DecodeLife(scene.Actors[index - 1].Life);
+            using var _ = LBAAssembler.LbaScript.Opcodes.Use(LBAAssembler.LbaScript.Opcodes.Lba1);
+            var life = LBAAssembler.LbaScript.Bytecode.DecodeLife(scene.Actors[index - 1].Life);
             var own = life.Where(i => i.Func == 1).Select(i => i.Value).ToList();
             Check(own.Count > 0 && own.All(v => v == index - 1), $"the door's own number follows it ({index} -> {index - 1}): values {string.Join(",", own)}");
             var withDoor = store.Load(13);
             var doorIndex = ActorPrefabs.Place(withDoor, ActorPrefabs.DoorEast, 51 * 512, 256, 12 * 512 - 256);
-            var refs = SceneOps.ReferencesTo(withDoor, LBA2LevelEditor.LbaScript.ArgRole.Obj, doorIndex);
+            var refs = SceneOps.ReferencesTo(withDoor, LBAAssembler.LbaScript.ArgRole.Obj, doorIndex);
             Check(refs.Count > 0 && refs.All(r => r.Actor == doorIndex), "the door's references to itself are found");
             var refused = false;
             try { SceneOps.DeleteActor(withDoor, 5); } catch (SceneEditException) { refused = true; }
@@ -114,13 +114,13 @@ internal static class StoreTests
             SceneOps.DeleteZone(scene, z);
             Check(scene.Zones.Count == zones, "and deleted");
 
-            var withPoints = Enumerable.Range(0, 120).Select(store.Load).First(m => m.TrackPoints.Count >= 3 && SceneOps.ReferencesTo(m, LBA2LevelEditor.LbaScript.ArgRole.Point, 2).Count > 0);
+            var withPoints = Enumerable.Range(0, 120).Select(store.Load).First(m => m.TrackPoints.Count >= 3 && SceneOps.ReferencesTo(m, LBAAssembler.LbaScript.ArgRole.Point, 2).Count > 0);
             var before = withPoints.TrackPoints.Count;
             var refused = false;
             try { SceneOps.DeleteTrackPoint(withPoints, 0); } catch (SceneEditException) { refused = true; }
-            Check(refused || SceneOps.ReferencesTo(withPoints, LBA2LevelEditor.LbaScript.ArgRole.Point, 0).Count == 0, "deleting a used track point is refused");
+            Check(refused || SceneOps.ReferencesTo(withPoints, LBAAssembler.LbaScript.ArgRole.Point, 0).Count == 0, "deleting a used track point is refused");
             SceneOps.DeleteTrackPoint(withPoints, 0, retarget: 1);
-            Check(withPoints.TrackPoints.Count == before - 1 && SceneOps.ReferencesTo(withPoints, LBA2LevelEditor.LbaScript.ArgRole.Point, before - 1).Count == 0, "track points after the deleted one are renumbered");
+            Check(withPoints.TrackPoints.Count == before - 1 && SceneOps.ReferencesTo(withPoints, LBAAssembler.LbaScript.ArgRole.Point, before - 1).Count == 0, "track points after the deleted one are renumbered");
         }
     }
 
@@ -152,13 +152,13 @@ internal static class StoreTests
                 store.Save(slot, scene, grid);
                 tested++;
 
-                var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(dir);
-                var runtime = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+                var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(dir);
+                var runtime = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
                 runtime.ChangeCube(slot);
                 runtime.Run(100);
                 Check(runtime.Hero.PosY == 256 && runtime.NumCube == slot, $"blank scene {slot}: Twinsen stands on the floor (y {runtime.Hero.PosY})");
                 var z0 = runtime.Hero.PosZ;
-                runtime.Joy = LBA2LevelEditor.Lba1.Runtime.Lba1Const.JUp;
+                runtime.Joy = LBAAssembler.Lba1.Runtime.Lba1Const.JUp;
                 runtime.Run(60);
                 Check(Math.Abs(runtime.Hero.PosZ - z0) > 400 && runtime.Hero.PosY == 256, $"blank scene {slot}: Twinsen walks on it (moved {runtime.Hero.PosZ - z0})");
             }
@@ -685,10 +685,11 @@ internal static class StoreTests
                 var old = Lba1TextBank.Load(HqrArchive.Open(Path.Combine(dir, "TEXT.HQR.bak")), language, 4)!;
                 var source = Lba1TextBank.Load(HqrArchive.Open(Path.Combine(dir, "TEXT.HQR.bak")), language, 6)!;
                 var expected = language == 0 ? Lba1Fishermen.QuestionEnglish : source.Get(8);
-                questionOk &= bank.Count == old.Count + 2 && bank.IndexOf(Lba1Fishermen.QuestionId) == old.Count && bank.Get(Lba1Fishermen.QuestionId) == expected && bank.IndexOf(Lba1PinkElf.GreetingId) == old.Count + 1 && bank.Get(Lba1PinkElf.GreetingId) == Lba1PinkElf.GreetingEnglish
+                var expectedGreeting = Lba1PinkElf.Translations.TryGetValue(language, out var greetingText) ? greetingText : Lba1PinkElf.GreetingEnglish;
+                questionOk &= bank.Count == old.Count + 2 && bank.IndexOf(Lba1Fishermen.QuestionId) == old.Count && bank.Get(Lba1Fishermen.QuestionId) == expected && bank.IndexOf(Lba1PinkElf.GreetingId) == old.Count + 1 && bank.Get(Lba1PinkElf.GreetingId) == expectedGreeting
                     && old.Ids.All(id => bank.Get(id) == old.Get(id)) && texts.Read(at + 1).Length <= 25000 && bank.Count <= 512;
             }
-            Check(questionOk, "text: the question and then the elf's greeting are the last two texts of island 1's dialogue in every language (the question: English as written, the others the price line of the island-3 fisherman; the greeting: English in all until translated), the old texts read back unchanged, and the bank fits the engine's buffers");
+            Check(questionOk, "text: the question and then the elf's greeting are the last two texts of island 1's dialogue in every language (the question: English as written, the others the price line of the island-3 fisherman; the greeting: its own translation where Lba1PinkElf.Translations has one, English otherwise), the old texts read back unchanged, and the bank fits the engine's buffers");
             Check(new Lba1TextBank(texts.Read(8), texts.Read(9)).Get(Lba1Fishermen.QuestionId) == "For 10 Kashes, where do you want to go, Twinsen?", "text: English reads \"For 10 Kashes, where do you want to go, Twinsen?\"");
             foreach (var fishScene in new[] { 24, 39, 42 })
             {
@@ -910,8 +911,11 @@ internal static class StoreTests
                 Check(textRefused, "text: a different text under the question's id is refused");
                 File.WriteAllBytes(Path.Combine(dir, "TEXT.HQR"), freshText);
 
-                // a translation replaces the English text standing in for it, in place (the greeting's text is "own"), in the game's DOS code page
-                var french = new Lba1DialogueText.AddedText(Lba1PinkElf.GreetingId, "the greeting", Lba1PinkElf.GreetingEnglish, (_, l) => l == 1 ? Lba1DialogueText.Bytes("Salut, je suis Floppy, l'élfe à la pomme ça") : null, Own: true);
+                // a translation replaces the English text standing in for it, in place (the greeting's text is "own"), in the game's DOS code page.
+                // (Language 4 already has its own real translation from the Apply() above, so it must be echoed back unchanged here, or this
+                // French-only stand-in would collide with it the same way a stale placeholder would collide with a genuinely different text.)
+                var withFrench = new Dictionary<int, string>(Lba1PinkElf.Translations) { [1] = "Salut, je suis Floppy, l'élfe à la pomme ça" };
+                var french = new Lba1DialogueText.AddedText(Lba1PinkElf.GreetingId, "the greeting", Lba1PinkElf.GreetingEnglish, (_, l) => withFrench.TryGetValue(l, out var t) ? Lba1DialogueText.Bytes(t) : null, Own: true);
                 var translated = Lba1DialogueText.Plan(dir, new[] { Lba1Fishermen.Question, french });
                 Check(translated.Count == 2, "text: a translation of the greeting is planned as the one changed language's two dialogue entries (order + text)");
                 if (translated.Count == 2)

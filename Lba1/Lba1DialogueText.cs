@@ -1,8 +1,8 @@
 using System.IO;
 using System.Text;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // New texts for LBA1's TEXT.HQR, added as the last texts of Principal Island's dialogue file (scene 61, the bedroom, is on that island; so are the
 // fishermen of scene 24) in all five languages.

@@ -1,10 +1,10 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
-using LBA2LevelEditor;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
-using LBA2LevelEditor.Terrain;
+using LBAAssembler;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
+using LBAAssembler.Terrain;
 
 namespace ScriptRoundTrip;
 
@@ -76,8 +76,8 @@ internal static partial class GameFlagMining
         var language = DetectEnglish(text);
         Console.WriteLine($"TEXT.HQR English language index = {language}");
 
-        var sceneNames = ReadHqd(@"E:\dump\LBA2LevelEditor\Assets\FileDesc\SCENE2.HQD");
-        var bodyNames = ReadHqd(@"E:\dump\LBA2LevelEditor\Assets\FileDesc\BODY2.HQD");
+        var sceneNames = ReadHqd(@"E:\dump\LBAAssembler\Assets\FileDesc\SCENE2.HQD");
+        var bodyNames = ReadHqd(@"E:\dump\LBAAssembler\Assets\FileDesc\BODY2.HQD");
         var banks = new Dictionary<int, TextBank>();
         TextBank Bank(int island)
         {
@@ -128,7 +128,7 @@ internal static partial class GameFlagMining
 
         var trainer = args.Length > 3 ? args[3] : @"E:\Users\Matt\source\repos\LBATrainer\files\languages\ENG\LBA2\quests.xml";
         if (File.Exists(trainer)) WriteTrainerComparison(Path.Combine(outDir, "trainer_vs_mined.txt"), trainer, events);
-        var curatedPath = args.Length > 4 ? args[4] : @"E:\dump\LBA2LevelEditor\tools\ScriptRoundTrip\gameflags_curated.txt";
+        var curatedPath = args.Length > 4 ? args[4] : @"E:\dump\LBAAssembler\tools\ScriptRoundTrip\gameflags_curated.txt";
         WriteDocs(outDir, trainer, curatedPath, events, sceneInfo, decorRows);
         WriteSanity(Path.Combine(outDir, "sanity.txt"), trainer, events, sceneInfo, decorRows);
         WriteDigest(Path.Combine(outDir, "digest.txt"), events, sceneInfo, actorInfo, Bank);

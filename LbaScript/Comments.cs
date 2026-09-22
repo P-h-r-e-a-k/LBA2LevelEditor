@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Comments in scripts.
 //

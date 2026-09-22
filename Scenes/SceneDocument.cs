@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // One open scene with undo / redo and dirty tracking. Edits go through Edit / EditGrid, which work on a copy and only
 // keep it if the change succeeds; every edit is a snapshot on the undo stack (a SceneModel is small, and grids are

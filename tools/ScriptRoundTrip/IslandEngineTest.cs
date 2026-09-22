@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
-using LBA2LevelEditor;
-using LBA2LevelEditor.Terrain;
+using LBAAssembler;
+using LBAAssembler.Terrain;
 
 namespace ScriptRoundTrip;
 
@@ -43,7 +43,7 @@ internal static class IslandEngineTest
             }
             if (record is null) { Console.WriteLine("no exterior desert scene"); return 1; }
             int cubeX = record[1], cubeZ = record[2];
-            var model = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, Lba2Dir).Load(scene);
+            var model = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, Lba2Dir).Load(scene);
             Console.WriteLine($"scene {scene}: cube ({cubeX},{cubeZ}), hero at ({model.Hero.X},{model.Hero.Y},{model.Hero.Z})");
             var gx = cubeX * 64 + model.Hero.X / 512; var gz = cubeZ * 64 + model.Hero.Z / 512;
 

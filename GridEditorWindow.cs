@@ -5,11 +5,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Grids;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Tools > LBA1 / LBA2: interior grid editor. The isometric map of an interior (64 x 25 x 64 cells of blocks) for both games: a plan of one layer to paint
 // on with the blocks of the grid's library, the isometric picture beside it, undo / redo, and the library itself (a block's bricks, new blocks).

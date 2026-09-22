@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Loads the human-readable body/animation name lists LBAPackageManager
 // ships as plain-text .HQD files (E:\LBA\LBAPackageManager\FileDesc\*.HQD):

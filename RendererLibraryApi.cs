@@ -2,7 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 internal sealed class RendererLibraryApi : IDisposable
 {
@@ -103,10 +103,10 @@ internal sealed class RendererLibraryApi : IDisposable
     // from source before the statically-linked DLL has ever been built.
     //
     // The two distributable options, tried first:
-    //  1. A copy of the DLL next to the exe (LBA2LevelEditor.csproj copies
+    //  1. A copy of the DLL next to the exe (LBAAssembler.csproj copies
     //     it there via CopyToOutputDirectory) -- covers bin/Debug and a
     //     plain folder-based dotnet publish.
-    //  2. Failing that, an embedded copy (LBA2LevelEditor.csproj also
+    //  2. Failing that, an embedded copy (LBAAssembler.csproj also
     //     embeds it as a resource) extracted to a stable cache directory --
     //     covers a single-file publish. dotnet publish's own
     //     IncludeNativeLibrariesForSelfExtract looked like the built-in
@@ -218,7 +218,7 @@ internal sealed class RendererLibraryApi : IDisposable
                 var candidates = new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "native"),
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBA2LevelEditor", "native"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LBAAssembler", "native"),
                 };
                 foreach (var cacheDir in candidates)
                 {

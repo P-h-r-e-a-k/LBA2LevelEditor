@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 internal sealed record CompletionItem(string Signature, string Description, string InsertText, string Category, string Name);
 

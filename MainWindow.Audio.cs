@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The sound balance for playing scenes, per game: mute, and music / speech / effects levels (the games' own balance is off, the
 // music drowns the speech). Shown on the PLAY tab; LBA2's engine reads its volumes when it starts, the LBA1 play view applies

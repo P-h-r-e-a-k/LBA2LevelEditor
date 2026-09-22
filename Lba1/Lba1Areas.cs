@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // A scene placed in an area's shared coordinate space: the scene's world origin sits at
 // (OffsetX, OffsetY, OffsetZ) there (world units, multiples of 512 horizontally and 256 vertically).

@@ -1,6 +1,6 @@
-using static LBA2LevelEditor.Lba1.Runtime.Lba1Const;
+using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // FICHE.C GereAnimAction: what an animation triggers on its key frames, listed with the animation in the entity file.
 // Blows (the hit force an attack lands with), sounds and steps run; projectiles (throw, magic ball) are skipped, and only

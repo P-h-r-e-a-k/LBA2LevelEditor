@@ -1,6 +1,6 @@
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // A street lamp at the west corner of Lupin Burg (scene 13), that gives Twinsen a key.
 //

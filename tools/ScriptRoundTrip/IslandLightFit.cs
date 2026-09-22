@@ -1,4 +1,4 @@
-using LBA2LevelEditor.Terrain;
+using LBAAssembler.Terrain;
 
 namespace ScriptRoundTrip;
 

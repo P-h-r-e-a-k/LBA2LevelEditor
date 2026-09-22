@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 internal enum MapView { Terrain, Height, Light, Shadows, GameCode, WaterDepth }
 

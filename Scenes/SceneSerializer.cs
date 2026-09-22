@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // SCENE.HQR records <-> SceneModel, following DISKFUNC.C (LBA1) and DISKFUNC.CPP (LBA2) field for field.
 //

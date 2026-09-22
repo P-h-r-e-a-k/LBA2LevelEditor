@@ -1,9 +1,9 @@
 using System.IO;
 using System.Windows;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 using Microsoft.Win32;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 public partial class SettingsWindow : Window
 {

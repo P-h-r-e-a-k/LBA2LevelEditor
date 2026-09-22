@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // How the Scenes menu writes a scene's name: the game's own description less what the menu already says (the scene's number, "(room #12)",
 // and the island the scene is listed under) and with a capital letter to start.

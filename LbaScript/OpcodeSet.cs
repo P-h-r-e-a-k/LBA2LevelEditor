@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Everything about a game's script bytecode that the translator has to know: the opcode tables
 // plus the handful of engine rules that differ between LBA1 and LBA2. The translator is written

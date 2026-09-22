@@ -1,4 +1,4 @@
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -179,7 +179,7 @@ internal static class Lba2NameStudy
     public static int Run(string[] args)
     {
         var path = System.IO.Path.Combine(args.Length > 1 ? args[1] : @"E:\GOG Games\Little Big Adventure 2 - Level viewer", "SCENE.HQR");
-        var names = LBA2LevelEditor.HqdDescriptions.Load("SCENE2.HQD", LBA2LevelEditor.HqrArchive.CountEntries(path)).Names;
+        var names = LBAAssembler.HqdDescriptions.Load("SCENE2.HQD", LBAAssembler.HqrArchive.CountEntries(path)).Names;
         foreach (var g in names.Where(n => n is not null).GroupBy(n => n!.Contains(", ") ? n[..n.IndexOf(", ", StringComparison.Ordinal)] : "(no comma)").OrderByDescending(g => g.Count()))
             Console.WriteLine($"{g.Count(),4}  {g.Key}   e.g. {string.Join(" | ", g.Take(3))}");
         return 0;
@@ -302,13 +302,13 @@ internal static class LampDebug
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
-        var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
         rt.ChangeCube(13);
         rt.Run(30);
         rt.Place(768, 2048, 32000, 256);
         Console.WriteLine($"hero ({rt.Hero.PosX},{rt.Hero.PosY},{rt.Hero.PosZ}) keys {rt.NbLittleKeys} zone {rt.Hero.ZoneSce} comportement {rt.Comportement}");
-        rt.Fire = LBA2LevelEditor.Lba1.Runtime.Lba1Const.FSpace;
+        rt.Fire = LBAAssembler.Lba1.Runtime.Lba1Const.FSpace;
         for (var i = 0; i < 8; i++) { rt.Frame(); Console.WriteLine($"  frame {i}: hero ({rt.Hero.PosX},{rt.Hero.PosY},{rt.Hero.PosZ}) anim {rt.Hero.GenAnim} keys {rt.NbLittleKeys}"); }
         rt.Fire = 0;
         for (var i = 0; i < 12; i++) { rt.Run(20); foreach (var e in rt.Extras.Where(e => e.Sprite != -1)) Console.WriteLine($"  t+{i * 20}: extra sprite {e.Sprite} at ({e.PosX},{e.PosY},{e.PosZ}) flags {e.Flags:X} fly {(e.Flags & 2) != 0}"); }
@@ -387,9 +387,9 @@ internal static class Lba2LinkStudy
     {
         var dir = args[1];
         var path = System.IO.Path.Combine(dir, "SCENE.HQR");
-        var count = LBA2LevelEditor.HqrArchive.CountEntries(path);
-        var names = LBA2LevelEditor.HqdDescriptions.Load("SCENE2.HQD", count).Names;
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, dir);
+        var count = LBAAssembler.HqrArchive.CountEntries(path);
+        var names = LBAAssembler.HqdDescriptions.Load("SCENE2.HQD", count).Names;
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, dir);
         string Name(int scene) => scene + 1 < names.Count ? names[scene + 1] ?? "?" : "?";
         var wanted = Enumerable.Range(0, count - 1).Where(s => args.Skip(2).Any(t => Name(s).Contains(t, StringComparison.OrdinalIgnoreCase))).ToList();
         foreach (var s in wanted)

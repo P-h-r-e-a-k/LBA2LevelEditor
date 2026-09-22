@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
-using LBA2LevelEditor;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 

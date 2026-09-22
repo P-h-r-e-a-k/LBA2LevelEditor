@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // The game's CD image (LBA.iso / LBA.GOG): a raw MODE1 disc, 2352-byte sectors with 16 bytes of header before each
 // 2048-byte block, an ISO 9660 file system on track 1 (the films, the game data), and the CD's music as audio tracks after

@@ -1,8 +1,8 @@
 using System.IO;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // The bedroom door in Lupin Burg (Lba1RoomDoorMod) needs a little key the first time it is opened. The key is spent and the fact is
 // kept in a game flag ("Door unlocked"), so that every later visit just opens it. The game saves its flags with the save game

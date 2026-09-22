@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // One LBA1 ANIM.HQR entry: a list of key frames, each giving every bone of the body either a rotation
 // (type 0: three angles in 1024ths of a turn) or a translation (type 1). Layout: U16 frame count,

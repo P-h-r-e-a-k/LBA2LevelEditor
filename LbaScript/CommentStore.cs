@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // The comments sidecar: one JSON file holding every script's comments, keyed by
 // scene / actor slot / life-or-track. Kept beside SCENE.HQR as

@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 internal enum SceneGame { Lba1 = 1, Lba2 = 2 }
 

@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.IO;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor.Scenes;
+namespace LBAAssembler.Scenes;
 
 // Problems the validators found that stop a save. An IOException (via SceneEditException) so the editor's existing
 // "Not saved: ..." handling shows it.

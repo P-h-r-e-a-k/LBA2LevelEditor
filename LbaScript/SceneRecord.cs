@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // One actor slot of a scene record: object 0 is the hero (its record has
 // only start position + scripts), objects 1.. carry the full attribute block.

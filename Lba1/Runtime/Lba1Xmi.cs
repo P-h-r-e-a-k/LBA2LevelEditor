@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // LBA1's music (MIDI_MI.HQR) is XMIDI, Miles Design's variant of a MIDI file: chunks inside IFF "FORM" wrappers, delays
 // as plain bytes between events (120 ticks per second), and note-ons that carry their own length instead of a note-off.

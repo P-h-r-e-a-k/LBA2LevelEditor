@@ -6,7 +6,7 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Editing an island's terrain in the main window's own 3D view, live. The mouse position is turned into a point on the ground
 // through NativeCameraModel (fitted from the native renderer's projection after every frame), fed to the terrain editor

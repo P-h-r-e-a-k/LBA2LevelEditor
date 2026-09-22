@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // One cell of an LBA1 grid: the block used there (1-based index into the scene's block library, 0 = empty)
 // and which cell of that block's template this is (block extent dx*dy*dz; see Lba1GridRenderer).

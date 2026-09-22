@@ -6,7 +6,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Shows the LBA2 engine (lba2cc.exe, a separate process with its own SDL window) inside the main window: the engine's window is
 // taken over as a child of this control's own window (style stripped to a bare child, sized to the largest 4:3 rectangle that

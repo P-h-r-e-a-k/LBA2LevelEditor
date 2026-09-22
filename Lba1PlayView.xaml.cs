@@ -8,10 +8,10 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Lba1.Runtime;
+using LBAAssembler.Lba1;
+using LBAAssembler.Lba1.Runtime;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Plays an LBA1 scene without the game: Lba1Runtime (a port of the engine's game logic) runs the scene's scripts, the
 // hero, doors and zones at the game's 50 Hz clock, and the isometric map (Lba1GridRenderer) is drawn with the animated

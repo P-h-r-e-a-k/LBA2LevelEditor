@@ -1,7 +1,7 @@
 using System.IO;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Writes an LBA2 actor's edited attributes (from ActorAttributesWindow) into its own scene record in SCENE.HQR,
 // through the same SceneStore/SceneSerializer path every other saved LBA2 edit (zones, LBA1's own actor window,

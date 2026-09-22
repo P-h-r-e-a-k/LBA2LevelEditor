@@ -3,7 +3,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Renders LBA1 bodies (neutral pose, through the Body Studio renderer) for the map markers
 // and the actor window's preview.

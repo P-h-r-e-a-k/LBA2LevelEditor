@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Scans every actor script already resident in the native renderer (it scans
 // the whole island's SCENE.HQR into memory once per island load anyway --

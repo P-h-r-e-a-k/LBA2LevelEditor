@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // PERSO.C: the game's camera is a 640 x 480 screen whose centre shows one cell of the map (StartXCube / Y / Z). It stays
 // put while the followed actor moves inside the screen's inner area, jumps to recentre when he leaves it, and camera zones

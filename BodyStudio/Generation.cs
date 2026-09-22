@@ -8,7 +8,7 @@ namespace LbaBodyStudio;
 
 public sealed class Settings
 {
-    // LBA2LevelEditor already knows where the user's LBA2 install lives
+    // LBAAssembler already knows where the user's LBA2 install lives
     // (EditorSettings, configurable via the Settings window) -- reuse it as
     // this standalone tool's own default rather than the original app's
     // hardcoded developer-machine path. LBA1 isn't wired into the level
@@ -17,7 +17,7 @@ public sealed class Settings
     // lets a user point at one.
     public string ImagePath { get; set; } = "";
     public string Lba1Folder { get; set; } = "";
-    public string Lba2Folder { get; set; } = LBA2LevelEditor.EditorSettings.Current.GameDirectory;
+    public string Lba2Folder { get; set; } = LBAAssembler.EditorSettings.Current.GameDirectory;
     public int Lba1Body { get; set; } = 0;
     public int Lba2Body { get; set; } = 0;
     public string Target { get; set; } = "Both";

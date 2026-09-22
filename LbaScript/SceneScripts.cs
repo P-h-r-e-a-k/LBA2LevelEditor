@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Scene is -1 until a caller that knows which scene the script belongs to fills it in.
 public sealed record ScriptDiagnostic(int Actor, ScriptKind Kind, int Line, int Column, string Message, int Scene = -1)

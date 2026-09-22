@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // One scene actor. Positions are world units (512 per brick horizontally, 256 vertically).
 // Entity is the FILE3D.HQR entity (-1 for none); Body picks one of that entity's bodies and

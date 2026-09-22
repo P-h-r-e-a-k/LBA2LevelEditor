@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using LBA2LevelEditor;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler;
+using LBAAssembler.Grids;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -49,7 +49,7 @@ internal static class GridEngineTest
                 if (record.Length < 6 || record[5] != 0) continue;         // interior only
                 var gridId = table[scene * 2 + 1];
                 if (backend.Grids.All(g => g.Id != gridId)) continue;
-                var model = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, Lba2Dir).Load(scene);
+                var model = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, Lba2Dir).Load(scene);
                 int hx = model.Hero.X / 512, hy = model.Hero.Y / 256, hz = model.Hero.Z / 512;
                 if (hx < 4 || hz < 4 || hx > 58 || hz > 58 || hy > 20) continue;
                 tried++;
@@ -111,7 +111,7 @@ internal static class GridEngineTest
                 if (Path.GetFileName(file).Equals("LBA_BKG.HQR", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(file).Equals("SCENE.HQR", StringComparison.OrdinalIgnoreCase)) File.Copy(file, target, true);
                 else CreateHardLinkW(target, file, IntPtr.Zero);
             }
-            var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, sandbox);
+            var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, sandbox);
             var backend = new Lba2GridBackend(sandbox);
             var failures = 0;
             var scene = Enumerable.Range(0, 200).First(s => { try { return store.Load(s).CubeMode == 0 && backend.GridOfScene(s) is not null && s >= 5; } catch (Exception) { return false; } });

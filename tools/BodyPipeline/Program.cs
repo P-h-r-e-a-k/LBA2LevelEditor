@@ -1,6 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
-using LBA2LevelEditor;
+using LBAAssembler;
 using LbaBodyStudio;
 
 namespace BodyPipeline;
@@ -15,6 +15,18 @@ namespace BodyPipeline;
 //                                            at several angles (front/3-4/profile/back) -- a torso/limb join gap (see
 //                                            widestance below) shows as a background-coloured sliver from some angle even
 //                                            when a flat front sheet or a straight-on render hides it
+//   dummybody <outDir>                       regenerates the in-game placeholder body (Assets/DummyBody.lm2): a clean,
+//                                            pure-black, legs-together silhouette (no lossy game-style-conversion step,
+//                                            which is what left the old asset a dark teal rather than black) run through
+//                                            New humanoid with HeadDetails/BandanaText, so the legs are guaranteed
+//                                            attached (HipAttach) and the bandana/teeth read clearly (NegativeZFront
+//                                            must be true -- see the comment at its Settings -- or the lettering and
+//                                            teeth silently render invisible while everything else still looks fine).
+//                                            Writes dummybody.lm2 (LBA2 payload, Body.Write()'s own bytes) plus 3D
+//                                            renders and a hip closeup to outDir for review before it is copied over
+//                                            the real asset.
+//   currentdummy <outDir>                    the same renders for the EXISTING Assets/DummyBody.lm2, unmodified -- a
+//                                            before/after baseline.
 //   widestance <outDir> [bandana]            regression test for a real bug (2026-09-22): a hand-drawn wide-stance
 //                                            silhouette with an asymmetric accessory along one leg, run through New
 //                                            humanoid (add "bandana" for the HeadDetails branch too) and rendered
@@ -45,6 +57,8 @@ internal static class Program
             "style" => Style(game, args[2], args[3], args.Length > 4 ? int.Parse(args[4]) : 14),
             "roundtrip" => RoundTrip(game, args.Length > 2 ? int.Parse(args[2]) : 0),
             "render3d" => Render3D(game, args.Length > 2 ? int.Parse(args[2]) : 0, args.Length > 3 ? args[3] : Path.GetTempPath()),
+            "dummybody" => DummyBody(args.Length > 1 ? args[1] : Path.GetTempPath()),
+            "currentdummy" => CurrentDummy(args.Length > 1 ? args[1] : Path.GetTempPath()),
             "widestance" => WideStance(args.Length > 1 ? args[1] : Path.GetTempPath(), args.Length > 2 && args[2] == "bandana"),
             "normals" => Normals(game, int.Parse(args[2])),
             "enginebody" => EngineBody(args[1], args[2], args.Skip(3).DefaultIfEmpty("humanoid unlit").ToArray()),
@@ -525,6 +539,100 @@ internal static class Program
             original.Save(Path.Combine(Path.GetTempPath(), $"roundtrip_lba{game}_{body}_original.png"), ImageFormat.Png);
         }
         finally { try { Directory.Delete(work, true); } catch (IOException) { } }
+        return 0;
+    }
+
+    // currentdummy <outDir>: renders the EXISTING, not-yet-replaced Assets/DummyBody.lm2 the same way as dummybody's own
+    // renders, for a direct before/after comparison (colour, leg gap, bandana/teeth legibility).
+    private static int CurrentDummy(string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Assets", "DummyBody.lm2"));
+        var body = Body.Read(bytes, 2);
+        var palette = Generator.Palette(Folder(2));
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
+        {
+            using var render = Renderer.Render(body, palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+            render.Save(Path.Combine(outDir, $"currentdummy_{name}.png"), ImageFormat.Png);
+        }
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("angle", 0.5f) })
+        using (var headClose = Renderer.Render(body, palette, 900, 900, yaw, false, headOnly: true, background: Color.FromArgb(40, 60, 90)))
+            headClose.Save(Path.Combine(outDir, $"currentdummy_head_closeup_{name}.png"), ImageFormat.Png);
+        using (var close = Renderer.Render(body, palette, 1400, 1800, 0.5f, false, background: Color.FromArgb(230, 30, 200)))
+        {
+            var hipArea = new Rectangle(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5);
+            using var cropped = close.Clone(hipArea, close.PixelFormat);
+            cropped.Save(Path.Combine(outDir, "currentdummy_hip_closeup.png"), ImageFormat.Png);
+        }
+        Console.WriteLine($"  current dummy: {body.Faces.Count} polygons, {body.Vertices.Count} points, Lit={body.Lit}, colours used: {string.Join(",", FlatSheet.Colours(body))}");
+        Console.WriteLine($"  renders in {outDir}");
+        return 0;
+    }
+
+    // The in-game placeholder body (Assets/DummyBody.lm2): a plain standing silhouette, legs together, arms at the
+    // sides -- fed straight into New humanoid with no game-style-conversion pass (that lossy flattening step, not the
+    // generator itself, is why the old asset came out dark teal instead of black: it re-quantises the picture through
+    // the game's own allowed colours before the generator ever sees it). A pure black source pixel needs no such help;
+    // the generator samples it directly.
+    private static int DummyBody(string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        const int w = 300, h = 700;
+        using var bmp = new Bitmap(w, h);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.White);
+            using var black = new SolidBrush(Color.Black);
+            int cx = w / 2;
+            g.FillEllipse(black, cx - 30, 20, 60, 70);                                                     // head
+            g.FillPolygon(black, new PointF[] { new(cx - 45, 95), new(cx + 45, 95), new(cx + 55, 330), new(cx - 55, 330) }); // torso, tapering out slightly to the hips
+            g.FillRectangle(black, cx - 90, 100, 30, 220);                                                  // left arm
+            g.FillRectangle(black, cx + 60, 100, 30, 220);                                                  // right arm
+            // legs together (a normal stance, not the wide-stance stress test): each leg starts right where the torso
+            // ends and the inner edges stay close and roughly parallel, the kind of small, constant gap a standing
+            // figure's own crotch and ankles actually have -- this is the easy case for HipAttach, not the hard one.
+            g.FillPolygon(black, new PointF[] { new(cx - 58, 328), new(cx - 6, 328), new(cx - 8, 650), new(cx - 38, 650) });  // left leg
+            g.FillPolygon(black, new PointF[] { new(cx + 6, 328), new(cx + 58, 328), new(cx + 38, 650), new(cx + 8, 650) });  // right leg
+            g.FillRectangle(black, cx - 48, 650, 45, 30);                                                   // left foot
+            g.FillRectangle(black, cx + 3, 650, 45, 30);                                                    // right foot
+        }
+        var path = Path.Combine(outDir, "dummybody_source.png");
+        bmp.Save(path, ImageFormat.Png);
+
+        var settings = new Settings
+        {
+            ImagePath = path, Lba1Folder = Folders[0], Lba2Folder = Folders[1], Lba1Body = 0, Lba2Body = 0,
+            Mask = "Dark subject", Threshold = 128, Layout = "Single front", Method = "New humanoid", AutoCrop = true, DetailBudget = 300,
+            HeadDetails = true, BandanaText = "Phreak", Lit = false,
+            // HeadDecoration.Add mirrors X and Z when this is false (its own front-facing convention is the opposite of a
+            // plain "Single front" silhouette's). Left at the Settings default (false) here, the bandana/teeth geometry
+            // still builds -- same polygon and colour counts either way -- but its band-front polygons and the ordinary
+            // body polygons disagree about which way is front, so the "off" (white) cells of the letter grid and the
+            // ordinary head skin end up drawn over each other in screen space: the bandana cloth, knot and tails (which
+            // don't depend on this) still look right, but the lettering and teeth are invisible. True matches how the
+            // shipped asset was made.
+            NegativeZFront = true,
+        };
+        var generated = Generator.Generate(settings, 2);
+        var written = generated.Body.Write();
+        File.WriteAllBytes(Path.Combine(outDir, "dummybody.lm2"), written);
+        var colours = FlatSheet.Colours(generated.Body);
+        Console.WriteLine($"  {generated.Body.Faces.Count} polygons, {generated.Body.Vertices.Count} points, {colours.Length} distinct colours, {written.Length} bytes -> {Path.Combine(outDir, "dummybody.lm2")}");
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
+        {
+            using var render = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+            render.Save(Path.Combine(outDir, $"dummybody_{name}.png"), ImageFormat.Png);
+        }
+        using (var close = Renderer.Render(generated.Body, generated.Palette, 1400, 1800, 0.5f, false, background: Color.FromArgb(230, 30, 200)))
+        {
+            var hipArea = new Rectangle(close.Width / 4, close.Height * 2 / 5, close.Width / 2, close.Height / 5);
+            using var cropped = close.Clone(hipArea, close.PixelFormat);
+            cropped.Save(Path.Combine(outDir, "dummybody_hip_closeup.png"), ImageFormat.Png);
+        }
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("angle", 0.5f) })
+        using (var headClose = Renderer.Render(generated.Body, generated.Palette, 900, 900, yaw, false, headOnly: true, background: Color.FromArgb(40, 60, 90)))
+            headClose.Save(Path.Combine(outDir, $"dummybody_head_closeup_{name}.png"), ImageFormat.Png);
+        Console.WriteLine($"  source + renders in {outDir}");
         return 0;
     }
 

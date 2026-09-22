@@ -1,9 +1,9 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Choosing what is open through the menus: Scenes > LBA1 / LBA2 > Island > Area. An island's areas are its scenes (LBA2: the outdoor
 // scenes, each one cube of the island, then its interiors; LBA1: the connected outside maps first (as joined maps, or with joining off as

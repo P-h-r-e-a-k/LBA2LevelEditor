@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The sound balance used when a scene is played, kept per game (the games' own default balance is off: the music drowns the
 // speech). Levels are percentages of full volume.

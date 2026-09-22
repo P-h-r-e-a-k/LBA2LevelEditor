@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using LBA2LevelEditor;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler;
+using LBAAssembler.LbaScript;
 
 namespace ScriptRoundTrip;
 

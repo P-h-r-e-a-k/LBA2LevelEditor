@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Reads an LBA_GRI scene entry into cells (no drawing, so tools without WPF can use it).
 //   64*64 U16 column offsets (index x + z*64), then the columns, then a 32-byte bitmap of the blocks in use.

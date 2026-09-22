@@ -1,4 +1,4 @@
-<Window x:Class="LBA2LevelEditor.Lba2SceneEditorWindow"
+<Window x:Class="LBAAssembler.Lba2SceneEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LBA2 - scene editor" Width="1400" Height="860" MinWidth="900" MinHeight="520"

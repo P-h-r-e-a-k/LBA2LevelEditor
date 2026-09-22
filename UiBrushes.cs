@@ -1,6 +1,6 @@
 using System.Windows.Media;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The scheme's text colours for the windows that are built in code (see Theme.xaml for the whole scheme).
 internal static class UiBrushes

@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 // The lighting maths shared by the shadow tools and the tests.
 internal static class IslandLight

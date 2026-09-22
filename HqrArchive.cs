@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 internal sealed class HqrArchive
 {

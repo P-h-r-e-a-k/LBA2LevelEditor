@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Authoritative opcode/operand tables for LBA2's two bytecode languages, the
 // life script (LM_* actions, LF_* conditions, LT_* comparisons; interpreted by

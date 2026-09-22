@@ -44,6 +44,10 @@ public static class Renderer
     // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
     public static readonly Color KeyBackground=Color.FromArgb(25,30,39),KeyGrid=Color.FromArgb(44,52,64);
     public static readonly Color ViewBackground=Color.FromArgb(232,240,250),ViewGrid=Color.FromArgb(203,221,240);
+    // The rest of the app's own light theme (Theme.xaml), so Body Studio's plain WinForms controls don't look like a different program.
+    public static readonly Color PanelBackground=Color.FromArgb(0xE8,0xF0,0xFA),FieldBackground=Color.White,ButtonBackground=Color.FromArgb(0xD6,0xE6,0xF7),
+        ButtonBorder=Color.FromArgb(0x9F,0xBE,0xE0),ButtonHover=Color.FromArgb(0xC3,0xDB,0xF5),Accent=Color.FromArgb(0x1B,0x6E,0xC2),
+        Border=Color.FromArgb(0xA9,0xC3,0xE0),Text=Color.FromArgb(0x10,0x24,0x3E),TextMuted=Color.FromArgb(0x4E,0x6B,0x8A);
     public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,Color? background=null,Color? gridLine=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);

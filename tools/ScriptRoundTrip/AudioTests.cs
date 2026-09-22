@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using LBA2LevelEditor;
+using LBAAssembler;
 
 namespace ScriptRoundTrip;
 
@@ -58,7 +58,7 @@ internal static class AudioTests
         var lba1 = Environment.GetEnvironmentVariable("LBA1_DIR") ?? @"E:\GOG Games\Little Big Adventure";
         if (Directory.Exists(lba1))
         {
-            var runtimeData = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(lba1);
+            var runtimeData = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(lba1);
             var tunes = 0; var bad = 0;
             for (var number = 0; number < 30; number++)
             {

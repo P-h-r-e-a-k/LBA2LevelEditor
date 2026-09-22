@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 // How a bake lights the terrain. The retail islands' stored brightness (LUM, low nibble of each vertex) is a Lambert
 // light of the terrain: azimuth = 360 degrees - BetaLight, elevation about AlphaLight (both /4096 turns), roughly

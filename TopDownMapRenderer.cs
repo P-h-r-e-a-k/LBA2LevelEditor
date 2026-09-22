@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Renders a full-resolution orthographic top-down map of an island by
 // rasterizing every ground triangle with the same per-pixel barycentric

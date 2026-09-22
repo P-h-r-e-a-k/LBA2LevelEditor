@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // Presentation options for the C text the decompilers write. They only affect
 // how text is *printed*; the compiler accepts either spelling.

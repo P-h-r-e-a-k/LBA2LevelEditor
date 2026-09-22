@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Structural edits to an LBA1 scene record (the size changes, unlike Lba1ActorRecord's in-place patches).
 internal static class Lba1SceneEdit

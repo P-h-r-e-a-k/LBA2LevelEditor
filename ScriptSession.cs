@@ -1,7 +1,7 @@
 using System.IO;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Where a UI actor's scripts live in SCENE.HQR: scene number (LBA2: HQR entry - 1, LBA1: the entry
 // itself) and object slot inside that scene's record (0 = hero, 1.. = scene actors).

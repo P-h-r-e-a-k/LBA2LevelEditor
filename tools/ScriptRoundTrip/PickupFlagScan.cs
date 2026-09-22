@@ -1,6 +1,6 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -47,8 +47,8 @@ internal static class PickupFlagScan
         var scenePath = Path.Combine(root, "SCENE.HQR");
         var archive = HqrArchive.Open(scenePath);
         var entries = HqrArchive.CountEntries(scenePath);
-        var sceneNames = File.Exists(@"E:\dump\LBA2LevelEditor\Assets\FileDesc\SCENE2.HQD")
-            ? File.ReadAllLines(@"E:\dump\LBA2LevelEditor\Assets\FileDesc\SCENE2.HQD", System.Text.Encoding.Latin1)
+        var sceneNames = File.Exists(@"E:\dump\LBAAssembler\Assets\FileDesc\SCENE2.HQD")
+            ? File.ReadAllLines(@"E:\dump\LBAAssembler\Assets\FileDesc\SCENE2.HQD", System.Text.Encoding.Latin1)
             : Array.Empty<string>();
 
         var pickups = new List<Pickup>();

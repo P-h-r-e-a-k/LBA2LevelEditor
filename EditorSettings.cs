@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // What an LBA2 game folder must contain for the editor to use it.
 internal static class Lba2Folder
@@ -15,12 +15,12 @@ internal static class Lba2Folder
 // Persists the user's settings (game folders and a few options) as settings.json next to the
 // executable, so the whole app is portable: copy the folder and the settings come along. If that
 // folder can't be written to (say, the exe sits under Program Files) it falls back to
-// %AppData%\LBA2LevelEditor. A settings file left in %AppData% by an earlier version is read once
+// %AppData%\LBAAssembler. A settings file left in %AppData% by an earlier version is read once
 // and copied to the new location straight away.
 internal sealed class EditorSettings
 {
     private static readonly string LegacySettingsDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LBA2LevelEditor");
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LBAAssembler");
 
 #if DEBUG
     // Debug builds only: LBA2_EDITOR_SETTINGS_DIR, when set, replaces the executable's folder --

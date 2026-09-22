@@ -4,9 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // LBA2 interiors that continue into one another (a factory's rooms, a control tower and the palace behind it), drawn as one map (Lba2Areas): the
 // scenes' grids are drawn by the managed renderer at their offsets in one picture, with a marker per actor and every zone on top, like the LBA1

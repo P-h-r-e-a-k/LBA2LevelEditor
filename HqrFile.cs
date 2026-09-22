@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // An HQR archive held as a table of slots, so entries can be replaced, added, cleared and removed and the file
 // written back. HqrArchive stays the read-only view; HqrWriter.ReplaceEntry is the older single-entry helper.

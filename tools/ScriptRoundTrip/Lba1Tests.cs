@@ -1,6 +1,6 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -53,7 +53,7 @@ internal static class Lba1Tests
         if (mode == "text")
         {
             var textPath = Path.Combine(Path.GetDirectoryName(path)!, "TEXT.HQR");
-            var bank = LBA2LevelEditor.Lba1.Runtime.Lba1TextBank.Load(HqrArchive.Open(textPath), 0, 3 + int.Parse(args[2]));
+            var bank = LBAAssembler.Lba1.Runtime.Lba1TextBank.Load(HqrArchive.Open(textPath), 0, 3 + int.Parse(args[2]));
             if (bank is null) { Console.WriteLine("no such bank"); return 1; }
             var wanted = args.Skip(3).Select(int.Parse).ToList();
             foreach (var id in wanted.Count > 0 ? wanted : bank.Ids.ToList())
@@ -75,7 +75,7 @@ internal static class Lba1Tests
                 var record = SceneRecord.ParseLba1(raw);
                 var writer = new StringWriter();
                 writer.WriteLine($"// scene {scene}: island {record.Island}, {s.ActorCount} actors");
-                var model = LBA2LevelEditor.Scenes.SceneSerializer.Parse(LBA2LevelEditor.Scenes.SceneGame.Lba1, raw);
+                var model = LBAAssembler.Scenes.SceneSerializer.Parse(LBAAssembler.Scenes.SceneGame.Lba1, raw);
                 for (var z = 0; z < model.Zones.Count; z++)
                 {
                     var zone = model.Zones[z];

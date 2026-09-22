@@ -1,6 +1,6 @@
 using System.Text;
 using System.Xml;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 

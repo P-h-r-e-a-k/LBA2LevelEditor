@@ -1,6 +1,6 @@
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Tools > LBA1: Make surprise changes. Everything the editor adds to the LBA1 game files on its own, as one save:
 //   * the bedroom (scene 61) connected to Lupin Burg (Lba1RoomDoorMod: the arch, the sliding door, the two zones);

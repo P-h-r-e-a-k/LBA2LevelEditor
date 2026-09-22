@@ -5,10 +5,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Grids;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Edits one LBA2 scene as data (SceneDocument), on a plan of the scene seen from above: its actors, zones and track points
 // are drawn where they are, and can be picked, dragged, added, deleted and duplicated, their numbers edited, and every

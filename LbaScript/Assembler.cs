@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 // A position in the instruction stream that jumps can target. Bound once, to
 // the index of the instruction that follows it (Code.Count when bound at the

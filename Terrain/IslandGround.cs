@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 // A ground triangle as the engine packs it (T_HALF_POLY, one U32).
 internal readonly record struct IslandPolygon(uint Raw)

@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // The editable attributes of one LBA1 scene actor, as stored in the scene record's 35-byte header
 // (layout in Lba1Scene.Parse). The hero (actor 0) has only a start position.

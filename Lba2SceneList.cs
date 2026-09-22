@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // The scenes of an LBA2 game folder as (number, "number: description") for pickers. Scene N is SCENE.HQR entry N + 1;
 // entry 0 holds the size of the largest scene.

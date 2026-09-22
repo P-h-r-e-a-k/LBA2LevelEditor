@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Writes HQR archives (the read side is HqrArchive). An HQR is a table of
 // little-endian u32 offsets -- its first word is the table's own size in bytes,

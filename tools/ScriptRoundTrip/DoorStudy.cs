@@ -1,6 +1,6 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
 
 namespace ScriptRoundTrip;
 
@@ -133,8 +133,8 @@ internal static class SurpriseCommands
     {
         var store = new SceneStore(SceneGame.Lba1, args[1]);
         var scene = int.Parse(args[2]);
-        var scripts = LBA2LevelEditor.LbaScript.SceneScripts.Load(store.LoadRecord(scene), scene, null, lba1: true);
-        Console.WriteLine(scripts.GetText(int.Parse(args[3]), LBA2LevelEditor.LbaScript.ScriptKind.Life));
+        var scripts = LBAAssembler.LbaScript.SceneScripts.Load(store.LoadRecord(scene), scene, null, lba1: true);
+        Console.WriteLine(scripts.GetText(int.Parse(args[3]), LBAAssembler.LbaScript.ScriptKind.Life));
         return 0;
     }
 }
@@ -214,9 +214,9 @@ internal static class FishTrace
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
         int scene = args.Length > 2 ? int.Parse(args[2]) : 42, fisherman = args.Length > 3 ? int.Parse(args[3]) : 10, boat = args.Length > 4 ? int.Parse(args[4]) : 9, choice = args.Length > 5 ? int.Parse(args[5]) : 6;
-        var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data) { ChoicePolicy = ids => ids.Contains(choice) ? choice : ids[^1] };
+        var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data) { ChoicePolicy = ids => ids.Contains(choice) ? choice : ids[^1] };
         rt.ChangeCube(scene);
         rt.Chapter = 6;
         rt.NbGoldPieces = 100;
@@ -225,7 +225,7 @@ internal static class FishTrace
         var b = rt.Objects[boat];
         Console.WriteLine($"fisherman srot {f.SRot} beta {f.Beta} box x {f.XMin}..{f.XMax} y {f.YMin}..{f.YMax} z {f.ZMin}..{f.ZMax} at ({f.PosX},{f.PosY},{f.PosZ}) label {f.LabelTrack}; boat at ({b.PosX},{b.PosY},{b.PosZ}) box x {b.XMin}..{b.XMax} y {b.YMin}..{b.YMax} z {b.ZMin}..{b.ZMax}");
         rt.Place(4096, f.PosY, 21728, 768);
-        rt.Fire = LBA2LevelEditor.Lba1.Runtime.Lba1Const.FSpace;
+        rt.Fire = LBAAssembler.Lba1.Runtime.Lba1Const.FSpace;
         rt.Frame();
         rt.Fire = 0;
         for (var frame = 0; frame < 1500; frame++)
@@ -244,7 +244,7 @@ internal static class AnimSteps
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
         var entity = data.Entity(int.Parse(args[2]));
         if (entity is null) { Console.WriteLine("no such entity"); return 1; }
         foreach (var id in args.Skip(3).Select(int.Parse))
@@ -264,8 +264,8 @@ internal static class HqrCompare
 {
     public static int Run(string[] args)
     {
-        var a = LBA2LevelEditor.HqrFile.Parse(File.ReadAllBytes(args[1]));
-        var b = LBA2LevelEditor.HqrFile.Parse(File.ReadAllBytes(args[2]));
+        var a = LBAAssembler.HqrFile.Parse(File.ReadAllBytes(args[1]));
+        var b = LBAAssembler.HqrFile.Parse(File.ReadAllBytes(args[2]));
         Console.WriteLine($"{a.Count} vs {b.Count} entries");
         for (var i = 0; i < Math.Min(a.Count, b.Count); i++)
         {
@@ -283,10 +283,10 @@ internal static class DoorLanes
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args.Length > 1 ? args[1] : @"E:\GOG Games\Little Big Adventure");
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args.Length > 1 ? args[1] : @"E:\GOG Games\Little Big Adventure");
         for (var z = 5376; z <= 7935; z += 128)
         {
-            var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+            var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
             rt.ChangeCube(13);
             rt.NbLittleKeys = 1;
             rt.FlagGame[220] = 1;
@@ -310,15 +310,15 @@ internal static class DoorWalk
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args.Length > 1 ? args[1] : @"E:\GOG Games\Little Big Adventure");
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args.Length > 1 ? args[1] : @"E:\GOG Games\Little Big Adventure");
         for (var z = 5376; z <= 8192; z += 256)
         {
-            var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+            var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
             rt.ChangeCube(13);
             rt.NbLittleKeys = 1;
             rt.Run(5);
             rt.Place(54 * 512, 256, z, 768);
-            rt.Joy = LBA2LevelEditor.Lba1.Runtime.Lba1Const.JUp;
+            rt.Joy = LBAAssembler.Lba1.Runtime.Lba1Const.JUp;
             var history = new List<string>();
             var last = rt.NumCube;
             for (var f = 0; f < 500; f++)
@@ -337,7 +337,7 @@ internal static class SceneZoneDump
 {
     public static int Run(string[] args)
     {
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba1, args[1]);
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba1, args[1]);
         var scene = store.Load(int.Parse(args[2]));
         for (var i = 0; i < scene.Zones.Count; i++)
         {
@@ -353,14 +353,14 @@ internal static class DoorTrace
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(@"E:\GOG Games\Little Big Adventure");
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(@"E:\GOG Games\Little Big Adventure");
         var z = int.Parse(args[1]);
-        var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+        var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
         rt.ChangeCube(13);
         rt.NbLittleKeys = 1;
         rt.Run(5);
         rt.Place(54 * 512, 256, z, 768);
-        rt.Joy = LBA2LevelEditor.Lba1.Runtime.Lba1Const.JUp;
+        rt.Joy = LBAAssembler.Lba1.Runtime.Lba1Const.JUp;
         for (var f = 0; f < 100; f++)
         {
             rt.Frame();
@@ -376,16 +376,16 @@ internal static class ScriptGrep
 {
     public static int Run(string[] args)
     {
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba1, args[1]);
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba1, args[1]);
         for (var s = 0; s < 120; s++)
         {
             byte[] record;
             try { record = store.LoadRecord(s); } catch { continue; }
-            var scripts = LBA2LevelEditor.LbaScript.SceneScripts.Load(record, s, null, lba1: true);
-            var model = LBA2LevelEditor.Scenes.SceneSerializer.Parse(LBA2LevelEditor.Scenes.SceneGame.Lba1, record);
+            var scripts = LBAAssembler.LbaScript.SceneScripts.Load(record, s, null, lba1: true);
+            var model = LBAAssembler.Scenes.SceneSerializer.Parse(LBAAssembler.Scenes.SceneGame.Lba1, record);
             for (var a = 0; a < model.Actors.Count; a++)
             {
-                var text = scripts.GetText(a, LBA2LevelEditor.LbaScript.ScriptKind.Life);
+                var text = scripts.GetText(a, LBAAssembler.LbaScript.ScriptKind.Life);
                 foreach (var line in text.Split('\n').Where(l => l.Contains(args[2]))) Console.WriteLine($"scene {s} actor {a}: {line.Trim()}");
             }
         }
@@ -398,7 +398,7 @@ internal static class ActorDump
 {
     public static int Run(string[] args)
     {
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba1, args[1]);
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba1, args[1]);
         var a = store.Load(int.Parse(args[2])).Actors[int.Parse(args[3])];
         Console.WriteLine($"flags 0x{a.Flags:X} sprite {a.IsSprite} entity {a.Entity} body {a.Body} anim {a.Anim} sprite {a.Sprite} pos ({a.X},{a.Y},{a.Z}) beta {a.Beta} srot {a.SRot} move {a.Move} hitforce {a.HitForce} option 0x{a.OptionFlags:X} info [{string.Join(",", a.Info)}] nbbonus {a.NbBonus} coul {a.CoulObj} armor {a.Armor} life {a.LifePoints}");
         return 0;
@@ -427,11 +427,11 @@ internal static class ButtonJump
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
         var scene = int.Parse(args[2]);
         foreach (var a in args.Skip(3).Select(int.Parse))
         {
-            var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+            var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
             rt.ChangeCube(scene);
             rt.Run(30);
             var b = rt.Objects[a];
@@ -445,7 +445,7 @@ internal static class ButtonJump
                 if (f % 10 == 9) log.Add($"y{rt.Hero.PosY}");
             }
             var after = string.Join("", Enumerable.Range(0, 8).Select(i => rt.FlagCube[i]));
-            Console.WriteLine($"   after the drop: hero y trace {string.Join(" ", log.Take(6))}; hero at ({rt.Hero.PosX},{rt.Hero.PosY},{rt.Hero.PosZ}); HitBy {b.HitBy}; var_cube {after}; button dead {b.IsDead} invisible {(b.Flags & LBA2LevelEditor.Lba1.Runtime.Lba1Const.Invisible) != 0}");
+            Console.WriteLine($"   after the drop: hero y trace {string.Join(" ", log.Take(6))}; hero at ({rt.Hero.PosX},{rt.Hero.PosY},{rt.Hero.PosZ}); HitBy {b.HitBy}; var_cube {after}; button dead {b.IsDead} invisible {(b.Flags & LBAAssembler.Lba1.Runtime.Lba1Const.Invisible) != 0}");
         }
         return 0;
     }
@@ -456,8 +456,8 @@ internal static class FloorAt
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
-        var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
         rt.ChangeCube(int.Parse(args[2]));
         rt.Run(30);
         rt.Place(int.Parse(args[3]), 6000, int.Parse(args[4]), 0);
@@ -473,27 +473,27 @@ internal static class ButtonJump2
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
         var a = int.Parse(args[2]);
         var noCarrier = args.Contains("nocarrier");
-        var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+        var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
         rt.ChangeCube(99);
         rt.Run(30);
-        rt.SetBehaviour(LBA2LevelEditor.Lba1.Runtime.Lba1Const.CSportif);
+        rt.SetBehaviour(LBAAssembler.Lba1.Runtime.Lba1Const.CSportif);
         var b = rt.Objects[a];
-        if (noCarrier) b.Flags &= ~LBA2LevelEditor.Lba1.Runtime.Lba1Const.ObjCarrier;
+        if (noCarrier) b.Flags &= ~LBAAssembler.Lba1.Runtime.Lba1Const.ObjCarrier;
         rt.Place(b.PosX + 900, b.PosY, b.PosZ, 768);      // east of it, facing west, on the floor
         rt.Run(10);
         var maxY = 0;
         for (var f = 0; f < 200; f++)
         {
-            rt.Joy = f < 60 ? LBA2LevelEditor.Lba1.Runtime.Lba1Const.JUp : 0;
-            rt.Fire = f == 8 || f == 30 || f == 50 ? LBA2LevelEditor.Lba1.Runtime.Lba1Const.FSpace : 0;
+            rt.Joy = f < 60 ? LBAAssembler.Lba1.Runtime.Lba1Const.JUp : 0;
+            rt.Fire = f == 8 || f == 30 || f == 50 ? LBAAssembler.Lba1.Runtime.Lba1Const.FSpace : 0;
             rt.Frame();
             maxY = Math.Max(maxY, rt.Hero.PosY);
             if (f % 15 == 0) Console.WriteLine($"  f{f}: hero ({rt.Hero.PosX},{rt.Hero.PosY},{rt.Hero.PosZ}) anim {rt.Hero.GenAnim}; button HitBy {b.HitBy}, var_cube({a}) {rt.FlagCube[a]}");
         }
-        Console.WriteLine($"button {a}{(noCarrier ? " (not a carrier)" : "")}: highest the hero got {maxY} (floor 2304, button top {b.PosY + b.YMax}); HitBy {b.HitBy}; var_cube({a}) = {rt.FlagCube[a]}; button visible {(b.Flags & LBA2LevelEditor.Lba1.Runtime.Lba1Const.Invisible) == 0}");
+        Console.WriteLine($"button {a}{(noCarrier ? " (not a carrier)" : "")}: highest the hero got {maxY} (floor 2304, button top {b.PosY + b.YMax}); HitBy {b.HitBy}; var_cube({a}) = {rt.FlagCube[a]}; button visible {(b.Flags & LBAAssembler.Lba1.Runtime.Lba1Const.Invisible) == 0}");
         return 0;
     }
 }
@@ -503,21 +503,21 @@ internal static class JumpHeight
 {
     public static int Run(string[] args)
     {
-        var data = new LBA2LevelEditor.Lba1.Runtime.Lba1RuntimeData(args[1]);
+        var data = new LBAAssembler.Lba1.Runtime.Lba1RuntimeData(args[1]);
         foreach (var running in new[] { false, true })
         {
-            var rt = new LBA2LevelEditor.Lba1.Runtime.Lba1Runtime(data);
+            var rt = new LBAAssembler.Lba1.Runtime.Lba1Runtime(data);
             rt.ChangeCube(int.Parse(args[2]));
             rt.Run(30);
-            rt.SetBehaviour(LBA2LevelEditor.Lba1.Runtime.Lba1Const.CSportif);
+            rt.SetBehaviour(LBAAssembler.Lba1.Runtime.Lba1Const.CSportif);
             rt.Place(int.Parse(args[3]), 6000, int.Parse(args[4]), 768);
             rt.Run(150);
             var floor = rt.Hero.PosY;
             var max = floor;
             for (var f = 0; f < 120; f++)
             {
-                rt.Joy = running ? LBA2LevelEditor.Lba1.Runtime.Lba1Const.JUp : 0;
-                rt.Fire = f == 5 ? LBA2LevelEditor.Lba1.Runtime.Lba1Const.FSpace : 0;
+                rt.Joy = running ? LBAAssembler.Lba1.Runtime.Lba1Const.JUp : 0;
+                rt.Fire = f == 5 ? LBAAssembler.Lba1.Runtime.Lba1Const.FSpace : 0;
                 rt.Frame();
                 max = Math.Max(max, rt.Hero.PosY);
             }
@@ -532,7 +532,7 @@ internal static class Lba2ActorDump
 {
     public static int Run(string[] args)
     {
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, args[1]);
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, args[1]);
         var model = store.Load(int.Parse(args[2]));
         var a = model.Actors[int.Parse(args[3]) + 1];
         Console.WriteLine($"entity {a.Entity} body {a.Body} anim {a.Anim} pos ({a.X},{a.Y},{a.Z}) beta {a.Beta} flags 0x{a.Flags:X} life {a.LifePoints} armor {a.Armor} hit {a.HitForce} move {a.Move}");

@@ -1,6 +1,6 @@
 using System.IO;
-using LBA2LevelEditor;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -272,16 +272,16 @@ internal static class Lba2GroupStudy
     {
         var dir = args[1];
         var path = System.IO.Path.Combine(dir, "SCENE.HQR");
-        var count = LBA2LevelEditor.HqrArchive.CountEntries(path);
-        var names = LBA2LevelEditor.HqdDescriptions.Load("SCENE2.HQD", count).Names;
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, dir);
+        var count = LBAAssembler.HqrArchive.CountEntries(path);
+        var names = LBAAssembler.HqdDescriptions.Load("SCENE2.HQD", count).Names;
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, dir);
         string Name(int s) => s + 1 < names.Count ? names[s + 1] ?? "?" : "?";
-        var scenes = new Dictionary<int, LBA2LevelEditor.Scenes.SceneModel>();
+        var scenes = new Dictionary<int, LBAAssembler.Scenes.SceneModel>();
         for (var s = 0; s < count - 1; s++)
         {
             try { var m = store.Load(s); if (m.CubeMode == 0 && !Name(s).StartsWith("Demo")) scenes[s] = m; } catch (Exception) { }
         }
-        (int X, int Y, int Z) Off(LBA2LevelEditor.Scenes.SceneZoneModel z) => ((int)Math.Round((z.X0 - z.Info[0]) / 512.0), (int)Math.Round((z.Y0 - z.Info[1]) / 256.0), (int)Math.Round((z.Z0 - z.Info[2]) / 512.0));
+        (int X, int Y, int Z) Off(LBAAssembler.Scenes.SceneZoneModel z) => ((int)Math.Round((z.X0 - z.Info[0]) / 512.0), (int)Math.Round((z.Y0 - z.Info[1]) / 256.0), (int)Math.Round((z.Z0 - z.Info[2]) / 512.0));
         var edges = new Dictionary<int, HashSet<int>>();
         foreach (var (s, m) in scenes)
             foreach (var z in m.Zones.Where(z => z.Type == 0 && z.Num != s && scenes.ContainsKey(z.Num)))
@@ -310,15 +310,15 @@ internal static class Lba2CubeStudy
 {
     public static int Run(string[] args)
     {
-        var store = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, args[1]);
+        var store = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, args[1]);
         foreach (var scene in args.Skip(2).Select(int.Parse))
         {
-            var scripts = LBA2LevelEditor.LbaScript.SceneScripts.Load(store.LoadRecord(scene), scene, null, lba1: false);
+            var scripts = LBAAssembler.LbaScript.SceneScripts.Load(store.LoadRecord(scene), scene, null, lba1: false);
             var model = store.Load(scene);
             for (var actor = 0; actor < model.Actors.Count; actor++)
             {
                 string text;
-                try { text = scripts.GetText(actor, LBA2LevelEditor.LbaScript.ScriptKind.Life); } catch (Exception) { continue; }
+                try { text = scripts.GetText(actor, LBAAssembler.LbaScript.ScriptKind.Life); } catch (Exception) { continue; }
                 foreach (var line in text.Split('\n').Where(l => l.Contains("change_cube", StringComparison.OrdinalIgnoreCase) || l.Contains("change_scene", StringComparison.OrdinalIgnoreCase)))
                     Console.WriteLine($"  scene {scene} actor {actor}: {line.Trim()}");
             }
@@ -332,11 +332,11 @@ internal static class Lba1PlanStudy
 {
     public static int Run(string[] args)
     {
-        var game = new LBA2LevelEditor.Lba1.Lba1Game(args[1]);
+        var game = new LBAAssembler.Lba1.Lba1Game(args[1]);
         var scene = int.Parse(args[2]);
         var top = new int[64, 64];
         for (var z = 0; z < 64; z++) for (var x = 0; x < 64; x++) top[x, z] = -1;
-        foreach (var c in LBA2LevelEditor.Lba1.Lba1GridRenderer.Placements(game.ReadGrid(scene), game.ReadBlocks(scene))) if (c.Y > top[c.X, c.Z]) top[c.X, c.Z] = c.Y;
+        foreach (var c in LBAAssembler.Lba1.Lba1GridRenderer.Placements(game.ReadGrid(scene), game.ReadBlocks(scene))) if (c.Y > top[c.X, c.Z]) top[c.X, c.Z] = c.Y;
         Console.WriteLine("    " + string.Concat(Enumerable.Range(0, 64).Select(x => (x % 10).ToString())));
         for (var z = 0; z < 64; z++)
             Console.WriteLine($"{z,3} " + string.Concat(Enumerable.Range(0, 64).Select(x => top[x, z] < 0 ? "." : "0123456789abcdefghijklmnopqrstuvwxyz"[top[x, z]].ToString())));
@@ -350,8 +350,8 @@ internal static class Lba1SpriteSheet
     public static int Run(string[] args)
     {
         var dir = args[1];
-        var palette = LBA2LevelEditor.HqrArchive.Open(System.IO.Path.Combine(dir, "RESS.HQR")).Read(0);
-        var sprites = LBA2LevelEditor.HqrArchive.Open(System.IO.Path.Combine(dir, "SPRITES.HQR"));
+        var palette = LBAAssembler.HqrArchive.Open(System.IO.Path.Combine(dir, "RESS.HQR")).Read(0);
+        var sprites = LBAAssembler.HqrArchive.Open(System.IO.Path.Combine(dir, "SPRITES.HQR"));
         const int Cell = 110, Columns = 12;
         var total = Math.Min(sprites.Count, 156);
         var rows = (total + Columns - 1) / Columns;
@@ -370,7 +370,7 @@ internal static class Lba1SpriteSheet
                 if (data.Length > 4 && data[0] > 0 && data[1] > 0 && data[0] <= 100 && data[1] <= 100)
                 {
                     var bgra = new byte[data[0] * data[1] * 4];
-                    LBA2LevelEditor.Lba1.Lba1GridRenderer.Blit(bgra, data[0], data[1], data, 0, 0, palette);
+                    LBAAssembler.Lba1.Lba1GridRenderer.Blit(bgra, data[0], data[1], data, 0, 0, palette);
                     for (var y = 0; y < data[1]; y++) for (var x = 0; x < data[0]; x++)
                     {
                         var s = (y * data[0] + x) * 4;
@@ -397,7 +397,7 @@ internal static class Lba1BodyWinding
 {
     public static int Run(string[] args)
     {
-        var bodies = LBA2LevelEditor.HqrArchive.Open(System.IO.Path.Combine(args[1], "BODY.HQR"));
+        var bodies = LBAAssembler.HqrArchive.Open(System.IO.Path.Combine(args[1], "BODY.HQR"));
         foreach (var index in args.Skip(2).Select(int.Parse))
         {
             var body = LbaBodyStudio.Body.Read(bodies.Read(index), 1);
@@ -426,8 +426,8 @@ internal static class MushroomStudy
 {
     public static int Run(string[] args)
     {
-        var bodies = LBA2LevelEditor.HqrArchive.Open(System.IO.Path.Combine(args[1], "BODY.HQR"));
-        var bytes = LBA2LevelEditor.Lba1.Lba1SecretRoomExtras.BuildBody(bodies.Read(LBA2LevelEditor.Lba1.Lba1SecretRoomExtras.DonorBody));
+        var bodies = LBAAssembler.HqrArchive.Open(System.IO.Path.Combine(args[1], "BODY.HQR"));
+        var bytes = LBAAssembler.Lba1.Lba1SecretRoomExtras.BuildBody(bodies.Read(LBAAssembler.Lba1.Lba1SecretRoomExtras.DonorBody));
         var body = LbaBodyStudio.Body.Read(bytes, 1);
         var world = body.World();
         Console.WriteLine($"{bytes.Length} bytes, {body.Vertices.Count} points, {body.Bones.Count} bone(s), {body.Faces.Count} faces, x {world.Min(v => v.X)}..{world.Max(v => v.X)}, y {world.Min(v => v.Y)}..{world.Max(v => v.Y)}");
@@ -455,7 +455,7 @@ internal static class Lba1EntityDump
 {
     public static int Run(string[] args)
     {
-        var file = LBA2LevelEditor.HqrFile.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(args[1], "FILE3D.HQR")));
+        var file = LBAAssembler.HqrFile.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(args[1], "FILE3D.HQR")));
         foreach (var e in args.Skip(2).Select(int.Parse))
             Console.WriteLine($"entity {e}: {BitConverter.ToString(file.Read(e))}");
         return 0;
@@ -467,8 +467,8 @@ internal static class Lba1EntityScan
 {
     public static int Run(string[] args)
     {
-        var file = LBA2LevelEditor.HqrFile.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(args[1], "FILE3D.HQR")));
-        var names = LBA2LevelEditor.HqdDescriptions.Load("FILE3D.HQD", 0).Names;
+        var file = LBAAssembler.HqrFile.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(args[1], "FILE3D.HQR")));
+        var names = LBAAssembler.HqdDescriptions.Load("FILE3D.HQD", 0).Names;
         for (var e = 0; e < file.Count; e++)
         {
             if (file.IsEmpty(e)) continue;
@@ -485,10 +485,10 @@ internal static class Lba1OneBone
 {
     public static int Run(string[] args)
     {
-        var file = LBA2LevelEditor.HqrFile.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(args[1], "FILE3D.HQR")));
-        var bodies = LBA2LevelEditor.HqrArchive.Open(System.IO.Path.Combine(args[1], "BODY.HQR"));
-        var anims = LBA2LevelEditor.HqrArchive.Open(System.IO.Path.Combine(args[1], "ANIM.HQR"));
-        var names = LBA2LevelEditor.HqdDescriptions.Load("FILE3D.HQD", 0).Names;
+        var file = LBAAssembler.HqrFile.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(args[1], "FILE3D.HQR")));
+        var bodies = LBAAssembler.HqrArchive.Open(System.IO.Path.Combine(args[1], "BODY.HQR"));
+        var anims = LBAAssembler.HqrArchive.Open(System.IO.Path.Combine(args[1], "ANIM.HQR"));
+        var names = LBAAssembler.HqdDescriptions.Load("FILE3D.HQD", 0).Names;
         for (var e = 0; e < file.Count; e++)
         {
             if (file.IsEmpty(e)) continue;
@@ -510,7 +510,7 @@ internal static class Lba1TextChars
 {
     public static int Run(string[] args)
     {
-        var texts = LBA2LevelEditor.HqrFile.Parse(File.ReadAllBytes(Path.Combine(args[1], "TEXT.HQR")));
+        var texts = LBAAssembler.HqrFile.Parse(File.ReadAllBytes(Path.Combine(args[1], "TEXT.HQR")));
         for (var language = 0; language < 5; language++)
         {
             var at = (language * 14 + 4) * 2;
@@ -683,7 +683,7 @@ internal static class Lba1BodyAnimStudy
 {
     public static int Run(string[] args)
     {
-        var game = new LBA2LevelEditor.Lba1.Lba1Game(args[1]);
+        var game = new LBAAssembler.Lba1.Lba1Game(args[1]);
         int entities = 0, mixed = 0, pairs = 0, unplayable = 0;
         for (var e = 0; e < game.EntityCount; e++)
         {
@@ -715,9 +715,9 @@ internal static class Lba2BodyAnimStudy
 {
     public static int Run(string[] args)
     {
-        var table = LBA2LevelEditor.Lba2EntityTable.Load(args[1]) ?? throw new InvalidDataException("no entity table");
-        var bodies = LBA2LevelEditor.HqrArchive.Open(Path.Combine(args[1], "BODY.HQR"));
-        var anims = LBA2LevelEditor.HqrArchive.Open(Path.Combine(args[1], "ANIM.HQR"));
+        var table = LBAAssembler.Lba2EntityTable.Load(args[1]) ?? throw new InvalidDataException("no entity table");
+        var bodies = LBAAssembler.HqrArchive.Open(Path.Combine(args[1], "BODY.HQR"));
+        var anims = LBAAssembler.HqrArchive.Open(Path.Combine(args[1], "ANIM.HQR"));
         int Groups(int index) { try { return anims.IsValid(index) ? BitConverter.ToUInt16(anims.Read(index), 2) : -1; } catch { return -1; } }
         int Bones(int index) { try { return bodies.IsValid(index) ? LbaBodyStudio.Body.Read(bodies.Read(index), 2).Bones.Count : -1; } catch { return -1; } }
         int entities = 0, mixedBodies = 0, exact = 0, more = 0, fewer = 0;
@@ -743,9 +743,9 @@ internal static class Lba2EntityDump2
 {
     public static int Run(string[] args)
     {
-        var table = LBA2LevelEditor.Lba2EntityTable.Load(args[1])!;
-        var bodies = LBA2LevelEditor.HqrArchive.Open(Path.Combine(args[1], "BODY.HQR"));
-        var anims = LBA2LevelEditor.HqrArchive.Open(Path.Combine(args[1], "ANIM.HQR"));
+        var table = LBAAssembler.Lba2EntityTable.Load(args[1])!;
+        var bodies = LBAAssembler.HqrArchive.Open(Path.Combine(args[1], "BODY.HQR"));
+        var anims = LBAAssembler.HqrArchive.Open(Path.Combine(args[1], "ANIM.HQR"));
         foreach (var id in args.Skip(2).Select(int.Parse))
         {
             var e = table.Entities[id];

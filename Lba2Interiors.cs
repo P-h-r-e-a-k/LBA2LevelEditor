@@ -1,9 +1,9 @@
 using System.IO;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Grids;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // LBA2's interior scenes drawn by the managed grid renderer (the same one that draws LBA1's: LBA2's grids, blocks and bricks have the same
 // layout): what a joined map (Lba2Areas) is made of. One scene shown alone still goes through the native engine.

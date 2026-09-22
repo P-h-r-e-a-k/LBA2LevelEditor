@@ -1,6 +1,6 @@
 using System.Text.Json;
-using LBA2LevelEditor;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -37,7 +37,7 @@ internal static class AreaTests
     private static void Lba2Maps()
     {
         if (!File.Exists(Path.Combine(Lba2Dir, "SCENE.HQR")) || !File.Exists(Path.Combine(Lba2Dir, "LBA_BKG.HQR"))) { Console.WriteLine("  (no LBA2 folder; the LBA2 maps aren't checked)"); return; }
-        var interiors = new LBA2LevelEditor.Lba2Interiors(Lba2Dir);
+        var interiors = new LBAAssembler.Lba2Interiors(Lba2Dir);
         var areas = Lba2Areas.Find(interiors.LoadScene);
         var factory = areas.SingleOrDefault(a => a.Tiles.Any(t => t.Scene == 140));
         var tower = areas.SingleOrDefault(a => a.Tiles.Any(t => t.Scene == 177));
@@ -103,7 +103,7 @@ internal static class AreaTests
         Check(interiors.BodyIndex(14, 0) == 25 && interiors.BodyIndex(200, 0) == 289 && interiors.BodyIndex(32, 50) == 53 && interiors.BodyIndex(14, 99) is null && interiors.BodyIndex(-1, 0) is null && interiors.BodyIndex(100000, 0) is null,
             "LBA2: an actor's entity and body number give its BODY.HQR entry (Twinsen 25, the guard 289 ...), and unknown ones give none");
         // the actor window's animation list follows the body: an entity's bodies and animations (RESS.HQR entry 44), and the animations that have as many groups as the body has bones
-        var entityTable = LBA2LevelEditor.Lba2EntityTable.Load(Lba2Dir);
+        var entityTable = LBAAssembler.Lba2EntityTable.Load(Lba2Dir);
         Check(entityTable is not null && entityTable.Entities.Count(e => e.Bodies.Count > 0) > 300 && entityTable.Entities.All(e => e.Bodies.All(b => interiors.BodyIndex(e.Id, b.Generic) == b.Body || e.Bodies.Count(x => x.Generic == b.Generic) > 1)),
             "LBA2: the entity table reads the same bodies as the joined maps' lookup (every entity's every body)");
         if (entityTable is not null)

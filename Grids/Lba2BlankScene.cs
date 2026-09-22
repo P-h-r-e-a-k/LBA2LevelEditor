@@ -1,8 +1,8 @@
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Lba1.Runtime;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Lba1;
+using LBAAssembler.Lba1.Runtime;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Grids;
+namespace LBAAssembler.Grids;
 
 // A blank LBA2 interior for an existing slot: an empty world with a flat floor to stand on and Twinsen standing on it. Scenes can't be added to the game, so "new" means
 // "replace this slot"; the slot keeps its header (light, music, ambience, the interior's block library and style, the hero's own scripts) and loses its actors, zones and

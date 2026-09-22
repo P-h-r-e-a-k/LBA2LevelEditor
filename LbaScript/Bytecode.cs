@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace LBA2LevelEditor.LbaScript;
+namespace LBAAssembler.LbaScript;
 
 public sealed class ScriptFormatException : Exception
 {

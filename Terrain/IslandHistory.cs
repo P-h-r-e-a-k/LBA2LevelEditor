@@ -1,4 +1,4 @@
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 // Undo / redo for island edits. An edit is bracketed by Begin() and Commit(): Begin copies the island's editable data,
 // Commit compares it with the island as it is now and keeps only the cubes that changed (before and after), so a long

@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Two tiers of "this will take a moment" feedback, for wrapping the operations in this app that are slow
 // enough to be worth saying so (nearly everything else already feels instant, so most calls need neither):

@@ -1,7 +1,7 @@
 using System.IO;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // A FILE3D.HQR entity as the engine's SearchBody / SearchAnim read it (FICHE.C): a list of records
 // [type][generic number][size][U16 HQR index][has action]...; type 1 is a body, type 3 an animation, 255 ends it.

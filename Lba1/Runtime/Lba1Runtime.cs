@@ -1,7 +1,7 @@
-using LBA2LevelEditor.Scenes;
-using static LBA2LevelEditor.Lba1.Runtime.Lba1Const;
+using LBAAssembler.Scenes;
+using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
-namespace LBA2LevelEditor.Lba1.Runtime;
+namespace LBAAssembler.Lba1.Runtime;
 
 // A headless simulation of LBA1's game logic: the scene's actors run their life and track scripts, the hero walks under
 // scripted input, animations move actors, bricks and actors collide, and zones change scene, exactly as the engine's

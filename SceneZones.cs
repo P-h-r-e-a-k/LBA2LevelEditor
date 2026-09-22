@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
 using System.IO;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.LbaScript;
+using LBAAssembler.Lba1;
+using LBAAssembler.LbaScript;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Identifies one zone: game (1 or 2), scene (LBA1 scene number / LBA2 numscene) and its position
 // in that scene's zone list.

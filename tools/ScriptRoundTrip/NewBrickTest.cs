@@ -1,7 +1,7 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Assets;
-using LBA2LevelEditor.Grids;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler;
+using LBAAssembler.Assets;
+using LBAAssembler.Grids;
+using LBAAssembler.Lba1;
 
 namespace ScriptRoundTrip;
 
@@ -65,7 +65,7 @@ internal static class NewBrickTest
             var backend = new Lba2GridBackend(sandbox);
             const int scene = 0;
             var gridId = backend.GridOfScene(scene)!.Value;
-            var model = new LBA2LevelEditor.Scenes.SceneStore(LBA2LevelEditor.Scenes.SceneGame.Lba2, Lba2Dir).Load(scene);
+            var model = new LBAAssembler.Scenes.SceneStore(LBAAssembler.Scenes.SceneGame.Lba2, Lba2Dir).Load(scene);
             int hx = model.Hero.X / 512, hy = model.Hero.Y / 256, hz = model.Hero.Z / 512;
             var keep = Environment.GetEnvironmentVariable("GRID_E2E_KEEP");
             void Keep(string name) { if (keep is not null && File.Exists(Path.Combine(user, name))) File.Copy(Path.Combine(user, name), Path.Combine(keep, "newbrick_" + name), true); }

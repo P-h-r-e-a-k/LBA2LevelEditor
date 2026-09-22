@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 
-namespace LBA2LevelEditor.Terrain;
+namespace LBAAssembler.Terrain;
 
 // One decor object of a cube (DOB record, T_DECORS in the engine): a body of the island's OBL file placed in the
 // world. The ZV (XMin..ZMax) is absolute, so it moves with the object. Kept as the raw record so nothing is lost.

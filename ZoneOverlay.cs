@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // A scene trigger box ("zone") with its 8 corners already projected into the
 // coordinate space of whichever view produced it (framebuffer pixels outdoors,

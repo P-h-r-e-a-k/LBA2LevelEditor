@@ -1,5 +1,5 @@
-using LBA2LevelEditor;
-using LBA2LevelEditor.Assets;
+using LBAAssembler;
+using LBAAssembler.Assets;
 
 namespace ScriptRoundTrip;
 

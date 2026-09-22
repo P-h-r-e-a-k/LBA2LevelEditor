@@ -2,9 +2,9 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using LBA2LevelEditor.Lba1.Runtime;
+using LBAAssembler.Lba1.Runtime;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // What Twinsen has when a scene is played: a test scene is entered without the save game that would say. Items (the
 // inventory flags), magic, money, keys, clover, life, the chapter, and any other game flag by number.

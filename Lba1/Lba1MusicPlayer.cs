@@ -2,7 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // Plays a Standard MIDI File through Windows' own MIDI sequencer (MCI), looping until told to stop, as the game's
 // music does. One piece at a time; a piece asked for again while it plays is left alone.

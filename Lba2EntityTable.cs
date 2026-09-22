@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // LBA2's entity table (RESS.HQR entry 44: a table of U32 offsets, then one record list per entity; not an HQR archive): which bodies (BODY.HQR entries) and animations
 // (ANIM.HQR entries) each entity - a kind of actor - has. An actor's body and animation only go together when they belong to the same entity: the body's bones

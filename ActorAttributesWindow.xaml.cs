@@ -7,7 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Non-modal window for editing one actor's attributes -- position, facing,
 // body/animation (with a filterable name-lookup dropdown), collision/

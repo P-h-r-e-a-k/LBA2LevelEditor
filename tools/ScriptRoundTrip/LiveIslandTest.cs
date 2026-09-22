@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
-using LBA2LevelEditor;
-using LBA2LevelEditor.Terrain;
+using LBAAssembler;
+using LBAAssembler.Terrain;
 
 namespace ScriptRoundTrip;
 
@@ -14,7 +14,7 @@ internal static class LiveIslandTest
         var sandbox = args.Length > 1 ? args[1] : @"E:\dump\_lba2isl";
         if (!Directory.Exists(sandbox) || !File.Exists(Path.Combine(sandbox, "DESERT.ILE"))) { Console.WriteLine($"no sandbox game folder at {sandbox}"); return 2; }
         var dll = Environment.GetEnvironmentVariable("LBA2_RENDERER_DLL") ??
-                  @"E:\dump\LBA2LevelEditor\native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll";
+                  @"E:\dump\LBAAssembler\native\lba2-classic-community\out\build\windows_ucrt64_static\SOURCES\3DEXT\liblba2_renderer.dll";
         var realBefore = File.ReadAllBytes(Path.Combine(sandbox, "DESERT.ILE"));
         LiveDataRoot.CleanStale(sandbox);
         using var live = LiveDataRoot.Create(sandbox, "DESERT.ILE");

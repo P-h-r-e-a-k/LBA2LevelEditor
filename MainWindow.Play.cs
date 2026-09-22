@@ -2,9 +2,9 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using LBA2LevelEditor.Lba1;
+using LBAAssembler.Lba1;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Playing a scene inside the main window. LBA2: the community engine's own window (a separate process) is embedded in the view
 // (EmbeddedGameHost); LBA1: the C# play view (Lba1PlayView) is shown there. The game takes the area below the top bar until it

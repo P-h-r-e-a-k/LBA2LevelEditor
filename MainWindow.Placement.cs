@@ -4,11 +4,11 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
-using LBA2LevelEditor.Terrain;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
+using LBAAssembler.Terrain;
 
-namespace LBA2LevelEditor;
+namespace LBAAssembler;
 
 // Choosing where Twinsen starts before a scene is played: pressing Play first shows the scene with Twinsen on it as a marker, which
 // is dragged to the spot wanted; letting go starts the game there (the engine's `teleport` puts the hero there once the scene runs).

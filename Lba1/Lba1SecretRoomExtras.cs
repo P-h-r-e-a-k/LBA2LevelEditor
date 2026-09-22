@@ -1,10 +1,10 @@
 using System.IO;
 using System.Numerics;
 using LbaBodyStudio;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // What the bedroom (scene 61, the secret room off Lupin Burg) gets besides the pink elf:
 //   * a meca penguin that walks up and down the room and can be collected, done the way the rebels' village (scene 60) does it: the actor is

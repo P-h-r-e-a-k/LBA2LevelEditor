@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
 using System.IO;
-using LBA2LevelEditor.LbaScript;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Lba1;
+namespace LBAAssembler.Lba1;
 
 // A pink copy of Raymond the Elf for the bedroom (scene 61), built from the game's own data:
 //   * body: BODY.HQR entry 88 (Raymond, blue) cloned with only the colour bytes of the blue outfit changed - the hat and
@@ -191,8 +191,12 @@ internal static class Lba1PinkElf
     public const string GreetingEnglish = "Hi, I'm Floppy the third elf, after all these years somebody has finally found me. Please help yourself to anything you find here.";
     private const int PressLatch = 13;      // a scene variable (var_cube) held while action is down, so that one press says it once
 
-    // The translations, by language (1 French, 2 German, 3 Spanish, 4 Italian), in the DOS code page of the game's text. None yet.
-    public static readonly IReadOnlyDictionary<int, string> Translations = new Dictionary<int, string>();
+    // The translations, by language (1 French, 2 German, 3 Spanish, 4 Italian), in the DOS code page of the game's text.
+    public static readonly IReadOnlyDictionary<int, string> Translations = new Dictionary<int, string>
+    {
+        // Translator's line is plain ASCII throughout, so it needs no CP 850 remapping.
+        [4] = "Ciao, sono Floppy, il terzo elfo! Finalmente dopo tutti questi anni qualcuno mi ha trovato. Prendi pure tutto quello che trovi qui in giro.",
+    };
 
     public static readonly Lba1DialogueText.AddedText Greeting = new(GreetingId, "the pink elf's greeting", GreetingEnglish,
         (_, language) => Translations.TryGetValue(language, out var text) ? Lba1DialogueText.Bytes(text) : null, Own: true);

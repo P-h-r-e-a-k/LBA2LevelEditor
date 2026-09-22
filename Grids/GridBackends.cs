@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
 using System.IO;
-using LBA2LevelEditor.Lba1;
-using LBA2LevelEditor.Scenes;
+using LBAAssembler.Lba1;
+using LBAAssembler.Scenes;
 
-namespace LBA2LevelEditor.Grids;
+namespace LBAAssembler.Grids;
 
 // The isometric maps of the interiors: a grid of 64 x 25 x 64 cells, each a (block, position in block) pair, over a block library and the bricks.
 // LBA1 keeps a grid per scene in LBA_GRI.HQR with its library in LBA_BLL.HQR; LBA2 keeps them all in LBA_BKG.HQR (a 34-byte header of style, fragment set and
