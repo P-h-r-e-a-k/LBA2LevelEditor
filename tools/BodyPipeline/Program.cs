@@ -295,6 +295,8 @@ internal static class Program
         foreach (var f in body.Faces) counts[f.Colour] = counts.GetValueOrDefault(f.Colour) + 1;
         foreach (var (colour, count) in counts.OrderByDescending(kv => kv.Value))
             Console.WriteLine($"  colour {colour} (bank {colour / 16}, position {colour % 16}): {count} faces");
+        var textured = body.Faces.Count(f => f.Texture is not null);
+        Console.WriteLine($"  {textured} of {body.Faces.Count} faces are textured; body.Textures.Length={body.Textures.Length}; body.TexturePage is {(body.TexturePage is null ? "null" : $"{body.TexturePage.Length} bytes")}");
         return 0;
     }
 

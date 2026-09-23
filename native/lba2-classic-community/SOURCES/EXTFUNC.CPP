@@ -489,6 +489,7 @@ extern void ObjectInitAnim(T_OBJ_3D *obj, void *anim);
 extern S32 ObjectSetInterDep(T_OBJ_3D *obj);
 extern void *GivePtrBody(S32 index);
 extern void *GivePtrAnim(S32 index);
+extern U8 *BufferTexture; // GLOBAL.CPP -- the character/body texture page (RESS_TEXTURES, loaded by RendererBootAssets); see AffichageBodyPreview's own call site for why this needs handing to obj->Texture explicitly
 extern bool g_disableBackfaceCulling;
 extern volatile S32 TimerLock; // TIMERWIN.CPP -- see AffichageBodyPreview's own comment on why this gets force-cleared there
 extern void ChoicePalette(void); // AMBIANCE.CPP -- see AffichageBodyPreview's own call site for why this runs every call
@@ -661,6 +662,31 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
         InitObject(BODY_PREVIEW_OBJ);
         ptrobj->Obj.Body.Num = -1; // see ObjectInitBody's own Body.Num==-1 check
         ObjectInitBody(&ptrobj->Obj, (void *)(uintptr_t)(U32)body);
+        // Real root cause of a body with heavily-textured polygons (a robe, patterned cloth, etc.) rendering
+        // with wrong/unrelated colours in this preview: ObjectDisplay (AFF_OBJ.CPP) only updates ObjPtrMap
+        // (the actual texture-sampling source pointer, POLYGTEX.CPP's own GTEX_PtrMapPatch=PtrMap=ObjPtrMap+
+        // offset) when obj->Texture is a valid non-null/non-(-1) pointer -- ObjectInitBody never sets it, so it
+        // stayed NULL and ObjectDisplay silently left ObjPtrMap pointed at whatever the MAIN SCENE's own
+        // terrain/decor rendering last set it to (DECORS.CPP: ObjPtrMap=ObjTexture, the *current exterior
+        // island's own scenery texture page*, loaded per-island from its own .ILE, nothing to do with
+        // characters at all) -- confirmed exactly this: Wizard Twinsen's own textured robe polygons (over half
+        // his body, versus a few percent for a plain-tunic Twinsen, which is why this was easy to miss) sampled
+        // Desert Island's own sandy/rocky texture pixels while previewed with Desert loaded in the main view.
+        // The real character/body texture page (RESS.HQR's own RESS_TEXTURES entry, loaded once at boot by
+        // SOURCES/RENDERER_BOOT.CPP -- NOT the second, same-named SOURCES/3DEXT/RENDERER_BOOT.CPP, which
+        // turned out to be unused by this build -- into GLOBAL.CPP's own BufferTexture) was sitting in memory
+        // the whole time, just never handed to any object's own Texture field anywhere in this codebase.
+        // Assigning it here is correct for every body this preview ever shows (it's not per-body data, no
+        // island- or scene-load-order dependency, and it can't regress any already-correct body: this simply
+        // makes ObjectDisplay's own existing conditional finally take its "yes" branch instead of never
+        // running at all). Both Texture AND NextTexture: ObjectClear (CLEAR.CPP, run via InitObject above)
+        // resets both to the (void*)-1 sentinel, and ObjectInitAnim's own very first line unconditionally
+        // does "obj->Texture = obj->NextTexture" (a commit-pending-value pattern also used for Body/NextBody)
+        // -- setting Texture alone here got silently wiped back to -1 the instant ObjectInitAnim ran below,
+        // which is why the very first attempt at this fix still showed the wrong texture despite BufferTexture
+        // itself being confirmed valid right up until that call.
+        ptrobj->Obj.Texture = BufferTexture;
+        ptrobj->Obj.NextTexture = BufferTexture;
         ptrobj->Obj.Anim.Num = -1; // see ObjectInitAnim's own Anim.Ptr==anim check
         ObjectInitAnim(&ptrobj->Obj, (void *)(uintptr_t)(U32)anim);
         g_previewBodyRadius = ComputeBodyBoundingRadius(bodyPtr);
