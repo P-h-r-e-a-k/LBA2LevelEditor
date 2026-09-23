@@ -80,6 +80,23 @@ public partial class ActorAttributesWindow : Window
     private int previewBody;
     private int previewAnim;
     private CommunityRendererBackend.BodyPreviewCalibration? previewCalibration;
+    // True while a call into the native renderer's own body/animation preview is in flight
+    // (CalibrateBodyPreviewDistance, RenderBodyPreview, RenderSpritePreview). Confirmed via a real crash
+    // report (0xc0000005 inside CommunityRendererBackend.RenderBodyPreview) that WPF's message pump can
+    // re-enter while one of these calls is still running -- the crash's own managed stack showed the 60ms
+    // preview timer's own TickPreview firing, and reaching a second, nested RenderBodyPreview call, while
+    // a mouse-wheel-triggered ComboBox change's own Recalibrate -> CalibrateBodyPreviewDistance call was
+    // still on the stack beneath it. The native renderer's own body-preview state (a single shared scratch
+    // object, BODY_PREVIEW_OBJ) isn't reentrant-safe, so two such calls in flight at once corrupt it.
+    // static, not per-instance: MainWindow can have several ActorAttributesWindow instances open side by
+    // side (its own constructor comment), each with its own independent 60ms timer, but they all still
+    // share the SAME native BODY_PREVIEW_OBJ scratch slot -- an instance field would only guard a single
+    // window against itself and miss the cross-window case. Every method that calls into the native
+    // preview renderer checks this first and skips its own call (rather than reentering) when another is
+    // already in flight -- always safe to skip, since every caller either retries automatically (the
+    // timer, 60ms later) or simply leaves the preview exactly as correct as it already was until the next
+    // real trigger.
+    private static bool nativeRenderBusy;
 
     // Body/anim name lists are read from disk (an HQD text file, plus --
     // for body only -- an HQR entry count) and don't change during the
@@ -575,8 +592,14 @@ public partial class ActorAttributesWindow : Window
             RenderPreviewFrame();
             return;
         }
-        previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, EffectivePalette, targetAspect: GetPreviewAspect())
-            ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
+        if (nativeRenderBusy) return; // see nativeRenderBusy's own comment -- another native preview call is already in flight
+        nativeRenderBusy = true;
+        try
+        {
+            previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, EffectivePalette, targetAspect: GetPreviewAspect())
+                ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
+        }
+        finally { nativeRenderBusy = false; }
         RenderPreviewFrame();
     }
 
@@ -599,52 +622,58 @@ public partial class ActorAttributesWindow : Window
 
     private void RenderPreviewFrame()
     {
-        // A sprite actor with no body: show its sprite.
-        if (previewBody < 0 && spriteId >= 0)
+        if (nativeRenderBusy) return; // see nativeRenderBusy's own comment -- another native preview call is already in flight
+        nativeRenderBusy = true;
+        try
         {
-            spritePreview ??= nativeRenderer.RenderSpritePreview(spriteId, palette);
-            if (spritePreview is not null)
+            // A sprite actor with no body: show its sprite.
+            if (previewBody < 0 && spriteId >= 0)
             {
-                RenderOptions.SetBitmapScalingMode(BodyPreviewImage, BitmapScalingMode.NearestNeighbor);
-                BodyPreviewImage.Source = spritePreview;
+                spritePreview ??= nativeRenderer.RenderSpritePreview(spriteId, palette);
+                if (spritePreview is not null)
+                {
+                    RenderOptions.SetBitmapScalingMode(BodyPreviewImage, BitmapScalingMode.NearestNeighbor);
+                    BodyPreviewImage.Source = spritePreview;
+                    BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
+                    return;
+                }
+            }
+            RenderOptions.SetBitmapScalingMode(BodyPreviewImage, BitmapScalingMode.Unspecified);
+
+            // No body at all (index -1): the dummy body stands in, same as for a brand-new actor.
+            if (showingDummyBody || previewBody < 0)
+            {
+                var yaw = previewAngle * (float)(Math.PI * 2 / 4096); // engine's angle unit, see TickPreview's own comment
+                var dummy = DummyBodyPreview.Render((int)PreviewBorder.ActualWidth, (int)PreviewBorder.ActualHeight, yaw);
+                if (dummy is null) { ShowPreviewFallback(previewBody < 0 ? "this actor has no body" : "no body chosen yet for this new actor"); return; }
+                BodyPreviewImage.Source = dummy;
                 BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
                 return;
             }
-        }
-        RenderOptions.SetBitmapScalingMode(BodyPreviewImage, BitmapScalingMode.Unspecified);
 
-        // No body at all (index -1): the dummy body stands in, same as for a brand-new actor.
-        if (showingDummyBody || previewBody < 0)
-        {
-            var yaw = previewAngle * (float)(Math.PI * 2 / 4096); // engine's angle unit, see TickPreview's own comment
-            var dummy = DummyBodyPreview.Render((int)PreviewBorder.ActualWidth, (int)PreviewBorder.ActualHeight, yaw);
-            if (dummy is null) { ShowPreviewFallback(previewBody < 0 ? "this actor has no body" : "no body chosen yet for this new actor"); return; }
-            BodyPreviewImage.Source = dummy;
+            if (previewCalibration is not { } calibration)
+            {
+                ShowPreviewFallback("enter a body index to preview");
+                return;
+            }
+            nativeRenderer.RendererLibrary?.SetBodyPreviewAnimationPaused(pauseAnimation);
+            var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, calibration.Distance, EffectivePalette);
+            if (bitmap is null)
+            {
+                ShowPreviewFallback("no body to preview for this index");
+                return;
+            }
+            // Crops to the region CalibrateBodyPreviewDistance measured the
+            // body to actually occupy at this distance (which can be smaller
+            // than the calibration's own target fraction whenever the near-clip
+            // floor in AffichageBodyPreview forced the distance higher than
+            // ideal for a small body) and lets the Image element's own
+            // Stretch="Uniform" scale that crop back up to fill the panel --
+            // CroppedBitmap is a cheap view over the existing frame, not a copy.
+            BodyPreviewImage.Source = new CroppedBitmap(bitmap, calibration.CropRect);
             BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
-            return;
         }
-
-        if (previewCalibration is not { } calibration)
-        {
-            ShowPreviewFallback("enter a body index to preview");
-            return;
-        }
-        nativeRenderer.RendererLibrary?.SetBodyPreviewAnimationPaused(pauseAnimation);
-        var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, calibration.Distance, EffectivePalette);
-        if (bitmap is null)
-        {
-            ShowPreviewFallback("no body to preview for this index");
-            return;
-        }
-        // Crops to the region CalibrateBodyPreviewDistance measured the
-        // body to actually occupy at this distance (which can be smaller
-        // than the calibration's own target fraction whenever the near-clip
-        // floor in AffichageBodyPreview forced the distance higher than
-        // ideal for a small body) and lets the Image element's own
-        // Stretch="Uniform" scale that crop back up to fill the panel --
-        // CroppedBitmap is a cheap view over the existing frame, not a copy.
-        BodyPreviewImage.Source = new CroppedBitmap(bitmap, calibration.CropRect);
-        BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
+        finally { nativeRenderBusy = false; }
     }
 
     private void ShowPreviewFallback(string message)
