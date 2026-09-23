@@ -543,10 +543,20 @@ extern void ChoicePalette(void); // AMBIANCE.CPP -- see AffichageBodyPreview's o
 // RENDERER_ACTORS.CPP's ApplyRawBodyAnim for real actors, same reasoning.
 static bool AnimFitsBody(const void *bodyPtr, const void *animPtr)
 {
-    (void)bodyPtr; // no longer consulted -- kept in the signature so both call sites stay symmetric
     // ObjectInitAnim's own read (LIB386/ANIM/ANIM.CPP): animPtr[1], a U16.
     U16 animGroups = ((const U16 *)animPtr)[1];
-    return animGroups <= 31;
+    if (animGroups > 31) return false; // exceeds TabMat's own hard limit (MAX_NB_GROUPES, AFF_OBJ.CPP)
+    // Real crash, confirmed via a Windows Event Log report and reproduced: this check used to stop here,
+    // only guarding the upper bound -- but ObjectDisplay's own transform loop (AFF_OBJ.CPP) walks the
+    // ANIMATION's own per-group frame data (ListGroupAnim) once for every group the BODY itself declares
+    // (NbGroupes), not the animation's own. An animation with FEWER groups than the body needs gets walked
+    // straight past the end of its own data -- an out-of-bounds read that can (and did) access violation.
+    // "Twinsen and Zoé with the umbrella down" (BODY.HQR entry 175) has NbGroupes=30, BODY.HQR's own
+    // effective maximum -- paired with any ordinary animation (Twinsen's own standard rig is 19 groups,
+    // comfortably "<= 31" and so previously accepted here) it crashed every time. Requiring the animation to
+    // have AT LEAST as many groups as the body needs is the actual contract this function's own name promises.
+    const T_BODY_HEADER *body = (const T_BODY_HEADER *)bodyPtr;
+    return animGroups >= body->NbGroupes;
 }
 
 // ListObjet is a fixed global array (DEFINES.H), zero-initialized by C++

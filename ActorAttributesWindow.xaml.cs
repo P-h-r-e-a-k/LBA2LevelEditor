@@ -352,6 +352,14 @@ public partial class ActorAttributesWindow : Window
     private HqrArchive? bodyArchive, animArchive;
     private readonly Dictionary<int, int?> boneCounts = new(), groupCounts = new();
     private int? syncedBody;
+    // Bodies Body.Validate() itself rejects as exceeding the classic engine's own hard point/primitive/bone
+    // limits (real, confirmed case: BODY.HQR entry 175, "Twinsen and Zoé with the umbrella down" -- a
+    // two-character cutscene body whose combined geometry is too big for the ordinary single-actor rendering
+    // path). BodyBones already caught and logged this exception, but only for the caller's OWN "unknown bone
+    // count" fallback -- nothing stopped the native preview from being attempted anyway, which crashed with
+    // an access violation (confirmed via a real Windows Event Log crash report). Recalibrate checks this set
+    // before making any native call and shows a clear fallback message instead.
+    private readonly HashSet<int> unsafeToPreviewBodies = new();
 
     private static string GameDirectory => EditorSettings.Current.GameDirectory;
 
@@ -364,7 +372,15 @@ public partial class ActorAttributesWindow : Window
             bodyArchive ??= HqrArchive.Open(Path.Combine(GameDirectory, "BODY.HQR"));
             if (bodyArchive.IsValid(body)) count = LbaBodyStudio.Body.Read(bodyArchive.Read(body), 2).Bones.Count;
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException) { DebugLog.Log($"ActorAttributesWindow: body {body}: {error.Message}"); }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: body {body}: {error.Message}");
+            // InvalidDataException specifically means Body.Read got real data and Body.Validate() itself
+            // rejected it (too big, not just "this archive slot is empty/unreadable") -- see
+            // unsafeToPreviewBodies's own comment for why that's a hard "never attempt to render this" signal,
+            // not just "bone count unknown for animation-list filtering purposes" like the other two.
+            if (error is InvalidDataException) unsafeToPreviewBodies.Add(body);
+        }
         boneCounts[body] = count;
         return count;
     }
@@ -592,6 +608,18 @@ public partial class ActorAttributesWindow : Window
             RenderPreviewFrame();
             return;
         }
+        // A body Body.Validate() itself rejects (too big for the classic engine's own fixed-size rendering
+        // buffers, see unsafeToPreviewBodies's own comment) crashes the native renderer outright if attempted
+        // -- BodyBones already ran (via SyncAnimationsToBody, CommitPreviewChange) for any ordinary body pick,
+        // but call it again here too (cheap: boneCounts/unsafeToPreviewBodies both cache) so this check always
+        // runs regardless of which path set previewBody, not just the common one.
+        BodyBones(previewBody);
+        if (unsafeToPreviewBodies.Contains(previewBody))
+        {
+            previewCalibration = null;
+            ShowPreviewFallback("this body is too large for the classic engine to preview (exceeds its point/primitive limit)");
+            return;
+        }
         if (nativeRenderBusy) return; // see nativeRenderBusy's own comment -- another native preview call is already in flight
         nativeRenderBusy = true;
         try
@@ -648,6 +676,16 @@ public partial class ActorAttributesWindow : Window
                 if (dummy is null) { ShowPreviewFallback(previewBody < 0 ? "this actor has no body" : "no body chosen yet for this new actor"); return; }
                 BodyPreviewImage.Source = dummy;
                 BodyPreviewFallbackLabel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // See Recalibrate's own matching check -- previewCalibration stays null for one of these bodies
+            // (Recalibrate returns before setting it), so without this check every subsequent 60ms timer tick
+            // would overwrite Recalibrate's own specific message with the generic "enter a body index" one
+            // below, right after showing it once.
+            if (unsafeToPreviewBodies.Contains(previewBody))
+            {
+                ShowPreviewFallback("this body is too large for the classic engine to preview (exceeds its point/primitive limit)");
                 return;
             }
 
