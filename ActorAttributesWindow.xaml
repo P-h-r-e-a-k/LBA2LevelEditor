@@ -163,7 +163,14 @@
             <Button Content="Close" Click="Close_Click" Style="{StaticResource QuietButton}"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <!-- Full ColumnSpan (matching the Apply/Edit Script/Close row below it) rather than confined to
+             the 240px preview column: three buttons at this padding are about 380px wide, comfortably
+             wider than that column alone, so a right-aligned StackPanel scoped to just Grid.Column="2"
+             had to overflow past its own cell to fit, which proved unreliable (invisible and non-hit-
+             testable in a real run, confirmed via a temporary visual-tree dump, despite otherwise-
+             correct WPF state). Spanning the full row like Apply/EditScript/Close already does keeps it
+             within one cell's own bounds, no overflow needed. -->
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Load Debug Body&#8230;" Click="LoadDebugBody_Click" Style="{StaticResource QuietButton}" Padding="9,5"
                     ToolTip="Load a body from a project test archive (e.g. mario.hqr) into a throwaway preview copy of BODY.HQR. Never modifies your real game files."/>
             <Button Content="Load Debug Anim&#8230;" Click="LoadDebugAnim_Click" Style="{StaticResource QuietButton}" Padding="9,5"

@@ -820,14 +820,41 @@ public partial class ActorAttributesWindow : Window
         // CommitPreviewChange's own SyncAnimationsToBody just picked an animation for whichever real,
         // on-disk entity actually owns index `newIndex` in the retail archive -- it has no idea that
         // index now holds a swapped-in debug body instead, so its choice generally belongs to a
-        // different skeleton than the debug body's and renders garbled. Body Studio's "New humanoid"
-        // bodies (mario.hqr's own origin) always preserve the donor's exact 19-bone Twinsen rig (see
-        // ENGINE_FILE_FORMATS.md: bodies and animations are bound at runtime by bone count alone), so
-        // animation 0 -- Twinsen's own, already proven safe by every brand-new actor defaulting to it --
-        // is always a compatible choice here, regardless of what SyncAnimationsToBody guessed.
-        AnimCombo.Text = "0";
-        CommitPreviewChange();
-        StatusLabel.Text = $"Loaded {Path.GetFileName(path)} entry {chosen} as body {newIndex} (preview only, not saved).";
+        // different skeleton than the debug body's and renders garbled. Rather than fall back to
+        // Twinsen's own archive animation 0 (compatible by bone count, but not really THIS body's own
+        // animation), generate a real standing/idle clip for this body's own bone count and load it the
+        // same way "Load Debug Anim..." would -- every custom body always needs *some* default
+        // animation to preview with, so generating one here rather than leaving it on a borrowed
+        // Twinsen clip is the same reasoning AnimGenerator/Anim.Write already exist for (see
+        // BodyStudio/AnimGenerator.cs). mario.hqr's own bodies are always authored for game 2 (see
+        // BodyPipeline's hqrbody/*custom commands), so that's what both the body parse and the
+        // generated clip's own angle-unit scale use here.
+        var idleAnimIndex = (int?)null;
+        try
+        {
+            var body = LbaBodyStudio.Body.Read(entry, 2);
+            var idleBytes = LbaBodyStudio.AnimGenerator.Idle(2, body.Bones.Count).Write();
+            idleAnimIndex = LoadDebugAnimRequested?.Invoke(idleBytes);
+        }
+        catch (Exception error) when (error is InvalidDataException or IOException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: couldn't generate a default standing animation for the debug body: {error.Message}");
+        }
+        if (idleAnimIndex is { } newAnimIndex)
+        {
+            AnimCombo.Text = newAnimIndex.ToString();
+            CommitPreviewChange();
+            StatusLabel.Text = $"Loaded {Path.GetFileName(path)} entry {chosen} as body {newIndex}, with a generated standing animation (preview only, not saved).";
+        }
+        else
+        {
+            // Twinsen's own animation 0 -- already proven safe by every brand-new actor defaulting to
+            // it, and compatible by bone count with any Body Studio "New humanoid" body -- as a
+            // fallback if generating/installing the standing clip above didn't work out.
+            AnimCombo.Text = "0";
+            CommitPreviewChange();
+            StatusLabel.Text = $"Loaded {Path.GetFileName(path)} entry {chosen} as body {newIndex} (preview only, not saved).";
+        }
     }
 
     // Same idea as LoadDebugBody_Click, for a project test animation archive (e.g. testanims.hqr,
