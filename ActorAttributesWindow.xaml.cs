@@ -228,7 +228,15 @@ public partial class ActorAttributesWindow : Window
         // window opened for a freshly-added actor" separately in C#.
         Closed += (_, _) => nativeRenderer.RendererLibrary?.RemoveActor(actorIndex);
         Closed += (_, _) => previewTimer?.Stop();
-        previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+        // Explicit Normal priority, not the parameterless constructor's default (Background): confirmed this
+        // round that a plain Background timer can go quiet for minutes at a time under heavy external UI
+        // Automation traffic against this window (its own COM/RPC property queries appear to keep outrunning
+        // Background-priority work indefinitely) -- reproduced with zero stall once automation activity
+        // stopped entirely (40s of continuous ticking, passively observed), so this genuinely looks like
+        // priority starvation rather than a stuck/corrupted state. Not Render (build-and-ui-testing's own
+        // memory already documents Render starving key input elsewhere in this app) -- Normal is the least
+        // risky step up that still meaningfully outranks whatever's crowding Background out.
+        previewTimer = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(60) };
         previewTimer.Tick += (_, _) => TickPreview();
         previewTimer.Start();
     }
@@ -530,6 +538,14 @@ public partial class ActorAttributesWindow : Window
         // a different body: its own kind of actor's animations, and an animation that belongs to it
         if (syncedBody is { } before && body != before) anim = SyncAnimationsToBody(body, anim);
         syncedBody = body;
+        // A brand-new actor (Add Actor Here) starts with showingDummyBody true (see RenderPreviewFrame's own
+        // gate) so its preview shows a generic placeholder before it has any real body at all -- but the
+        // moment the user picks any real, valid body index here (typing one, choosing from the dropdown, or
+        // via LoadDebugBody_Click, which already relied on this same reasoning before this general form of
+        // it existed), that's exactly as real a body choice as a successful Apply, and the placeholder should
+        // stop showing immediately rather than only once Apply is clicked -- otherwise every such pick before
+        // the first Apply silently kept rendering the dummy instead of the body actually selected.
+        if (body >= 0) showingDummyBody = false;
         if (previewCalibration.HasValue && body == previewBody && anim == previewAnim) return; // no real change
 
         previewBody = body;

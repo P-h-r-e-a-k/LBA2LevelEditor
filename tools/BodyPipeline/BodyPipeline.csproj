@@ -22,6 +22,7 @@
     <Compile Include="..\..\Lba1\Lba1GridEdit.cs" Link="Lba1\Lba1GridEdit.cs" />
     <Compile Include="..\..\Lba1\Lba1GridCodec.cs" Link="Lba1\Lba1GridCodec.cs" />
     <Compile Include="..\..\Lba1\Lba1GridValidator.cs" Link="Lba1\Lba1GridValidator.cs" />
+    <Compile Include="..\..\Lba1\Lba1Pose.cs" Link="Lba1\Lba1Pose.cs" />
     <Compile Include="..\..\HqrFile.cs" Link="HqrFile.cs" />
     <Compile Include="..\..\HqrArchive.cs" Link="HqrArchive.cs" />
     <Compile Include="..\..\HqrWriter.cs" Link="HqrWriter.cs" />

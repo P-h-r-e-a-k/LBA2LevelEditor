@@ -83,6 +83,7 @@ internal static class Program
             "testanims" => TestAnimsCmd(args[1]),
             "dumpheader" => DumpHeader(args[1], int.Parse(args[2])),
             "hqrpreview" => HqrPreview(args[1], int.Parse(args[2]), args.Length > 3 ? args[3] : Path.GetTempPath(), args.Length > 4 ? int.Parse(args[4]) : 2),
+            "hqrpreviewress" => HqrPreviewRess(args[1], int.Parse(args[2]), int.Parse(args[3]), args[4], args.Length > 5 ? int.Parse(args[5]) : 2),
             "testappend" => TestAppend(game),
             "normals" => Normals(game, int.Parse(args[2])),
             "enginebody" => EngineBody(args[1], args[2], args.Skip(3).DefaultIfEmpty("humanoid unlit").ToArray()),
@@ -94,6 +95,7 @@ internal static class Program
             // `findcolour green 1` returned LBA2's own colour 133 again instead of scanning LBA1).
             "findcolour" => FindColour(args.Length > 2 ? int.Parse(args[2]) : 2, args[1]),
             "ramp" => Ramp(args.Length > 2 ? int.Parse(args[2]) : 2, int.Parse(args[1])),
+            "facecolours" => FaceColours(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 2),
             "formsmoke" => FormSmoke(),
             "bodyroundtrip" => BodyRoundTrip(),
             "object" => ObjectPicture(int.Parse(args[1]), args[2], int.Parse(args[3]), double.Parse(args[4]), args[5]),
@@ -279,6 +281,20 @@ internal static class Program
         var bank = colour & ~15;
         Console.WriteLine($"colour {colour} (bank {bank / 16}, position {colour & 15}):");
         Console.WriteLine("    " + string.Join(" ", Enumerable.Range(0, 16).Select(p => $"{palette[(bank + p) * 3]},{palette[(bank + p) * 3 + 1]},{palette[(bank + p) * 3 + 2]}")));
+        return 0;
+    }
+
+    // Diagnostic (2026-09-23): histogram of a body's own face colour indices (ramp-start values, see
+    // Body.cs's own Face.Colour comment), most-used first -- lets a specific body's dominant "robe"/"skin"/etc
+    // colour index be identified so its own ramp can be checked (BodyPipeline ramp <colour>) for the "unsafe
+    // near the edge of its 16-wide ramp block" issue this project has hit before (Mario's own shoe colour).
+    private static int FaceColours(string hqrPath, int index, int game = 2)
+    {
+        var body = Body.Read(new Hqr(hqrPath).Read(index), game);
+        var counts = new Dictionary<int, int>();
+        foreach (var f in body.Faces) counts[f.Colour] = counts.GetValueOrDefault(f.Colour) + 1;
+        foreach (var (colour, count) in counts.OrderByDescending(kv => kv.Value))
+            Console.WriteLine($"  colour {colour} (bank {colour / 16}, position {colour % 16}): {count} faces");
         return 0;
     }
 
@@ -1081,6 +1097,35 @@ internal static class Program
     // Round-trip check for a debug/test archive like mario.hqr: reads one entry back with BodyStudio's own Hqr
     // reader (not the writer that just built it) and renders it, the same sanity check the game's own body archives
     // would need to pass.
+    // Diagnostic (2026-09-23): same as HqrPreview, but reads a SPECIFIC RESS.HQR entry instead of always
+    // entry 0 -- lets a body be rendered under a particular island's own palette (COMMON.H's RESS_XPL0..10)
+    // to check whether a colour mismatch is a real per-island palette difference rather than a data bug.
+    // Entry 0 is a plain 768-byte RGB table; a real island XPL entry (e.g. 29 for Desert, 42 for interiors)
+    // is a structured record -- the real 768-byte table lives at the int32 offset stored at byte 4 of the
+    // entry, not at the entry's own byte 0 (matches MainWindow.xaml.cs's own LoadPaletteEntry exactly).
+    private static int HqrPreviewRess(string hqrPath, int index, int ressEntry, string outDir, int previewGame = 2)
+    {
+        Directory.CreateDirectory(outDir);
+        var body = Body.Read(new Hqr(hqrPath).Read(index), previewGame);
+        var xpl = new Hqr(Path.Combine(Folder(previewGame), "RESS.HQR")).Read(ressEntry);
+        byte[] raw;
+        if (ressEntry == 0) raw = xpl;
+        else
+        {
+            var paletteOffset = BitConverter.ToInt32(xpl, 4);
+            raw = xpl[paletteOffset..(paletteOffset + 768)];
+        }
+        var palette = new Color[256];
+        for (var i = 0; i < 256; i++) palette[i] = Color.FromArgb(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2) })
+        {
+            using var render = Renderer.Render(body, palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+            render.Save(Path.Combine(outDir, $"hqrpreviewress_{index}_ress{ressEntry}_{name}.png"), ImageFormat.Png);
+        }
+        Console.WriteLine($"  entry {index} under RESS entry {ressEntry}: {body.Faces.Count} polygons -> {outDir}");
+        return 0;
+    }
+
     private static int HqrPreview(string hqrPath, int index, string outDir, int previewGame = 2)
     {
         Directory.CreateDirectory(outDir);
