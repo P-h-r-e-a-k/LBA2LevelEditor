@@ -1300,7 +1300,17 @@ void InsertTriangle(U8 type, T_POLY_HEADER *header, void **poly, U32 *polyOffset
         // @@Do_Triangle:
         STRUC_POLY3_ENV *poly3 = (STRUC_POLY3_ENV *)*poly;
 
-        if (TestVisible(poly3, g_disableBackfaceCulling)) {
+        // Nb_Sort < MAX_NB_POLYS: ListSort is sized MAX_NB_POLYS*2 (two interleaved MAX_NB_POLYS-wide halves,
+        // see its own declaration) with NO other bounds check anywhere on this shared polys+lines+spheres
+        // sort list -- a body whose per-frame VISIBLE (post-backface-cull) primitive count exceeds
+        // MAX_NB_POLYS would silently write past the array's own end here. A real, confirmed case: BODY.HQR
+        // 175 ("Twinsen and Zoe with the umbrella down", a two-character cutscene body) has 564 STORED
+        // primitives (over the 550 cap) but renders fine in the real game, because backface culling keeps the
+        // per-frame VISIBLE count well under 550 from any normal camera angle -- the stored total was never
+        // the real constraint. Dropping the rare extra primitive beyond the cap (instead of corrupting
+        // adjacent memory, e.g. ListLights, declared immediately after ListSort) is the correct, always-safe
+        // behaviour regardless of which body or camera angle triggers it.
+        if (TestVisible(poly3, g_disableBackfaceCulling) && Nb_Sort < MAX_NB_POLYS) {
             U32 zFar = TestZFar3(poly3);
 
             // | ZFar | Poly Number |
@@ -1343,7 +1353,8 @@ void InsertQuad(U8 type, T_POLY_HEADER *header, void **poly, U32 *polyOffset) {
             S16 zFar = TestZFar4(poly3);
 
             TYPE_PT p4 = Obj_ListProjectedPoints[poly4->P4];
-            if (p4.X != -0x8000 || p4.Y != -0x8000) {
+            // Nb_Sort < MAX_NB_POLYS: see InsertTriangle's own matching guard/comment -- same shared sort list.
+            if ((p4.X != -0x8000 || p4.Y != -0x8000) && Nb_Sort < MAX_NB_POLYS) {
                 U32 polyType = (header->TypePoly << 26);
                 if (type == 2) {
                     polyType |= (0b11 << 24); // Bit quad+environment
@@ -1436,15 +1447,20 @@ S32 EntityCreation(T_BODY_HEADER *body) {
             }
 
             // @@Line_Sup:
-            // | ZFar | Poly Number |
-            Off_Sort[0] = (minZ << 16) | Nb_Sort;
-            U8 polyType = line->Type;
-            polyType += MAX_POLYS_TYPE * 4; // Get correct pos for a line
-            // | PolyType (8 bit) | Poly Offset (24 bit) |
-            Off_Sort[MAX_NB_POLYS] = (polyType << 24) | (bodyOffset & 0xFFFFFF);
+            // Nb_Sort < MAX_NB_POLYS: see InsertTriangle's own matching guard/comment -- lines share the same
+            // sort list and (unlike polygons) are never backface-culled, so they hit this cap first for a
+            // body whose stored primitive total is over budget.
+            if (Nb_Sort < MAX_NB_POLYS) {
+                // | ZFar | Poly Number |
+                Off_Sort[0] = (minZ << 16) | Nb_Sort;
+                U8 polyType = line->Type;
+                polyType += MAX_POLYS_TYPE * 4; // Get correct pos for a line
+                // | PolyType (8 bit) | Poly Offset (24 bit) |
+                Off_Sort[MAX_NB_POLYS] = (polyType << 24) | (bodyOffset & 0xFFFFFF);
 
-            Off_Sort++;
-            Nb_Sort++;
+                Off_Sort++;
+                Nb_Sort++;
+            }
             line++;
             bodyOffset += sizeof(T_OBJ_LINE);
         }
@@ -1459,16 +1475,19 @@ S32 EntityCreation(T_BODY_HEADER *body) {
 
         for (int i = 0; i < body->NbSpheres; ++i) {
             // @@Loop_Spheres:
-            S16 zFar = Obj_ListRotatedPoints[sphere->P1].Z;
-            // | ZFar | Poly Number |
-            Off_Sort[0] = (zFar << 16) | Nb_Sort;
+            // Nb_Sort < MAX_NB_POLYS: see InsertTriangle's own matching guard/comment.
+            if (Nb_Sort < MAX_NB_POLYS) {
+                S16 zFar = Obj_ListRotatedPoints[sphere->P1].Z;
+                // | ZFar | Poly Number |
+                Off_Sort[0] = (zFar << 16) | Nb_Sort;
 
-            U8 polyType = sphere->Type + MAX_POLYS_TYPE * 4 + MAX_LINES_TYPE;
-            // | PolyType (8 bit) | Poly Offset (24 bit) |
-            Off_Sort[MAX_NB_POLYS] = (polyType << 24) | (bodyOffset & 0xFFFFFF);
+                U8 polyType = sphere->Type + MAX_POLYS_TYPE * 4 + MAX_LINES_TYPE;
+                // | PolyType (8 bit) | Poly Offset (24 bit) |
+                Off_Sort[MAX_NB_POLYS] = (polyType << 24) | (bodyOffset & 0xFFFFFF);
 
-            Off_Sort++;
-            Nb_Sort++;
+                Off_Sort++;
+                Nb_Sort++;
+            }
             sphere++;
             bodyOffset += sizeof(T_OBJ_SPHERE);
         }

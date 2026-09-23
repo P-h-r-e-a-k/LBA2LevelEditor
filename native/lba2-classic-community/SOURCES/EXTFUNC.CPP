@@ -11,6 +11,8 @@
 #include "DIRECTORIES.H"
 #include "INPUT.H"
 
+#include <POLYGON/POLY_JMP.H>
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
@@ -932,6 +934,23 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
                 NativeDebugLog("AffichageBodyPreview: ObjectSetInterFrame returned");
             }
             UnsetClip();
+            // Real bug (confirmed via temporary logging, since removed): the preview is a single isolated
+            // object, but Fill_Saut_Normal (POLY.CPP) is a process-wide filler-jump-table pointer shared with
+            // the main scene's own terrain/interior rendering -- if the main scene last rendered with fog/
+            // z-buffer active (Switch_Fillers(FILL_POLY_FOG_ZBUFFER), used elsewhere in this file for the real
+            // 3D view), that table stays selected for every subsequent caller, including this one, until
+            // something explicitly switches it back. This function already resets it to FILL_POLY_TEXTURES
+            // (the plain table) AFTER its own render, as a courtesy to the NEXT normal-mode caller -- but
+            // never BEFORE its own, so it can inherit the wrong table for its own render too. For most polygon
+            // types every table's own entry behaves the same either way, but texture-chromakey types (8-15)
+            // do not: the fog/z-buffered chromakey fillers (Filler_TextureChromaKeyFogZBuf and friends) are
+            // genuinely different code paths from their plain-table counterparts. Confirmed via temporary
+            // pointer logging: Fill_Saut_Normal really was Fill_FogZBuf_Table_Jumps (left behind by the main
+            // scene's own terrain/interior rendering) during a body preview, not Fill_N_Table_Jumps -- a real,
+            // general correctness bug regardless of any specific body. Forcing the plain table right here,
+            // unconditionally, before every preview render (not just once at startup) is the fix -- a preview
+            // of one isolated body has no business inheriting the main scene's own fog/z-buffer mode.
+            Switch_Fillers(FILL_POLY_TEXTURES);
             // See TestVisible's own comment (AFF_OBJ.CPP): a full rotation
             // crosses viewing angles a real camera never does, where a
             // body modeled single-sided for its habitual viewing side

@@ -203,8 +203,12 @@ public partial class ActorAttributesWindow : Window
         // Re-fetches this actor's own native moveset every time the dropdown is actually opened, rather than
         // only once at construction -- the native lookup only succeeds while this actor's scene happens to be
         // the one currently loaded (see BuildAnimOptionsForActor's own comment), which frequently isn't true
-        // yet here but may become true by the time the user actually opens this dropdown.
-        AnimCombo.GotFocus += (_, _) => { animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions!); animFilter!.Refresh(); };
+        // yet here but may become true by the time the user actually opens this dropdown. Skipped once
+        // SyncAnimationsToBody has set a body-specific list (animOptionsAreBodySpecific) -- otherwise, opening
+        // the dropdown right after picking a different body silently threw that correct, body-scoped list away
+        // and replaced it with the ORIGINAL actor's own native moveset (built from actorIndex's live, not-yet-
+        // Applied body), which is what "changing the body doesn't correctly update the animation dropdown" was.
+        AnimCombo.GotFocus += (_, _) => { if (!animOptionsAreBodySpecific) { animOptionsForActor = BuildAnimOptionsForActor(cachedAnimOptions!); animFilter!.Refresh(); } };
         bodyFilter.Refresh();
         animFilter.Refresh();
         entityFilter.Refresh();
@@ -352,13 +356,22 @@ public partial class ActorAttributesWindow : Window
     private HqrArchive? bodyArchive, animArchive;
     private readonly Dictionary<int, int?> boneCounts = new(), groupCounts = new();
     private int? syncedBody;
-    // Bodies Body.Validate() itself rejects as exceeding the classic engine's own hard point/primitive/bone
-    // limits (real, confirmed case: BODY.HQR entry 175, "Twinsen and Zoé with the umbrella down" -- a
-    // two-character cutscene body whose combined geometry is too big for the ordinary single-actor rendering
-    // path). BodyBones already caught and logged this exception, but only for the caller's OWN "unknown bone
-    // count" fallback -- nothing stopped the native preview from being attempted anyway, which crashed with
-    // an access violation (confirmed via a real Windows Event Log crash report). Recalibrate checks this set
-    // before making any native call and shows a clear fallback message instead.
+    // True once SyncAnimationsToBody has set animOptionsForActor to a body-specific list -- see AnimCombo's
+    // own GotFocus handler, which must not clobber it back to the actor's original native moveset.
+    private bool animOptionsAreBodySpecific;
+    // Bodies Body.Validate() itself rejects as exceeding the classic engine's own hard, UNCONDITIONAL point/
+    // bone limits (Vertices.Count/Bones.Count -- both rotated/projected or matrix-computed for every point/
+    // bone regardless of camera angle, so there's no way for the native renderer to ever safely fit more than
+    // that). This is now a narrower set than it once was: the combined Faces+Lines+Spheres primitive-count
+    // check Body.Validate() also has is STRICT-only (see its own comment) and no longer applies to a body read
+    // this way (BodyBones/Read use strict:false) -- that count was never a hard per-body limit, only a proxy
+    // for the native renderer's own PER-FRAME VISIBLE primitive cap, which the native side now enforces
+    // directly and safely (AFF_OBJ.CPP's own Nb_Sort < MAX_NB_POLYS guard). BodyBones already caught and
+    // logged the exception this HashSet tracks, but only for the caller's OWN "unknown bone count" fallback --
+    // nothing stopped the native preview from being attempted anyway for a body that fails even the loosened
+    // check, which would crash with an access violation (confirmed via a real Windows Event Log crash report,
+    // for a since-fixed animation/body group-count mismatch -- see AnimFitsBody's own comment, EXTFUNC.CPP).
+    // Recalibrate checks this set before making any native call and shows a clear fallback message instead.
     private readonly HashSet<int> unsafeToPreviewBodies = new();
 
     private static string GameDirectory => EditorSettings.Current.GameDirectory;
@@ -412,6 +425,7 @@ public partial class ActorAttributesWindow : Window
         Func<int, bool>? otherFits = bones is { } b ? anim => AnimGroups(anim) == b : null;
         var list = BuildAnimOptions(choice.Natural, cachedAnimOptions!, otherFits);
         animOptionsForActor = list;
+        animOptionsAreBodySpecific = true;
         animFilter!.Refresh();
         AnimCombo.Text = list.FirstOrDefault(o => o.Index == choice.Chosen)?.Display ?? choice.Chosen.ToString();
         StatusLabel.Text = choice.Chosen == currentAnim

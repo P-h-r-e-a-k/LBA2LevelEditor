@@ -130,12 +130,27 @@ public sealed class Body
             int textureCount=I(b,88),textureOffset=I(b,92);
             if(textureCount>0&&textureCount<4096&&textureOffset>=0&&textureOffset+textureCount*4<=b.Length){m.Textures=new uint[textureCount];for(int i=0;i<textureCount;i++)m.Textures[i]=BitConverter.ToUInt32(b,textureOffset+i*4);}
         }
-        m.Validate();return m;
+        m.Validate(strict: false);return m;
     }
     static Vector3 ReadVector(byte[] b,int p)=>new(BitConverter.ToInt16(b,p),BitConverter.ToInt16(b,p+2),BitConverter.ToInt16(b,p+4));
-    public void Validate()
+    // strict=false skips the Faces+Lines+Spheres>Limit check: that's the STORED total, not the native
+    // renderer's own real constraint -- its shared per-frame primitive sort list only needs to fit whichever
+    // polygons are actually visible after backface culling at once (lines/spheres are never culled, but
+    // polygons routinely are, often close to half). A real, confirmed case: LBA2 BODY.HQR entry 175 ("Twinsen
+    // and Zoe with the umbrella down", a two-character cutscene body) stores 564 primitives -- over the 550
+    // cap -- and renders correctly in the real game, because its per-frame visible count never reaches 550
+    // from any normal camera angle. The native sort-list fill (AFF_OBJ.CPP) now clamps defensively regardless
+    // (drops any primitive beyond the cap rather than overflowing), so reading an EXISTING, already-shipped
+    // archive body (Body.Read, strict:false) can trust the real game already renders it fine and shouldn't
+    // reject it on the stored total alone. Authoring a NEW body (strict, the default -- every Write() call
+    // and every BodyStudio generator) keeps the conservative stored-total limit: there's no way to know in
+    // advance how a hand-authored/generated shape's own primitives will distribute across camera angles, so a
+    // margin against ever needing more than Limit simultaneously visible is the safer default there.
+    public void Validate(bool strict = true)
     {
-        if(Vertices.Count<1||Vertices.Count>Limit||Faces.Count+Lines.Count+Spheres.Count>Limit||Bones.Count<1||Bones.Count>30)
+        if(Vertices.Count<1||Vertices.Count>Limit||Bones.Count<1||Bones.Count>30)
+            throw new InvalidDataException("Body exceeds classic engine point or bone limits.");
+        if(strict&&Faces.Count+Lines.Count+Spheres.Count>Limit)
             throw new InvalidDataException("Body exceeds classic engine point, primitive, or bone limits.");
         if(Game==1&&DrawBufferBytes>10000)throw new InvalidDataException("Body exceeds LBA1's 10,000-byte projected entity buffer.");
         int next=0;
