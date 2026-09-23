@@ -12,6 +12,11 @@ namespace LBAAssembler;
 internal sealed class LiveDataRoot : IDisposable
 {
     public const string FolderName = "_LIVE_PREVIEW";
+    // A second, distinct folder for the body-debug preview (ActorAttributesWindow's "Load Debug Body"), so it never
+    // collides with a terrain edit's own live folder above -- the two are independent single-file overrides, and
+    // the native renderer only tracks one data-root override at a time, so callers still can't run both at once
+    // (MainWindow guards this), but at least their on-disk folders don't fight over the same name mid-edit.
+    public const string BodyPreviewFolderName = "_LIVE_BODY_PREVIEW";
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateHardLinkW(string newFileName, string existingFileName, IntPtr reserved);
@@ -21,23 +26,23 @@ internal sealed class LiveDataRoot : IDisposable
 
     public string Directory { get; }
 
-    private LiveDataRoot(string gameDirectory, string islandFile)
+    private LiveDataRoot(string gameDirectory, string islandFile, string folderName)
     {
         this.gameDirectory = gameDirectory;
         this.islandFile = islandFile;
-        Directory = Path.Combine(gameDirectory, FolderName);
+        Directory = Path.Combine(gameDirectory, folderName);
     }
 
     // Removes a live folder a crashed session left behind.
-    public static void CleanStale(string gameDirectory)
+    public static void CleanStale(string gameDirectory, string folderName = FolderName)
     {
-        try { var path = Path.Combine(gameDirectory, FolderName); if (System.IO.Directory.Exists(path)) System.IO.Directory.Delete(path, true); }
+        try { var path = Path.Combine(gameDirectory, folderName); if (System.IO.Directory.Exists(path)) System.IO.Directory.Delete(path, true); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { DebugLog.Log($"LiveDataRoot: couldn't remove a stale folder: {e.Message}"); }
     }
 
-    public static LiveDataRoot? Create(string gameDirectory, string islandFile)
+    public static LiveDataRoot? Create(string gameDirectory, string islandFile, string folderName = FolderName)
     {
-        var root = new LiveDataRoot(gameDirectory, islandFile);
+        var root = new LiveDataRoot(gameDirectory, islandFile, folderName);
         try
         {
             if (System.IO.Directory.Exists(root.Directory)) System.IO.Directory.Delete(root.Directory, true);

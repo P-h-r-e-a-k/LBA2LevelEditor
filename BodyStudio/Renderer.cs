@@ -170,15 +170,19 @@ public sealed class ModelView : Control
     public float Yaw;
     public bool Wire,Bones;
     public bool HeadOnly;
+    // Overrides the body's own rest pose when set (e.g. AnimationStudioForm's own posed-per-keyframe
+    // preview, via Lba1Pose.World) -- null means "render the body's own neutral/modelled pose", the
+    // original behaviour.
+    public Vector3[]? Pose;
     Point? drag;
     public ModelView(){DoubleBuffered=true;BackColor=Renderer.ViewBackground;SetStyle(ControlStyles.ResizeRedraw,true);}
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
         if(Model==null){TextRenderer.DrawText(e.Graphics,"Generate a body to preview it here",Font,ClientRectangle,Color.Silver,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
-        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);e.Graphics.DrawImageUnscaled(bitmap,0,0);
+        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly,Pose,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);e.Graphics.DrawImageUnscaled(bitmap,0,0);
         TextRenderer.DrawText(e.Graphics,$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones",Font,new Point(16,16),Color.LightGray);
-        TextRenderer.DrawText(e.Graphics,"Drag to rotate  |  Neutral pose  |  Palette colours",Font,new Point(16,Height-32),Color.LightGray);
+        TextRenderer.DrawText(e.Graphics,Pose==null?"Drag to rotate  |  Neutral pose  |  Palette colours":"Drag to rotate  |  Animated pose  |  Palette colours",Font,new Point(16,Height-32),Color.LightGray);
     }
     protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);drag=e.Location;Capture=true;}
     protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);if(drag is Point p){Yaw+=(e.X-p.X)*0.012f;drag=e.Location;Invalidate();}}

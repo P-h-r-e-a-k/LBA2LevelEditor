@@ -27,6 +27,15 @@ namespace BodyPipeline;
 //                                            the real asset.
 //   currentdummy <outDir>                    the same renders for the EXISTING Assets/DummyBody.lm2, unmodified -- a
 //                                            before/after baseline.
+//   reftest <image> <outDir>                New humanoid generation from an arbitrary real-world reference photo
+//                                            (single front view, any background), rendered at several angles plus a
+//                                            numbered bone-skeleton overlay, for judging how close Body Studio gets
+//                                            on challenging (non-synthetic, non-silhouette) test data. REFTEST_BUDGET
+//                                            (DetailBudget), REFTEST_TAG (output filename suffix) and REFTEST_DUMP=1
+//                                            (per-bone world-vertex dump to stderr) are optional env var overrides.
+//   hqrbody <image> <out.hqr>                same generation as reftest, written as a single-entry HQR archive
+//                                            instead of renders (LbaBodyStudio.Hqr.Build) -- for building small
+//                                            test/debug archives like BodyStudio/TestBodies/mario.hqr.
 //   widestance <outDir> [bandana]            regression test for a real bug (2026-09-22): a hand-drawn wide-stance
 //                                            silhouette with an asymmetric accessory along one leg, run through New
 //                                            humanoid (add "bandana" for the HeadDetails branch too) and rendered
@@ -60,10 +69,31 @@ internal static class Program
             "dummybody" => DummyBody(args.Length > 1 ? args[1] : Path.GetTempPath()),
             "currentdummy" => CurrentDummy(args.Length > 1 ? args[1] : Path.GetTempPath()),
             "widestance" => WideStance(args.Length > 1 ? args[1] : Path.GetTempPath(), args.Length > 2 && args[2] == "bandana"),
+            "reftest" => RefTest(args[1], args.Length > 2 ? args[2] : Path.GetTempPath()),
+            "hqrbody" => HqrBody(args[1], args[2]),
+            "mariocustom" => MarioCustomCmd(args[1]),
+            "mariocustomlba1" => MarioCustomLba1Cmd(args[1]),
+            "luigicustom" => LuigiCustomCmd(args[1]),
+            "luigicustomlba1" => LuigiCustomLba1Cmd(args[1]),
+            "bowsercustom" => BowserCustomCmd(args[1]),
+            "peachcustom" => PeachCustomCmd(args[1]),
+            "toadcustom" => ToadCustomCmd(args[1]),
+            "yoshicustom" => YoshiCustomCmd(args[1]),
+            "package" => PackageRoster(args.Length > 1 ? args[1] : "Assets"),
+            "testanims" => TestAnimsCmd(args[1]),
+            "dumpheader" => DumpHeader(args[1], int.Parse(args[2])),
+            "hqrpreview" => HqrPreview(args[1], int.Parse(args[2]), args.Length > 3 ? args[3] : Path.GetTempPath(), args.Length > 4 ? int.Parse(args[4]) : 2),
+            "testappend" => TestAppend(game),
             "normals" => Normals(game, int.Parse(args[2])),
             "enginebody" => EngineBody(args[1], args[2], args.Skip(3).DefaultIfEmpty("humanoid unlit").ToArray()),
             "styletest" => StyleTest(game, args.Length > 2 ? int.Parse(args[2]) : 0),
             "colours" => Colours(game, args.Length > 2 ? int.Parse(args[2]) : 0),
+            // NOT `game` (the top-level heuristic assumes args[1] is numeric, true for every other
+            // command here but not this one, whose args[1] is a channel NAME like "green" -- using
+            // it silently always scanned LBA2 regardless of a 3rd arg, found live 2026-09-23 when
+            // `findcolour green 1` returned LBA2's own colour 133 again instead of scanning LBA1).
+            "findcolour" => FindColour(args.Length > 2 ? int.Parse(args[2]) : 2, args[1]),
+            "ramp" => Ramp(args.Length > 2 ? int.Parse(args[2]) : 2, int.Parse(args[1])),
             "formsmoke" => FormSmoke(),
             "bodyroundtrip" => BodyRoundTrip(),
             "object" => ObjectPicture(int.Parse(args[1]), args[2], int.Parse(args[3]), double.Parse(args[4]), args[5]),
@@ -228,6 +258,62 @@ internal static class Program
             Console.WriteLine($"colour {c} (bank {bank / 16}, position {c & 15}, used by {model.Faces.Count(f => f.Colour == c)} faces of types {string.Join(",", model.Faces.Where(f => f.Colour == c).Select(f => f.Material).Distinct())}):");
             Console.WriteLine("    ramp " + string.Join(" ", Enumerable.Range(0, 16).Select(p => $"{palette[(bank + p) * 3]},{palette[(bank + p) * 3 + 1]},{palette[(bank + p) * 3 + 2]}")));
         }
+        return 0;
+    }
+
+    // Scans every real body in both games' own BODY.HQR for face colours whose ramp-start RGB is
+    // dominated by one channel (green/blue/etc) -- the same "reuse a real, already-correctly-lit
+    // donor colour" approach MarioCustom.cs uses for its own colours (see its own comment: naive
+    // nearest-RGB picking lands on the wrong position within a ramp and renders wrong once the
+    // engine's own light-step arithmetic walks forward from it). Prints candidates actually used
+    // by at least one real face, sorted by how much they're actually used (a colour a real body
+    // relies on for a large visible area is safer to reuse than an obscure one-face colour).
+    // Dumps a candidate colour's WHOLE 16-entry bank, regardless of how it's actually used --
+    // findcolour only checks a candidate's OWN isolated RGB, which isn't enough (a real bug found
+    // 2026-09-23: LBA1 colour 22 looked like a safe brown alone, but its own bank turned out to be a
+    // fire/glow effect ramp, not a smooth shade progression -- see reference-anim-hqr-format memory).
+    // Always eyeball this before committing to a findcolour result in a character file.
+    private static int Ramp(int game, int colour)
+    {
+        var palette = PaletteBytes(game);
+        var bank = colour & ~15;
+        Console.WriteLine($"colour {colour} (bank {bank / 16}, position {colour & 15}):");
+        Console.WriteLine("    " + string.Join(" ", Enumerable.Range(0, 16).Select(p => $"{palette[(bank + p) * 3]},{palette[(bank + p) * 3 + 1]},{palette[(bank + p) * 3 + 2]}")));
+        return 0;
+    }
+
+    private static int FindColour(int game, string channel)
+    {
+        // "pink" (axis 3) is not a single dominant channel like red/green/blue -- it's a magenta-leaning
+        // signature (red AND blue both notably above green, red the stronger of the two) needed for Peach's
+        // own dress (PeachCustom.cs), since plain red-channel filtering only turns up browns/bricks (red
+        // dominant over both g and b, no requirement that b track with r) rather than anything pink.
+        // "white" (axis 4) is likewise not a dominant-channel signature -- a neutral colour has no channel that
+        // beats the others, so it needs its own test (all three channels bright AND close together) instead.
+        // Needed for Toad's own pale skin/base cloth and his cap's white spots (ToadCustom.cs); the same "reuse a
+        // real, already-lit donor colour instead of nearest-RGB matching" reasoning as the other axes.
+        var axis = channel.ToLowerInvariant() switch { "red" or "r" => 0, "green" or "g" => 1, "blue" or "b" => 2, "pink" or "magenta" or "p" => 3, "white" or "cream" or "w" => 4, _ => -1 };
+        if (axis < 0) { Console.WriteLine("channel must be red|green|blue|pink|white"); return 2; }
+        var palette = PaletteBytes(game);
+        var counts = new Dictionary<int, int>();
+        foreach (var (index, data) in AllBodies(game))
+        {
+            Body model;
+            try { model = Body.Read(data, game); } catch (Exception e) when (e is InvalidDataException or ArgumentOutOfRangeException) { continue; }
+            foreach (var f in model.Faces)
+            {
+                var c = f.Colour;
+                if (c < 0 || c > 255) continue;
+                int r = palette[c * 3], g = palette[c * 3 + 1], b = palette[c * 3 + 2];
+                var dominant = axis == 0 ? r > g + 15 && r > b + 15 : axis == 1 ? g > r + 15 && g > b + 15 : axis == 2 ? b > r + 15 && b > g + 15
+                    : axis == 3 ? r > g + 20 && b > g + 10 && r >= b
+                    : Math.Min(r, Math.Min(g, b)) >= 130 && Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b)) <= 25;
+                var bright = axis == 0 || axis == 3 ? r : axis == 1 ? g : axis == 2 ? b : Math.Min(r, Math.Min(g, b));
+                if (dominant && bright >= 60) counts[c] = counts.GetValueOrDefault(c) + 1;
+            }
+        }
+        foreach (var (c, n) in counts.OrderByDescending(kv => kv.Value).Take(20))
+            Console.WriteLine($"colour {c}: rgb=({palette[c*3]},{palette[c*3+1]},{palette[c*3+2]}) used by {n} faces across the archive");
         return 0;
     }
 
@@ -693,6 +779,319 @@ internal static class Program
             cropped.Save(Path.Combine(outDir, $"widestance{suffix}_hip_closeup.png"), ImageFormat.Png);
         }
         Console.WriteLine($"  source + renders in {outDir}");
+        return 0;
+    }
+
+    // Real-world reference photo -> New humanoid, no synthetic silhouette involved: a genuine stress test of the
+    // background/subject mask, AutoCrop, and per-pixel colour projection against something Body Studio was never
+    // tuned against (multiple saturated colours, a soft drop shadow, non-silhouette shading on a toy figure).
+    private static int RefTest(string imagePath, string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        var settings = new Settings
+        {
+            ImagePath = imagePath, Lba1Folder = Folders[0], Lba2Folder = Folders[1], Lba1Body = 0, Lba2Body = 0,
+            Mask = "Background colour", Threshold = 45, Layout = "Single front", Method = "New humanoid", AutoCrop = true,
+            DetailBudget = int.TryParse(Environment.GetEnvironmentVariable("REFTEST_BUDGET"), out var b) ? b : 460,
+            HeadDetails = false, Lit = false,
+        };
+        var generated = Generator.Generate(settings, 2);
+        var tag = Environment.GetEnvironmentVariable("REFTEST_TAG") ?? "";
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2), ("back", MathF.PI) })
+        {
+            using var render = Renderer.Render(generated.Body, generated.Palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+            render.Save(Path.Combine(outDir, $"reftest{tag}_{name}.png"), ImageFormat.Png);
+        }
+        using (var boned = Renderer.Render(generated.Body, generated.Palette, 700, 900, 0f, false, bones: true, background: Color.FromArgb(40, 60, 90)))
+            boned.Save(Path.Combine(outDir, $"reftest{tag}_bones.png"), ImageFormat.Png);
+        if (Environment.GetEnvironmentVariable("REFTEST_DUMP") == "1")
+        {
+            var world = generated.Body.World();
+            for (int bi = 0; bi < generated.Body.Bones.Count; bi++)
+            {
+                var bone = generated.Body.Bones[bi];
+                Console.Error.WriteLine($"bone {bi}: start={bone.Start} count={bone.Count}");
+                for (int p = bone.Start; p < bone.Start + bone.Count; p++)
+                {
+                    var v = world[p];
+                    Console.Error.WriteLine($"  v{p}: ({v.X:0.0}, {v.Y:0.0}, {v.Z:0.0})");
+                }
+            }
+        }
+        Console.WriteLine($"  generated: {generated.Body.Faces.Count} polygons, {generated.Body.Vertices.Count} points, colours used: {string.Join(",", FlatSheet.Colours(generated.Body))}");
+        Console.WriteLine($"  renders in {outDir}");
+        return 0;
+    }
+
+    // Same generation settings as reftest, but writes a single-entry HQR archive (LbaBodyStudio.Hqr.Build) instead
+    // of renders -- for building test/debug archives like BodyStudio/TestBodies/mario.hqr.
+    private static int HqrBody(string imagePath, string outFile)
+    {
+        var settings = new Settings
+        {
+            ImagePath = imagePath, Lba1Folder = Folders[0], Lba2Folder = Folders[1], Lba1Body = 0, Lba2Body = 0,
+            Mask = "Transparent background", Threshold = 45, Layout = "Single front", Method = "New humanoid", AutoCrop = true,
+            DetailBudget = int.TryParse(Environment.GetEnvironmentVariable("REFTEST_BUDGET"), out var b) ? b : 500,
+            HeadDetails = false, Lit = true,
+        };
+        var generated = Generator.Generate(settings, 2);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { generated.Body.Write() }));
+        Console.WriteLine($"  {generated.Body.Faces.Count} polygons, {generated.Body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    private static int DumpHeader(string hqrPath, int index)
+    {
+        var raw = new Hqr(hqrPath).Read(index);
+        var info = BitConverter.ToInt32(raw, 0);
+        var sizeHeader = BitConverter.ToInt16(raw, 4);
+        var xmin = BitConverter.ToInt32(raw, 8); var xmax = BitConverter.ToInt32(raw, 12);
+        var ymin = BitConverter.ToInt32(raw, 16); var ymax = BitConverter.ToInt32(raw, 20);
+        var zmin = BitConverter.ToInt32(raw, 24); var zmax = BitConverter.ToInt32(raw, 28);
+        var nbGroupes = BitConverter.ToInt32(raw, 32); var offGroupes = BitConverter.ToInt32(raw, 36);
+        var nbPoints = BitConverter.ToInt32(raw, 40); var offPoints = BitConverter.ToInt32(raw, 44);
+        Console.WriteLine($"{hqrPath} entry {index}: Info={info} SizeHeader={sizeHeader} XMin={xmin} XMax={xmax} YMin={ymin} YMax={ymax} ZMin={zmin} ZMax={zmax} NbGroupes={nbGroupes} OffGroupes={offGroupes} NbPoints={nbPoints} OffPoints={offPoints} totalBytes={raw.Length}");
+        return 0;
+    }
+
+    private static int MarioCustomCmd(string outFile)
+    {
+        var folder = Folder(2);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 2);
+        var body = MarioCustom.Build(donor);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    // LBA1's own RESS.HQR has a completely different palette layout than LBA2's, so the colour indices
+    // must come from a fresh `findcolour ... 1` scan against LBA1's own BODY.HQR, not LBA2's -- reusing
+    // Twinsen's own LBA1 donor body colours directly (`colours 1 0`), same "reuse a real, proven index"
+    // technique MarioCustom.cs's own comment explains: skin=48, blue=66 (dark navy ramp-start, bank 4),
+    // red=97 (bank 6 ramp-start), dark/brown=22 (a dark brown from the same donor's own red-channel range).
+    private static int MarioCustomLba1Cmd(string outFile)
+    {
+        var folder = Folder(1);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 1);
+        // dark=64: colour 22 looked like a safe brown in isolation but its OWN ramp (bank 1) turned
+        // out to be a fire/glow effect (dark brown -> bright orange -> yellow -> white), not a
+        // smooth shade progression -- confirmed live (the shoes rendered streaked
+        // orange/yellow/white instead of darkening tan). 64 is bank 4's own darkest position (same
+        // bank as blue=66, already confirmed smooth/working) -- a near-black navy, safe reuse.
+        var body = MarioCustom.Build(donor, game: 1, red: 97, skin: 48, dark: 64, blue: 66);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    // Builds walk(0)/run(1)/idle(2)/jump(3) via AnimGenerator for the standard 19-bone rig (LBA2 --
+    // matches mario.hqr's own game/bone-count) into one test archive, for ActorAttributesWindow's
+    // "Load Debug Anim..." button (BodyStudio/TestBodies/testanims.hqr).
+    private static int TestAnimsCmd(string outFile)
+    {
+        const int nbBodyBones = 19; // MarioCustom/LuigiCustom's own Bones.Count -- every entry below must match
+        var anims = new[] { AnimGenerator.Walk(2, nbBodyBones), AnimGenerator.Run(2, nbBodyBones), AnimGenerator.Idle(2, nbBodyBones), AnimGenerator.Jump(2, nbBodyBones) };
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(anims.Select(a => a.Write()).ToArray()));
+        Console.WriteLine($"  walk/run/idle/jump ({string.Join(",", anims.Select(a => a.Frames.Count))} frames) -> {outFile}");
+        return 0;
+    }
+
+    private static int LuigiCustomCmd(string outFile)
+    {
+        var folder = Folder(2);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 2);
+        var body = LuigiCustom.Build(donor);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    // green=118 (whole ramp checked smooth via `ramp 118 1` first -- see reference-anim-hqr-format
+    // memory's own write-up of why that check matters), skin/dark/blue reused from Mario's own
+    // already-tested LBA1 picks (same donor, same tones apply).
+    private static int LuigiCustomLba1Cmd(string outFile)
+    {
+        var folder = Folder(1);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 1);
+        var body = LuigiCustom.Build(donor, game: 1, green: 118, skin: 48, dark: 64, blue: 66);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    private static int BowserCustomCmd(string outFile)
+    {
+        var folder = Folder(2);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 2);
+        var body = BowserCustom.Build(donor);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    private static int PeachCustomCmd(string outFile)
+    {
+        var folder = Folder(2);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 2);
+        var body = PeachCustom.Build(donor);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    private static int ToadCustomCmd(string outFile)
+    {
+        var folder = Folder(2);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 2);
+        var body = ToadCustom.Build(donor);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    private static int YoshiCustomCmd(string outFile)
+    {
+        var folder = Folder(2);
+        var donor = Body.Read(new Hqr(Generator.BodyArchive(folder)).Read(0), 2);
+        var body = YoshiCustom.Build(donor);
+        var directory = Path.GetDirectoryName(outFile);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllBytes(outFile, LbaBodyStudio.Hqr.Build(new[] { body.Write() }));
+        Console.WriteLine($"  {body.Faces.Count} polygons, {body.Vertices.Count} points -> {outFile}");
+        return 0;
+    }
+
+    // Packages the whole roster into the four archives the user asked for: LBA2Mario.HQR (all six
+    // core-cast bodies, indices 0-5: Mario/Luigi/Peach/Toad/Bowser/Yoshi), LBA1Mario.HQR (only
+    // Mario/Luigi so far -- the other four don't have LBA1 colour sets picked yet, see
+    // project-mario-roster memory), and LBA2MarioAnims.HQR/LBA1MarioAnims.HQR (walk/run/idle/jump,
+    // indices 0-3 -- ONE set works for the whole roster since every character shares the exact same
+    // 19-bone rig; only the angle-unit scale differs per game, handled by Anim.Game, not a
+    // per-character duplicate). outDir defaults to Assets/ (this project's own shipped-content
+    // folder, alongside DummyBody.lm2).
+    private static int PackageRoster(string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+
+        var lba2Donor = Body.Read(new Hqr(Generator.BodyArchive(Folder(2))).Read(0), 2);
+        var lba2Bodies = new[]
+        {
+            MarioCustom.Build(lba2Donor).Write(),
+            LuigiCustom.Build(lba2Donor).Write(),
+            PeachCustom.Build(lba2Donor).Write(),
+            ToadCustom.Build(lba2Donor).Write(),
+            BowserCustom.Build(lba2Donor).Write(),
+            YoshiCustom.Build(lba2Donor).Write(),
+        };
+        var lba2Path = Path.Combine(outDir, "LBA2Mario.HQR");
+        File.WriteAllBytes(lba2Path, LbaBodyStudio.Hqr.Build(lba2Bodies));
+        Console.WriteLine($"  {lba2Path}: {lba2Bodies.Length} bodies (Mario, Luigi, Peach, Toad, Bowser, Yoshi)");
+
+        // LBA1 colour picks, same "reuse a real donor colour, check the whole ramp" recipe as
+        // Mario/Luigi's own (see project-mario-roster memory): skin=48/dark=64/blue=66 are Twinsen's
+        // own donor colours (already proven via Mario/Luigi); green=118 (Luigi's own LBA1 pick,
+        // reused for Bowser/Yoshi too); pink=224 (bank 14 position 0, a genuinely pink-to-magenta
+        // ramp -- LBA1's own palette actually has one, unlike LBA2's); gold=144 (bank 9 position 0,
+        // 1609 faces, the single most-used LBA1 colour); white=214 (bank 13 position 6, smooth
+        // gray-to-near-white).
+        var lba1Donor = Body.Read(new Hqr(Generator.BodyArchive(Folder(1))).Read(0), 1);
+        var lba1Bodies = new[]
+        {
+            MarioCustom.Build(lba1Donor, game: 1, red: 97, skin: 48, dark: 64, blue: 66).Write(),
+            LuigiCustom.Build(lba1Donor, game: 1, green: 118, skin: 48, dark: 64, blue: 66).Write(),
+            PeachCustom.Build(lba1Donor, game: 1, pink: 224, skin: 48, gold: 144, blonde: 150).Write(),
+            ToadCustom.Build(lba1Donor, game: 1, red: 97, blue: 66, dark: 64, white: 214, cream: 48).Write(),
+            BowserCustom.Build(lba1Donor, game: 1, green: 118, cream: 48, shellColour: 97, dark: 64).Write(),
+            YoshiCustom.Build(lba1Donor, game: 1, green: 118, cream: 48, saddle: 97, white: 214).Write(),
+        };
+        var lba1Path = Path.Combine(outDir, "LBA1Mario.HQR");
+        File.WriteAllBytes(lba1Path, LbaBodyStudio.Hqr.Build(lba1Bodies));
+        Console.WriteLine($"  {lba1Path}: {lba1Bodies.Length} bodies (Mario, Luigi, Peach, Toad, Bowser, Yoshi)");
+
+        const int nbBodyBones = 19;
+        var lba2Anims = new[] { AnimGenerator.Walk(2, nbBodyBones), AnimGenerator.Run(2, nbBodyBones), AnimGenerator.Idle(2, nbBodyBones), AnimGenerator.Jump(2, nbBodyBones) };
+        var lba2AnimPath = Path.Combine(outDir, "LBA2MarioAnims.HQR");
+        File.WriteAllBytes(lba2AnimPath, LbaBodyStudio.Hqr.Build(lba2Anims.Select(a => a.Write()).ToArray()));
+        Console.WriteLine($"  {lba2AnimPath}: walk(0)/run(1)/idle(2)/jump(3), works for the whole LBA2 roster");
+
+        var lba1Anims = new[] { AnimGenerator.Walk(1, nbBodyBones), AnimGenerator.Run(1, nbBodyBones), AnimGenerator.Idle(1, nbBodyBones), AnimGenerator.Jump(1, nbBodyBones) };
+        var lba1AnimPath = Path.Combine(outDir, "LBA1MarioAnims.HQR");
+        File.WriteAllBytes(lba1AnimPath, LbaBodyStudio.Hqr.Build(lba1Anims.Select(a => a.Write()).ToArray()));
+        Console.WriteLine($"  {lba1AnimPath}: walk(0)/run(1)/idle(2)/jump(3), works for the whole LBA1 roster");
+
+        return 0;
+    }
+
+    // In-memory check for HqrWriter.AppendEntry (MainWindow.BodyDebugPreview.cs's own append-a-debug-body logic):
+    // appends the mario.hqr body onto a real, retail-sized BODY.HQR (never written back to disk) and confirms every
+    // original entry still reads back byte-identical, the new entry lands at the expected index, and it reads back
+    // as the same bytes that went in.
+    private static int TestAppend(int game)
+    {
+        var original = new Hqr(Generator.BodyArchive(Folder(game)));
+        var originalCount = original.Count;
+        var newEntry = new Hqr(FindTestArchive("mario.hqr")).Read(0);
+        var real = File.ReadAllBytes(Generator.BodyArchive(Folder(game)));
+        var newRecord = LBAAssembler.HqrWriter.CompressedEntry(newEntry);
+        var appended = LBAAssembler.HqrWriter.AppendEntry(real, newRecord);
+        var check = new Hqr(appended);
+        if (check.Count != originalCount + 1) { Console.WriteLine($"FAIL: expected {originalCount + 1} entries, got {check.Count}"); return 1; }
+        for (var i = 0; i < originalCount - 1; i++)
+        {
+            byte[] a, b;
+            try { a = original.Read(i); } catch (InvalidDataException) { continue; }
+            try { b = check.Read(i); } catch (InvalidDataException) { Console.WriteLine($"FAIL: entry {i} unreadable after append"); return 1; }
+            if (!a.AsSpan().SequenceEqual(b)) { Console.WriteLine($"FAIL: entry {i} changed by append"); return 1; }
+        }
+        var readBack = check.Read(originalCount - 1);
+        if (!readBack.AsSpan().SequenceEqual(newEntry)) { Console.WriteLine("FAIL: new entry doesn't read back identical"); return 1; }
+        var usedMethod = BitConverter.ToUInt16(newRecord, 8);
+        Console.WriteLine($"OK: {originalCount} -> {check.Count} entries, all {originalCount - 1} originals unchanged, new entry at index {originalCount - 1} reads back identical ({newEntry.Length} bytes, written as method {usedMethod})");
+        return 0;
+    }
+
+    private static string FindTestArchive(string fileName)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "BodyStudio", "TestBodies", fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new FileNotFoundException("mario.hqr not found (development checkout only).");
+    }
+
+    // Round-trip check for a debug/test archive like mario.hqr: reads one entry back with BodyStudio's own Hqr
+    // reader (not the writer that just built it) and renders it, the same sanity check the game's own body archives
+    // would need to pass.
+    private static int HqrPreview(string hqrPath, int index, string outDir, int previewGame = 2)
+    {
+        Directory.CreateDirectory(outDir);
+        var body = Body.Read(new Hqr(hqrPath).Read(index), previewGame);
+        var palette = Generator.Palette(Folder(previewGame));
+        foreach (var (name, yaw) in new (string, float)[] { ("front", 0f), ("threequarter", 0.7f), ("profile", MathF.PI / 2) })
+        {
+            using var render = Renderer.Render(body, palette, 700, 900, yaw, false, background: Color.FromArgb(40, 60, 90));
+            render.Save(Path.Combine(outDir, $"hqrpreview_{index}_{name}.png"), ImageFormat.Png);
+        }
+        Console.WriteLine($"  entry {index}: {body.Faces.Count} polygons, {body.Vertices.Count} points, {body.Bones.Count} bones -> {outDir}");
         return 0;
     }
 

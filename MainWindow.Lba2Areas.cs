@@ -163,6 +163,11 @@ public partial class MainWindow
         interiorActors = actors;
         interiorOverlay = new InteriorOverlay(new List<(int ActorIndex, List<Point> Points)>(), zones);
 
+        // Every interior cube uses RESS_XPL00 regardless of which exterior island it's on (LoadInteriorPalette) --
+        // this joined view draws with its own lba2Interiors.Palette above, but MainWindow.palette still needs to be
+        // right for any actor attributes window opened while it's showing (ActorAttributesWindow's body preview).
+        LoadInteriorPalette();
+
         lba2JoinedView = true;
         lba2AreaName = areaName;
         lba2CurrentTiles = tiles;

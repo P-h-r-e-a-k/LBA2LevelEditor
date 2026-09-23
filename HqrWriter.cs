@@ -41,6 +41,32 @@ internal static class HqrWriter
         return entry;
     }
 
+    // Returns a copy of `hqr` with one new entry appended past the end (index = the old entry count), growing the
+    // offset table by one slot. Only the table itself (4 bytes) and the trailing sentinel move; every existing
+    // entry's own bytes stay exactly where they are relative to each other, just shifted down by those 4 bytes.
+    public static byte[] AppendEntry(byte[] hqr, byte[] newEntry)
+    {
+        if (hqr.Length < 4) throw new InvalidDataException("The HQR file is too small.");
+        var oldTableBytes = (int)BinaryPrimitives.ReadUInt32LittleEndian(hqr);
+        var oldSlots = oldTableBytes / 4;
+        if (oldTableBytes < 4 || oldTableBytes > hqr.Length) throw new InvalidDataException("Invalid HQR directory.");
+
+        // The old table's own last slot was the sentinel (== hqr.Length); after the table grows by 4 bytes, that
+        // same position becomes the new entry's real offset, and a fresh sentinel goes after it.
+        var newEntryOffset = hqr.Length + 4;
+        var result = new byte[newEntryOffset + newEntry.Length];
+        for (var i = 0; i < oldSlots - 1; i++)
+        {
+            var o = BinaryPrimitives.ReadUInt32LittleEndian(hqr.AsSpan(i * 4));
+            BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(i * 4), o == 0 ? 0 : o + 4);
+        }
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan((oldSlots - 1) * 4), (uint)newEntryOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(oldSlots * 4), (uint)result.Length);
+        hqr.AsSpan(oldTableBytes).CopyTo(result.AsSpan(oldTableBytes + 4));
+        newEntry.CopyTo(result.AsSpan(newEntryOffset));
+        return result;
+    }
+
     // Returns a copy of `hqr` with entry `index` replaced by `newEntry` (a
     // complete entry including its 10-byte header, e.g. from StoredEntry).
     public static byte[] ReplaceEntry(byte[] hqr, int index, byte[] newEntry)

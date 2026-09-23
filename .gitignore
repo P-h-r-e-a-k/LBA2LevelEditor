@@ -16,5 +16,4 @@ obj
 *.suo
 debug.log
 release/*
-!release/LBAAssembler.exe
 settings.json

@@ -29,6 +29,15 @@ namespace LBAAssembler;
 public partial class ActorAttributesWindow : Window
 {
     public event Action<int>? OpenScriptRequested;
+    // Hands a raw body payload (an entry read from a project test archive, e.g. mario.hqr) to MainWindow, which
+    // installs it into a throwaway preview copy of BODY.HQR (see MainWindow.BodyDebugPreview.cs) and returns its
+    // new index there -- or null if a live preview couldn't be started (most likely a terrain edit already has
+    // the native renderer's one live-preview slot).
+    public event Func<byte[], int?>? LoadDebugBodyRequested;
+    // Same idea, for a raw animation payload (an ANIM.HQR entry, e.g. from AnimGenerator's own
+    // walk/run/idle/jump output) -- installed into a throwaway preview copy of ANIM.HQR instead
+    // (MainWindow.BodyDebugPreview.cs's own LoadDebugAnim). Requires a debug body already active.
+    public event Func<byte[], int?>? LoadDebugAnimRequested;
 
     private sealed class FlagCheckItem
     {
@@ -41,6 +50,20 @@ public partial class ActorAttributesWindow : Window
     private readonly CommunityRendererBackend nativeRenderer;
     private readonly byte[] palette;
     private readonly int actorIndex;
+    // A loaded debug body's own colours are only correct under the specific palette Body Studio itself assumes
+    // when generating/previewing one (RESS.HQR entry 0's raw 256-colour table -- see Generation.Palette in
+    // BodyStudio/Generation.cs) -- NOT whatever island palette the live scene happens to have loaded, which is
+    // what `palette` above otherwise always is. The native renderer's own framebuffer is just palette indices,
+    // palette-agnostic at that level (the RGB conversion happens entirely client-side, same mechanism as the
+    // interior-palette fix elsewhere in this session) -- so swapping only this managed-side table, only while
+    // previewing the debug body itself, is enough to make it render in its own real colours. Confirmed this
+    // wasn't specific to debug bodies: a real, unmodified retail body (index 468) manually selected into
+    // BodyCombo -- outside its own native island's context -- showed the exact same wrong-palette black
+    // silhouette, proving this is a pre-existing characteristic of previewing any body out of its own island
+    // context, not a bug in the debug-body reload itself.
+    private byte[]? debugBodyPalette;
+    private int debugBodyIndex = -1;
+    private byte[] EffectivePalette => previewBody == debugBodyIndex && debugBodyPalette is { } p ? p : palette;
     private List<FlagCheckItem> flagItems = new();
     private DispatcherTimer? previewTimer;
     private int previewAngle;
@@ -536,7 +559,7 @@ public partial class ActorAttributesWindow : Window
             RenderPreviewFrame();
             return;
         }
-        previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, palette, targetAspect: GetPreviewAspect())
+        previewCalibration = nativeRenderer.CalibrateBodyPreviewDistance(previewBody, previewAnim, EffectivePalette, targetAspect: GetPreviewAspect())
             ?? new CommunityRendererBackend.BodyPreviewCalibration(5000, new Int32Rect(0, 0, 640, 480));
         RenderPreviewFrame();
     }
@@ -591,7 +614,7 @@ public partial class ActorAttributesWindow : Window
             return;
         }
         nativeRenderer.RendererLibrary?.SetBodyPreviewAnimationPaused(pauseAnimation);
-        var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, calibration.Distance, palette);
+        var bitmap = nativeRenderer.RenderBodyPreview(previewBody, previewAnim, previewAngle, calibration.Distance, EffectivePalette);
         if (bitmap is null)
         {
             ShowPreviewFallback("no body to preview for this index");
@@ -726,6 +749,150 @@ public partial class ActorAttributesWindow : Window
     private void EditScript_Click(object sender, RoutedEventArgs e) => OpenScriptRequested?.Invoke(actorIndex);
 
     private void CreateNewBody_Click(object sender, RoutedEventArgs e) => BodyStudioLauncher.Show(this);
+
+    // A development checkout only: walks up from the running exe looking for the project's own
+    // BodyStudio/TestBodies folder, the same way Lba2Engine.Find() locates the native engine build.
+    private static string? FindTestArchive(string fileName)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "BodyStudio", "TestBodies", fileName);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    // Debug-only: preview a body from a project test archive (mario.hqr and friends) through the real native
+    // renderer, including animation, without ever touching the user's actual game files -- see
+    // MainWindow.BodyDebugPreview.cs's own comment for how the throwaway preview copy works.
+    private void LoadDebugBody_Click(object sender, RoutedEventArgs e)
+    {
+        var path = FindTestArchive("mario.hqr");
+        if (path is null) { StatusLabel.Text = "mario.hqr not found -- this debug feature only works from a development checkout."; return; }
+        LbaBodyStudio.Hqr archive;
+        try { archive = new LbaBodyStudio.Hqr(path); }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: couldn't open {path}: {error.Message}");
+            StatusLabel.Text = $"Couldn't open {Path.GetFileName(path)}: {error.Message}";
+            return;
+        }
+        var items = new List<(int Id, string Label)>();
+        for (var i = 0; i < archive.Count; i++)
+        {
+            try { items.Add((i, $"{i}: {archive.Read(i).Length} bytes")); }
+            catch (InvalidDataException) { /* an empty/unused slot */ }
+        }
+        if (items.Count == 0) { StatusLabel.Text = $"{Path.GetFileName(path)} has no readable entries."; return; }
+        if (ListPickWindow.Pick(this, "Load debug body", items,
+                note: $"From {Path.GetFileName(path)}, installed into a throwaway preview copy of BODY.HQR. Your real game files are never modified.") is not { } chosen) return;
+
+        byte[] entry;
+        try { entry = archive.Read(chosen); }
+        catch (Exception error) when (error is InvalidDataException or ArgumentOutOfRangeException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: couldn't read {path} entry {chosen}: {error.Message}");
+            StatusLabel.Text = $"Couldn't read entry {chosen}: {error.Message}";
+            return;
+        }
+        if (LoadDebugBodyRequested?.Invoke(entry) is not { } newIndex)
+        {
+            StatusLabel.Text = "Couldn't start the debug body preview -- a terrain edit may already be using the live 3D view.";
+            return;
+        }
+        debugBodyIndex = newIndex;
+        debugBodyPalette ??= LoadDebugBodyPalette();
+        // A brand-new actor (Add Actor Here) starts as a placeholder with no
+        // real body -- RenderPreviewFrame() shows DummyBodyPreview instead of
+        // ever calling into the real native renderer while this stays true
+        // (only Apply's own success path clears it, for the "the user saved
+        // a real body" case). Loading a debug body is exactly as real a body
+        // choice as that, so it needs to clear this too -- without it, every
+        // debug-body preview silently rendered the generic placeholder the
+        // whole time, never the body actually being tested (confirmed via
+        // RenderPreviewFrame's own call log: previewBody was already 468,
+        // showingDummyBody was still true, and CommunityRendererBackend.
+        // RenderBodyPreview -- the only path that would show 468's real
+        // pixels -- was never once called).
+        showingDummyBody = false;
+        BodyCombo.Text = bodyOptionsForActor.FirstOrDefault(o => o.Index == newIndex)?.Display ?? newIndex.ToString();
+        CommitPreviewChange();
+        // CommitPreviewChange's own SyncAnimationsToBody just picked an animation for whichever real,
+        // on-disk entity actually owns index `newIndex` in the retail archive -- it has no idea that
+        // index now holds a swapped-in debug body instead, so its choice generally belongs to a
+        // different skeleton than the debug body's and renders garbled. Body Studio's "New humanoid"
+        // bodies (mario.hqr's own origin) always preserve the donor's exact 19-bone Twinsen rig (see
+        // ENGINE_FILE_FORMATS.md: bodies and animations are bound at runtime by bone count alone), so
+        // animation 0 -- Twinsen's own, already proven safe by every brand-new actor defaulting to it --
+        // is always a compatible choice here, regardless of what SyncAnimationsToBody guessed.
+        AnimCombo.Text = "0";
+        CommitPreviewChange();
+        StatusLabel.Text = $"Loaded {Path.GetFileName(path)} entry {chosen} as body {newIndex} (preview only, not saved).";
+    }
+
+    // Same idea as LoadDebugBody_Click, for a project test animation archive (e.g. testanims.hqr,
+    // AnimGenerator's own walk/run/idle/jump output) instead of a body -- swapped into a throwaway
+    // preview copy of ANIM.HQR. Requires a debug body already loaded (LoadDebugAnimRequested's own
+    // handler, MainWindow.BodyDebugPreview.cs's LoadDebugAnim, shares that body's live-preview
+    // folder rather than starting a second one).
+    private void LoadDebugAnim_Click(object sender, RoutedEventArgs e)
+    {
+        var path = FindTestArchive("testanims.hqr");
+        if (path is null) { StatusLabel.Text = "testanims.hqr not found -- this debug feature only works from a development checkout."; return; }
+        LbaBodyStudio.Hqr archive;
+        try { archive = new LbaBodyStudio.Hqr(path); }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: couldn't open {path}: {error.Message}");
+            StatusLabel.Text = $"Couldn't open {Path.GetFileName(path)}: {error.Message}";
+            return;
+        }
+        var items = new List<(int Id, string Label)>();
+        for (var i = 0; i < archive.Count; i++)
+        {
+            try { items.Add((i, $"{i}: {archive.Read(i).Length} bytes")); }
+            catch (InvalidDataException) { /* an empty/unused slot */ }
+        }
+        if (items.Count == 0) { StatusLabel.Text = $"{Path.GetFileName(path)} has no readable entries."; return; }
+        if (ListPickWindow.Pick(this, "Load debug anim", items,
+                note: $"From {Path.GetFileName(path)}, installed into a throwaway preview copy of ANIM.HQR. Your real game files are never modified.") is not { } chosen) return;
+
+        byte[] entry;
+        try { entry = archive.Read(chosen); }
+        catch (Exception error) when (error is InvalidDataException or ArgumentOutOfRangeException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: couldn't read {path} entry {chosen}: {error.Message}");
+            StatusLabel.Text = $"Couldn't read entry {chosen}: {error.Message}";
+            return;
+        }
+        if (LoadDebugAnimRequested?.Invoke(entry) is not { } newIndex)
+        {
+            StatusLabel.Text = "Couldn't start the debug anim preview -- load a debug body first, or a terrain edit may already be using the live 3D view.";
+            return;
+        }
+        AnimCombo.Text = newIndex.ToString();
+        CommitPreviewChange();
+        StatusLabel.Text = $"Loaded {Path.GetFileName(path)} entry {chosen} as anim {newIndex} (preview only, not saved).";
+    }
+
+    // RESS.HQR entry 0: a plain 256-colour RGB table, not one of the structured per-island XPL records
+    // MainWindow's own LoadPaletteEntry parses -- exactly what Generation.Palette (BodyStudio/Generation.cs)
+    // reads when generating or previewing a body, so this is the one palette every Body Studio body's own
+    // ramp-start colour indices are actually correct under. See EffectivePalette's own comment for why this
+    // needs to be a different table from the live scene's island palette at all.
+    private byte[]? LoadDebugBodyPalette()
+    {
+        try
+        {
+            var bytes = HqrArchive.Open(Path.Combine(GameDirectory, "RESS.HQR")).Read(0);
+            return bytes.Length == 768 ? bytes : null;
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException)
+        {
+            DebugLog.Log($"ActorAttributesWindow: couldn't load the debug body's own palette: {e.Message}");
+            return null;
+        }
+    }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 

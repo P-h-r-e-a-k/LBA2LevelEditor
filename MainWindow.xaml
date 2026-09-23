@@ -128,6 +128,7 @@
             </MenuItem>
             <MenuItem Header="_Tools" Foreground="#10243E">
                 <MenuItem Header="_Body Studio…" Click="BodyStudio_Click"/>
+                <MenuItem Header="_Animation Studio…" Click="AnimationStudio_Click"/>
                 <MenuItem Header="LBA2: play _scene (the full engine)…" Click="Lba2Play_Click"/>
                 <MenuItem Header="LBA2: scene e_ditor…" Click="Lba2Editor_Click"/>
                 <MenuItem Header="LBA2: island _terrain editor (Build mode)" Click="IslandEditor_Click"/>
@@ -343,6 +344,7 @@
                                         <Button Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
                                         <Button Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
                                         <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
+                                        <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>
                                     </StackPanel>
                                 </ScrollViewer>
                             </Grid>

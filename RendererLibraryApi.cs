@@ -50,6 +50,8 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int RenderBodyPreviewFn(int genBody, int genAnim, int cameraBeta, int cameraDistance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetBodyPreviewAnimationPausedFn(int paused);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ProjectPointFn(int worldX, int worldY, int worldZ, out int screenX, out int screenY);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ReloadBodiesFn([MarshalAs(UnmanagedType.LPStr)] string path);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int ReloadAnimsFn([MarshalAs(UnmanagedType.LPStr)] string path);
     private IntPtr handle;
     private VersionFn? version;
     private InitializeFn? initialize;
@@ -95,6 +97,8 @@ internal sealed class RendererLibraryApi : IDisposable
     private RenderBodyPreviewFn? renderBodyPreview;
     private SetBodyPreviewAnimationPausedFn? setBodyPreviewAnimationPaused;
     private ProjectPointFn? projectPoint;
+    private ReloadBodiesFn? reloadBodies;
+    private ReloadAnimsFn? reloadAnims;
 
     // devTreeFallbackPath is an absolute path into the native dev build
     // tree (dynamically linked against MSYS2's GCC runtime/SDL3 -- fine
@@ -167,6 +171,8 @@ internal sealed class RendererLibraryApi : IDisposable
         getActorNativeAnims = Get<GetActorNativeAnimsFn>("lba2_renderer_get_actor_native_anims");
         renderBodyPreview = Get<RenderBodyPreviewFn>("lba2_renderer_render_body_preview");
         setBodyPreviewAnimationPaused = Get<SetBodyPreviewAnimationPausedFn>("lba2_renderer_set_body_preview_animation_paused");
+        reloadBodies = Get<ReloadBodiesFn>("lba2_renderer_reload_bodies");
+        reloadAnims = Get<ReloadAnimsFn>("lba2_renderer_reload_anims");
         projectPoint = Get<ProjectPointFn>("lba2_renderer_project_point");
     }
 
@@ -435,6 +441,14 @@ internal sealed class RendererLibraryApi : IDisposable
     // turntable's own rotation angle is entirely client-side (see
     // ActorAttributesWindow's previewAngle) and keeps advancing regardless.
     public void SetBodyPreviewAnimationPaused(bool paused) => setBodyPreviewAnimationPaused?.Invoke(paused ? 1 : 0);
+    // Repoints HQR_Bodys (BODY.HQR's own resource cache, opened once at lba2_renderer_initialize()
+    // time) at a new file -- SetDataRoot's own directory redirect never reaches an already-open
+    // cache. path is a full file path, not a directory. See lba2_renderer_reload_bodies's own doc
+    // comment (RENDERER_API.H) for why this exists.
+    public bool ReloadBodies(string path) => reloadBodies?.Invoke(path) == 1;
+    // Same as ReloadBodies, for HQR_Anims (ANIM.HQR's own cache) -- see lba2_renderer_reload_anims's
+    // own doc comment (RENDERER_API.H) for why this exists alongside the body one.
+    public bool ReloadAnims(string path) => reloadAnims?.Invoke(path) == 1;
 
     public bool IsRendererReady => IsLoaded && initialize is not null && setDataRoot is not null && loadIsland is not null && loadCube is not null && setViewTarget is not null && renderFrame is not null && framebuffer is not null;
 

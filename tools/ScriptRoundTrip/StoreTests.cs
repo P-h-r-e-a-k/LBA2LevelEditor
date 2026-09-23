@@ -639,6 +639,25 @@ internal static class StoreTests
             Check(flagUse.Count == 0, "surprise: none of the game's own scripts reads or writes game flags 220..254 (the door's 220 and the boxes' 221..225 are free)" + (flagUse.Count > 0 ? ": " + flagUse[0] : ""));
             Check(!store.Validate(61, room).Any(i => i.Severity == SceneIssueSeverity.Error) && !store.Validate(13, store.Load(13), store.LoadGrid(13)).Any(i => i.Severity == SceneIssueSeverity.Error), "surprise: scenes 61 and 13 validate");
             Check(EntriesEqualExcept(Path.Combine(dir, "SCENE.HQR.bak"), Path.Combine(dir, "SCENE.HQR"), 13, 24, 39, 42, 61), "surprise: only scenes 13, 24, 39, 42 and 61 changed");
+
+            // users have reported wrong background music after this tool's edits; every write to a scene goes through SceneModel/SceneSerializer
+            // (a full parse and re-encode, never a raw byte splice), so the header -- Music (CubeJingle: the MIDI_MI.HQR entry AMBIANCE.C's
+            // PlayMusic plays on ChangeCube) and everything before the first actor -- can only come out the way it was read in, even for the five
+            // scenes whose records do change (their actors, zones and scripts). Pin that down directly, field by field, rather than trusting the
+            // whole-entry byte diff above to say why it holds.
+            {
+                var retailScene = HqrFile.Parse(File.ReadAllBytes(Path.Combine(dir, "SCENE.HQR.bak")));
+                foreach (var s in new[] { 13, 24, 39, 42, 61 })
+                {
+                    var retailHeader = SceneSerializer.Parse(SceneGame.Lba1, retailScene.Read(s));
+                    var savedHeader = store.Load(s);
+                    Check(retailHeader.Music == savedHeader.Music, $"surprise: scene {s}'s music (jingle {retailHeader.Music}) is exactly what the game already had for it");
+                    Check(retailHeader.Island == savedHeader.Island && retailHeader.GameOverScene == savedHeader.GameOverScene && retailHeader.AlphaLight == savedHeader.AlphaLight && retailHeader.BetaLight == savedHeader.BetaLight
+                          && retailHeader.SecondMin == savedHeader.SecondMin && retailHeader.SecondEcart == savedHeader.SecondEcart
+                          && Enumerable.Range(0, 4).All(i => retailHeader.Ambient[i].Sample == savedHeader.Ambient[i].Sample && retailHeader.Ambient[i].Repeat == savedHeader.Ambient[i].Repeat && retailHeader.Ambient[i].Round == savedHeader.Ambient[i].Round),
+                        $"surprise: scene {s}'s other header fields (island, game-over scene, light, ambient samples, ambient delay) are untouched too");
+                }
+            }
             Check(EntriesEqualExcept(Path.Combine(dir, "LBA_GRI.HQR.bak"), Path.Combine(dir, "LBA_GRI.HQR"), 13, 61), "surprise: only grids 13 and 61 changed");
 
             // the door: the doorway copied whole (pillars, floor, side walls), lined with grey stone, its floor carried to the far pillar, and a taller clip rectangle

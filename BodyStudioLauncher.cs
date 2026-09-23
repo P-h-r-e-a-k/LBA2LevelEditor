@@ -12,17 +12,13 @@ namespace LBAAssembler;
 // app's own startup never does on its own.
 internal static class BodyStudioLauncher
 {
-    private static bool initialized;
     private static Forms.Form? openForm;
 
     public static void Show(System.Windows.Window owner)
     {
-        if (!initialized)
-        {
-            Forms.Application.EnableVisualStyles();
-            Forms.Application.SetCompatibleTextRenderingDefault(false);
-            initialized = true;
-        }
+        // Shared with every other WinForms-window launcher's own call to this -- see WinFormsCompat's
+        // own comment for why a per-launcher-class flag isn't enough.
+        WinFormsCompat.EnsureInitialized();
 
         if (openForm is { IsDisposed: false })
         {

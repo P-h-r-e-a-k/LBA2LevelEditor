@@ -63,6 +63,7 @@ public partial class MainWindow : Window
     private byte[] palette = Array.Empty<byte>();
     private byte[] shadeTable = Array.Empty<byte>();
     private int shadeLevel;
+    private int lastExteriorPaletteIndex = 27; // RESS_XPL0 (Citadel), COMMON.H -- same fallback LoadIslandPalette itself uses
     private IReadOnlyList<FilterableComboBox.Option> islandOptions = Array.Empty<FilterableComboBox.Option>();
     private IReadOnlyList<FilterableComboBox.Option> sceneOptions = Array.Empty<FilterableComboBox.Option>();
     private FilterableComboBox? islandFilter;
@@ -387,6 +388,8 @@ public partial class MainWindow : Window
         }
     }
 
+    // Which RESS.HQR "XPL" entry an island's own exterior view uses (COMMON.H's RESS_XPL0..10, AMBIANCE.CPP's
+    // ChoicePalette): island 0 (Citadel) is the RESS_XPL0 fallback below, the rest are named explicitly.
     private byte[] LoadIslandPalette(string islandPath)
     {
         var name = Path.GetFileNameWithoutExtension(islandPath).ToUpperInvariant();
@@ -401,6 +404,41 @@ public partial class MainWindow : Window
         else if (name == "KNARTAS") paletteIndex = 35;
         else if (name == "ILOTCX") paletteIndex = 36;
         else if (name == "ASCENCE") paletteIndex = 37;
+        lastExteriorPaletteIndex = paletteIndex;
+        return LoadPaletteEntry(paletteIndex);
+    }
+
+    // AMBIANCE.CPP's ChoicePalette: every interior cube, on every island, always uses RESS_XPL00 (COMMON.H: 42,
+    // "citabau") -- never the exterior island's own palette. Call before rendering/previewing anything from an
+    // interior scene (the single-scene native view, the joined-map view, and any body/actor preview opened while
+    // one of those is showing); call RestoreExteriorPalette on the way back out.
+    //
+    // Both, unlike LoadIslandPalette, are internal housekeeping run automatically as part of entering/leaving an
+    // interior view (not a direct response to the user opening a specific island, which already has its own error
+    // UI via LoadIsland's own caller) -- including on the very first game switch from the MainWindow constructor,
+    // before gameRoot may even be a real, configured game folder yet. A failure here should never be fatal: keep
+    // whatever palette was already loaded and log it, the same defensive pattern BodyBones already uses below.
+    private byte[] LoadInteriorPalette()
+    {
+        try { return LoadPaletteEntry(42); }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: couldn't load the interior palette: {e.Message}");
+            return palette;
+        }
+    }
+    private byte[] RestoreExteriorPalette()
+    {
+        try { return LoadPaletteEntry(lastExteriorPaletteIndex); }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException)
+        {
+            DebugLog.Log($"MainWindow: couldn't restore the exterior palette: {e.Message}");
+            return palette;
+        }
+    }
+
+    private byte[] LoadPaletteEntry(int paletteIndex)
+    {
         var xpl = HqrArchive.Open(Path.Combine(gameRoot, "RESS.HQR")).Read(paletteIndex);
         var paletteOffset = BitConverter.ToInt32(xpl, 4);
         var fogOffset = BitConverter.ToInt32(xpl, 12);
@@ -481,6 +519,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Every interior cube uses RESS_XPL00 regardless of which exterior island it's on (see LoadInteriorPalette).
+        LoadInteriorPalette();
         // Loads the scene (and resets the native camera/projection, which a
         // body preview may have changed) before the full stitched render.
         var canvas = nativeRenderer.RenderInteriorSceneFullDirect(numscene, palette, out interiorActors, out interiorOverlay);
@@ -540,8 +580,13 @@ public partial class MainWindow : Window
         lba2JoinedView = false;
         lba2AreaName = null;
         nativeRenderer.ReleaseInterior();
+        var wasInterior = interiorSceneActive;
         interiorSceneActive = false;
         interiorSceneNumber = -1;
+        // Undoes LoadInteriorPalette's RESS_XPL00 override; LBA1 has no such table. Only when actually leaving a
+        // real interior -- this is called unconditionally on every game switch (including the very first one, from
+        // the constructor, before gameRoot may even be a real configured game folder), not only when leaving one.
+        if (wasInterior && currentGame == GameKind.Lba2) RestoreExteriorPalette();
         RestoreIslandMinimap();
         InteriorHost.Visibility = Visibility.Collapsed;
         TerrainViewport.Visibility = Visibility.Visible;
@@ -677,7 +722,9 @@ public partial class MainWindow : Window
             return;
         }
         StopLive();
+        EndBodyPreviewLive();
         if (live is null && Directory.Exists(gameRoot)) LiveDataRoot.CleanStale(gameRoot);      // a preview folder a crashed session left behind
+        if (bodyPreviewLive is null && Directory.Exists(gameRoot)) LiveDataRoot.CleanStale(gameRoot, LiveDataRoot.BodyPreviewFolderName);
         selectedLba2Scene = null;
         SwitchGameCore(game);
         ApplyMode();
@@ -1970,6 +2017,8 @@ public partial class MainWindow : Window
         var window = new ActorAttributesWindow(nativeRenderer, palette, index) { Owner = this };
         WindowLifecycle.Register(window, "ActorAttributesWindow");
         window.OpenScriptRequested += OpenActorScriptWindow;
+        window.LoadDebugBodyRequested += LoadDebugBody;
+        window.LoadDebugAnimRequested += LoadDebugAnim;
         // The window's own Closed handler undoes RendererAddActor if this
         // was a freshly-added actor never applied -- refresh here in case
         // that just happened, so its marker doesn't linger on screen until
@@ -1977,6 +2026,7 @@ public partial class MainWindow : Window
         window.Closed += (_, _) =>
         {
             openAttributesWindows.Remove(index);
+            EndBodyPreviewLive(); // a debug body's own preview never outlives the window that loaded it
             if (switchingGame) return;
             if (selectedActorIndex == index) selectedActorIndex = null;
             if (interiorSceneActive) ShowInteriorScene(interiorSceneNumber, keepView: true);
@@ -2320,6 +2370,7 @@ public partial class MainWindow : Window
     }
     private void Exit_Click(object sender, RoutedEventArgs e) => Close();
     private void BodyStudio_Click(object sender, RoutedEventArgs e) => BodyStudioLauncher.Show(this);
+    private void AnimationStudio_Click(object sender, RoutedEventArgs e) => AnimationStudioLauncher.Show(this);
     private void ViewFit_Click(object sender, RoutedEventArgs e)
     {
         if (terrainShown && terrainEditor is not null) terrainEditor.Fit();

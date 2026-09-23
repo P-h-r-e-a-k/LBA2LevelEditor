@@ -202,8 +202,16 @@ public sealed class Body
             for(int axis=0;axis<3;axis++) { short lo=Checked(world.Min(v=>Component(v,axis))),hi=Checked(world.Max(v=>Component(v,axis)));BitConverter.GetBytes(lo).CopyTo(header,2+axis*4);BitConverter.GetBytes(hi).CopyTo(header,4+axis*4); }
             w.Write(header);w.Write((ushort)Vertices.Count);foreach(var v in Vertices)WriteVector(w,v);
             w.Write((ushort)Bones.Count);
-            // a bone record says how many of the normals are its own (offset 18); lit bodies give every point a normal, in point order
-            foreach(var bone in Bones){byte[] r=(byte[])bone.Record.Clone();Array.Clear(r,8,8);Array.Clear(r,18,2);if(Lit)BitConverter.GetBytes((ushort)bone.Count).CopyTo(r,18);w.Write(r);}
+            // Start/Pivot/Parent (offsets 0/4/6, byte offsets -- Read's own U(b,q)/6, U(b,q+4)/6,
+            // parent/38 confirm the scale) are written from the Bone's own fields, not just carried
+            // over from Record's bytes: Record began as a real donor's on-disk bytes for a
+            // round-tripped body (where they'd already agree), but a hand-authored body
+            // (MarioCustom.cs and its own siblings) has no donor bytes to carry -- its Record is a
+            // zeroed 38-byte placeholder, so leaving these three fields unwritten silently produced
+            // Start=Pivot=Parent=0 for every bone, an invalid hierarchy Validate() (on the next read)
+            // rightly rejects. A bone record also says how many of the normals are its own (offset
+            // 18); lit bodies give every point a normal, in point order.
+            foreach(var bone in Bones){byte[] r=(byte[])bone.Record.Clone();BitConverter.GetBytes((ushort)(bone.Start*6)).CopyTo(r,0);BitConverter.GetBytes((ushort)bone.Count).CopyTo(r,2);BitConverter.GetBytes((ushort)(bone.Pivot*6)).CopyTo(r,4);BitConverter.GetBytes((short)(bone.Parent<0?-1:bone.Parent*38)).CopyTo(r,6);Array.Clear(r,8,8);Array.Clear(r,18,2);if(Lit)BitConverter.GetBytes((ushort)bone.Count).CopyTo(r,18);w.Write(r);}
             if(normalsOfPoints==null)w.Write((ushort)0); // Solid polygons require no lighting normals.
             else{w.Write((ushort)Vertices.Count);foreach(var n in normalsOfPoints){w.Write(Scaled(n.X,63));w.Write(Scaled(n.Y,63));w.Write(Scaled(n.Z,63));w.Write((ushort)315);}}
             w.Write((ushort)Faces.Count);

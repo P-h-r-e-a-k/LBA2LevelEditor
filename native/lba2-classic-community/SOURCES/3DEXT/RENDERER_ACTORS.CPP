@@ -24,6 +24,7 @@
 #include <algorithm>
 
 extern S32 LoadScene(S32 numscene);
+extern void ChoicePalette(void);
 
 // Matches HOLO.H's SCE ("SizeXZ Cube Exterieur"): each exterior cube spans
 // 32768 world units on X/Z. Duplicated from RENDERER_API.CPP's own
@@ -1392,6 +1393,16 @@ int RendererLoadInteriorScene(int numscene)
     if (!ok) return 0;
 
     if (CubeMode != CUBE_INTERIEUR) return 0; // caller should use an exterior Load* instead
+
+    // AMBIANCE.CPP's ChoicePalette() picks RESS_XPL00 ("citabau") whenever CubeMode is CUBE_INTERIEUR -- true here,
+    // per the check just above -- regardless of which exterior island this cube is on. The retail game calls this on
+    // every real cube entry (PERSO.CPP/RES_SWITCH.CPP); this leaner renderer embedding skipped it entirely, so an
+    // interior scene kept whatever PtrPalCurrent/PtrNuances/FogCoul an earlier lba2_renderer_load_island() call left
+    // behind -- correct for that exterior island's own colours, wrong for this interior, producing visibly wrong
+    // shading/colours (confirmed live, 2026-09-22: an actor with a hand-authored "on fire" colour scheme rendered
+    // washed out instead). Same class of bug as this function's own RazListPartFlow/CacheNativeAnimsForScene fixes
+    // below: something the full game boot/scene-transition path sets up that this embedding must redo explicitly.
+    ChoicePalette();
 
     // Actor animations may start particle flows while the objects initialise; nothing here ever runs or draws them, so free
     // every slot each time rather than filling the (small) table over many scene loads.

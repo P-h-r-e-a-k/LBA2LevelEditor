@@ -297,6 +297,24 @@ LBA2_RENDERER_API int lba2_renderer_render_body_preview(int body, int anim, int 
    toggled back; has no effect on real actors/lba2_renderer_render_frame*(). */
 LBA2_RENDERER_API void lba2_renderer_set_body_preview_animation_paused(int paused);
 
+/* Repoints HQR_Bodys (BODY.HQR's own resource cache) at a new file, so a debug-body live preview's
+   swapped-in BODY.HQR copy (see MainWindow.BodyDebugPreview.cs) actually gets read on the next
+   lba2_renderer_render_body_preview() call. HQR_Bodys is opened exactly once, at
+   lba2_renderer_initialize() time -- lba2_renderer_set_data_root()'s own directory redirect only
+   affects resource caches opened *after* it runs, never one already open, so without this call the
+   preview keeps showing whatever body was on disk at process start regardless of any later
+   BeginLive/SetDataRoot. Uses HQR_Change_Ressource (HQRRESS.CPP), the same primitive LOADISLE.CPP's
+   own per-island resource swaps already use for exactly this pattern -- not a new one. path is a full
+   file path (matches HQR_Change_Ressource's own contract), not a directory. Returns 0 if path is
+   missing/doesn't exist or HQR_Bodys was never opened (renderer not initialized), 1 on success. */
+LBA2_RENDERER_API int lba2_renderer_reload_bodies(const char *path);
+
+/* Same as lba2_renderer_reload_bodies, for HQR_Anims (ANIM.HQR's own cache) instead of HQR_Bodys --
+   needed for a debug-anim live preview the same way the body one is (a hand-authored walk/run/
+   idle/jump clip swapped into a throwaway ANIM.HQR copy). Same contract: full file path, returns 0
+   if missing or HQR_Anims was never opened, 1 on success. */
+LBA2_RENDERER_API int lba2_renderer_reload_anims(const char *path);
+
 /* Projects a world point through the camera set up by the most recent
    lba2_renderer_render_frame() call (see RENDERER_API.CPP for exactly which
    engine functions this reuses). Returns 0 if the point is beyond the far

@@ -97,6 +97,29 @@ internal sealed class CommunityRendererBackend
 
     public bool LiveActive => liveRoot is not null;
 
+    // BODY.HQR's own resource cache (HQR_Bodys) is opened once at native process start and never
+    // follows BeginLive/SetDataRoot's own directory redirect (that only affects caches opened *after*
+    // it runs) -- so a debug-body live preview (MainWindow.BodyDebugPreview.cs) needs this explicit
+    // reload after writing its swapped-in BODY.HQR copy, or the preview keeps showing whatever was on
+    // disk at process start. path is a full file path (the live copy's own BODY.HQR), not a directory.
+    public bool ReloadBodies(string path)
+    {
+        lock (directRenderLock)
+        {
+            return directSession && RendererLibrary is not null && RendererLibrary.ReloadBodies(path);
+        }
+    }
+
+    // Same as ReloadBodies, for HQR_Anims (ANIM.HQR's own cache) -- a debug-anim live preview needs
+    // this the same way a debug-body one needs ReloadBodies.
+    public bool ReloadAnims(string path)
+    {
+        lock (directRenderLock)
+        {
+            return directSession && RendererLibrary is not null && RendererLibrary.ReloadAnims(path);
+        }
+    }
+
     // The renderer keeps the cubes it has read in a cache that only loading the island again empties: the next frame does that.
     public void ReloadCubes()
     {

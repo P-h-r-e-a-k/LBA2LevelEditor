@@ -86,6 +86,23 @@ public sealed class Hqr
         return output;
     }
 
+    // A brand new archive holding exactly these entries, stored uncompressed (method 0): the offset table
+    // (one u32 per entry plus a trailing sentinel equal to the file's own length, matching how Read/Replace
+    // above already expect a real HQR to end), then each entry as [u32 size][u32 size][u16 0][payload].
+    // Used for small debug/test archives (see mario.hqr) where simplicity matters more than file size.
+    public static byte[] Build(IReadOnlyList<byte[]> entries)
+    {
+        int pos = (entries.Count + 1) * 4;
+        var offsets = new int[entries.Count + 1];
+        for (int i = 0; i < entries.Count; i++) { offsets[i] = pos; pos += 10 + entries[i].Length; }
+        offsets[entries.Count] = pos;
+        using var stream = new MemoryStream();
+        using var w = new BinaryWriter(stream);
+        foreach (var o in offsets) w.Write(o);
+        foreach (var e in entries) { w.Write(e.Length); w.Write(e.Length); w.Write((ushort)0); w.Write(e); }
+        return stream.ToArray();
+    }
+
     // Classic method 1: 4096-byte window, 2..17-byte matches, LSB-first flags.
     public static byte[] Compress(byte[] input)
     {

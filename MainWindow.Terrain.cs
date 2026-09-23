@@ -38,6 +38,7 @@ public partial class MainWindow
     private void StartLive()
     {
         if (terrainEditor?.CurrentName is not { } name || !nativeRenderer.DirectRendererReady) return;
+        if (bodyPreviewLive is not null) return; // a debug body preview already owns the native renderer's one override slot (MainWindow.BodyDebugPreview.cs)
         live = LiveDataRoot.Create(gameRoot, name);
         if (live is null)
         {

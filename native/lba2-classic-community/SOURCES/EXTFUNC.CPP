@@ -491,6 +491,7 @@ extern void *GivePtrBody(S32 index);
 extern void *GivePtrAnim(S32 index);
 extern bool g_disableBackfaceCulling;
 extern volatile S32 TimerLock; // TIMERWIN.CPP -- see AffichageBodyPreview's own comment on why this gets force-cleared there
+extern void ChoicePalette(void); // AMBIANCE.CPP -- see AffichageBodyPreview's own call site for why this runs every call
 
 // Renders one body, alone against a cleared background, for the actor-
 // attributes editor's preview panel -- reuses AffichageActorsZBuf's own
@@ -626,6 +627,18 @@ void SetBodyPreviewAnimationPaused(int paused)
 
 int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
 {
+    // ChoicePalette() (AMBIANCE.CPP) picks the shading/palette state (PtrPalCurrent/PtrNuances/FogCoul) this
+    // preview's own SetLightVector/lighting math below reads from -- it is otherwise only refreshed by whichever
+    // scene-loading path (lba2_renderer_load_island, RendererLoadInteriorScene) last ran, which may not be *this*
+    // actor's own scene (e.g. an interior actor previewed without that interior's own load path having run first
+    // in this process, or simply time having passed and something else's rendering having changed CubeMode/Island
+    // in between). ChoicePalette() itself is cheap to call every frame when nothing changed (it compares against
+    // LastIdxPalette and only re-reads RESS.HQR on an actual change), so calling it defensively here -- the one
+    // rendering path every actor/body preview in the attributes window goes through, regardless of which scene the
+    // actor is actually in -- keeps this panel's own colours always matching the CubeMode/Island state whatever
+    // *did* most recently load, rather than something possibly stale.
+    ChoicePalette();
+
     T_OBJET *ptrobj = &ListObjet[BODY_PREVIEW_OBJ];
     if (!g_previewInitialized || g_previewInitBody != body || g_previewInitAnim != anim) {
         // ObjectInitAnim() (and, via InitBodyZV()/ObjectDisplay() on later

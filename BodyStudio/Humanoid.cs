@@ -24,7 +24,7 @@ public static class Humanoid
         var pivots=new int[19];
         vertices[0].Add(Vector3.Zero);
         for(int i=1;i<19;i++){pivots[i]=vertices[parents[i]].Count;vertices[parents[i]].Add(origins[i]);}
-        (float left,float right) Span(float y,string part,int side=0)
+        (float left,float right) Span(float y,string part,int side,(float left,float right)? previous)
         {
             int row=Math.Clamp((int)((1-y)*255),0,255);var runs=image.Runs[row];
             float left,right;
@@ -59,6 +59,39 @@ public static class Humanoid
                     var run=part=="arm"?(side>0?candidates.MaxBy(r=>r.Right):candidates.MinBy(r=>r.Left)):(side>0?candidates.MinBy(r=>r.Left):candidates.MaxBy(r=>r.Right));
                     left=run.Left-.5f;right=run.Right-.5f;
                     if(part=="arm"&&right-left>.23f){float centre=side*.35f;left=centre-.075f;right=centre+.075f;}
+                    // The "covering" lookup above only succeeds when some run's silhouette spans straight across
+                    // the leg/foot's expected x position; when the two legs' own silhouettes touch with no
+                    // background gap between them at a given row (a real photo can do this even where a hand-drawn
+                    // test silhouette never would -- confirmed on a real-photo generation, where the only run this
+                    // fallback found for the LEFT leg at one row was actually the merged crotch area, reaching all
+                    // the way across to the RIGHT of centre), the "covering" check itself can never trigger (no
+                    // single run spans both legs' desired x positions at once), so every candidate here reaches
+                    // this branch with no protection at all against reading a leg's span as crossing into the
+                    // other leg's own half -- unlike "covering", which already guards exactly this with the same
+                    // clamp below. Applying that same guard here closes the gap.
+                    if(part is "leg" or "foot"){if(side>0)left=Math.Max(left,.025f);else right=Math.Min(right,-.025f);}
+                    // Even after the guards above, a real photo can still hand this branch a run that's a
+                    // plausible-looking but wrong partial read at just one row -- e.g. a small stray dark speck
+                    // picked up as if it were a limb's entire cross-section (confirmed on a real-photo generation:
+                    // an isolated run a few pixels wide, unrelated to the actual leg, read as the whole leg at one
+                    // row, swinging that ring's centre far out and its radius far down before the very next row
+                    // read normally again and it swung right back, leaving a wedge-shaped spike in the mesh
+                    // between the two). Rather than try to out-guess every way a single row can misread, clamp
+                    // this row's centre and radius to move only a bounded amount from the previous row's own
+                    // values -- gradual tapering (the normal case, including a genuinely narrower real elbow,
+                    // wrist, knee or ankle) passes through unaffected since it never needs a whole row's worth of
+                    // change in one step, but a one-row excursion that reverts on the very next row is exactly
+                    // what this catches. Only reachable from this fallback branch, never from "covering" (which
+                    // returns directly above): the widestance regression test's deliberately large, asymmetric
+                    // row-to-row leg swings always resolve through "covering" on its clean hand-drawn silhouette,
+                    // so they never reach here and this cannot fight that.
+                    if(previous is{}p)
+                    {
+                        float prevCentre=(p.left+p.right)/2,prevRadius=(p.right-p.left)/2;
+                        float newCentre=Math.Clamp((left+right)/2,prevCentre-.08f,prevCentre+.08f);
+                        float newRadius=Math.Clamp((right-left)/2,prevRadius-.02f,prevRadius+.02f);
+                        left=newCentre-newRadius;right=newCentre+newRadius;
+                    }
                 }
                 else {float centre=side*(part=="arm"?.38f:.22f),radius=part=="arm"?.075f:.115f;left=centre-radius;right=centre+radius;}
             }
@@ -74,7 +107,8 @@ public static class Humanoid
             var list=vertices[bone];int begin=list.Count;(float left,float right) last=default;
             for(int r=0;r<rows.Length;r++)
             {
-                float y=rows[r];var span=r==0&&overrideFirst is{}o?o:Span(y,part,side);last=span;float centre=(span.left+span.right)/2,radius=(span.right-span.left)/2;
+                float y=rows[r];var span=r==0&&overrideFirst is{}o?o:Span(y,part,side,r>0?last:null);
+                last=span;float centre=(span.left+span.right)/2,radius=(span.right-span.left)/2;
                 if(part=="head")radius*=settings.HeadScale/.7f;
                 float depth=part switch{"head"=>radius*w*.90f,"torso"=>Math.Min(radius*w*.6f,h*.072f),"foot"=>h*.072f,_=>radius*w*.92f};
                 if(part=="head"&&r==0){radius*=.35f;depth*=.35f;}

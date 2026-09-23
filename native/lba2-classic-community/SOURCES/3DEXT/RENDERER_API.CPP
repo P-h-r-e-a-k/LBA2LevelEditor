@@ -208,6 +208,13 @@ int lba2_renderer_set_data_root(const char *path)
     strncpy(root, path, ADELINE_MAX_PATH - 2);
     root[ADELINE_MAX_PATH - 2] = '\0';
     if (root[0] && root[strlen(root) - 1] != '\\' && root[strlen(root) - 1] != '/') strcat(root, "\\");
+    // InitDirectories() asserts it's never been called before (DIRECTORIES.CPP's own one-shot-boot
+    // contract) -- but this function is called every time a live preview starts (BeginLive), i.e.
+    // every time Build mode's terrain live-preview or a debug body preview kicks in, well after boot's
+    // own InitDirectories() call already ran. EndDirectories() is this codebase's own reset for exactly
+    // that precondition; without it, every live-preview start after the first app launch hit
+    // assert(directoriesInitialized == false) and the process fail-fasted via abort().
+    EndDirectories();
     InitDirectories(root, root, root, "", 0);
     return 1;
 }
@@ -639,5 +646,29 @@ int lba2_renderer_render_body_preview(int body, int anim, int cameraBeta, int ca
 void lba2_renderer_set_body_preview_animation_paused(int paused)
 {
     SetBodyPreviewAnimationPaused(paused);
+}
+
+// Already transitively visible (DEFINES.H -> LIB386/H/SYSTEM.H -> LIB386/H/SYSTEM/HQRRESS.H) --
+// confirmed by a compile error ("conflicting declaration") from an earlier attempt that also
+// explicitly re-included <SYSTEM/HQRRESS.H>. Declaring only the already-visible global here, with no
+// new #include, avoids MEM.H's own double-inclusion landmine (see this file's other comments).
+extern T_HQR_HEADER *HQR_Bodys;
+extern T_HQR_HEADER *HQR_Anims;
+extern void NativeDebugLog(const char *fmt, ...);
+
+int lba2_renderer_reload_bodies(const char *path)
+{
+    if (!path || !path[0] || !HQR_Bodys) { NativeDebugLog("lba2_renderer_reload_bodies: bad path or HQR_Bodys not open"); return 0; }
+    int ok = HQR_Change_Ressource(HQR_Bodys, path) ? 1 : 0;
+    NativeDebugLog("lba2_renderer_reload_bodies(%s) -> %d, old Name was now '%s', NbIndex=%d, FreeSize=%d", path, ok, HQR_Bodys->Name, HQR_Bodys->NbIndex, HQR_Bodys->FreeSize);
+    return ok;
+}
+
+int lba2_renderer_reload_anims(const char *path)
+{
+    if (!path || !path[0] || !HQR_Anims) { NativeDebugLog("lba2_renderer_reload_anims: bad path or HQR_Anims not open"); return 0; }
+    int ok = HQR_Change_Ressource(HQR_Anims, path) ? 1 : 0;
+    NativeDebugLog("lba2_renderer_reload_anims(%s) -> %d, old Name was now '%s', NbIndex=%d, FreeSize=%d", path, ok, HQR_Anims->Name, HQR_Anims->NbIndex, HQR_Anims->FreeSize);
+    return ok;
 }
 
