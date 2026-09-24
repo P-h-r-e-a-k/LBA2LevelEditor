@@ -56,7 +56,7 @@ set(RENDERER_ENGINE_SOURCES ${SOURCES_FILES} RENDERER_STUBS.CPP RENDERER_BOOT.CP
 list(REMOVE_ITEM RENDERER_ENGINE_SOURCES PERSO.CPP)
 add_library(lba2_renderer_engine STATIC ${RENDERER_ENGINE_SOURCES} ${SOURCES_FILES_ASM} ${EMBEDDED_LBA2_CFG_CPP})
 target_include_directories(lba2_renderer_engine PRIVATE ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}/CONSOLE ../LIB386/H)
-target_compile_definitions(lba2_renderer_engine PRIVATE ONE_GAME_DIRECTORY LBA_GAME CDROM USE_MVIDEO_NULL USE_SOUND_NULL)
+target_compile_definitions(lba2_renderer_engine PRIVATE ONE_GAME_DIRECTORY LBA_GAME CDROM USE_MVIDEO_NULL USE_SOUND_NULL LBA2_RENDERER_HOST)
 target_link_libraries(lba2_renderer_engine PUBLIC 3dext console 3D ail ani fio obj poly svg sys)
 if(TARGET lba2_renderer)
     target_link_libraries(lba2_renderer PUBLIC lba2_renderer_engine)

@@ -13,6 +13,15 @@ internal static class Lba2PlayAllTest
     private static readonly string Lba2Dir = Environment.GetEnvironmentVariable("LBA2_DIR") ?? @"E:\GOG Games\Little Big Adventure 2 - Level viewer";
     private const int SceneCount = 223;
 
+    // Not bugs, so not swept as failures: 94 is NUM_CUBE_PHANTOM (COMMON.H) -- a reserved sentinel the console's
+    // own `cube` command now refuses to enter directly (see cmd_cube in CONSOLE_CMD.CPP). 195 is one of the demo
+    // reel's "standalone vignette" duplicate scenes (docs/SCENES.md): its own authored hero-start position sits
+    // inside its own return-to-cube-0 zone, so any cold entry bounces straight back out -- the real "Play scene"
+    // path (Lba2Play.PrepareSceneSave) already detects and rejects this rather than silently opening cube 0. 222
+    // is a genuinely empty/unused SCENE.HQR entry (confirmed via HqrArchive.IsValid), matching docs/SCENES.md's
+    // own "(empty)" label -- there is no scene there to enter.
+    private static readonly HashSet<int> KnownNonEnterable = new() { 94, 195, 222 };
+
     public static int Run(string[] args)
     {
         var first = args.Length > 1 ? int.Parse(args[1]) : 0;
@@ -30,7 +39,10 @@ internal static class Lba2PlayAllTest
                 var options = new Lba2PlayOptions { Scene = scene, Sound = false };
                 var start = new ProcessStartInfo(engine) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
                 foreach (var a in options.Arguments(Lba2Dir, user)) start.ArgumentList.Add(a);
-                foreach (var a in new[] { "--headless", "--exec-at", "60", "status", "--tick", "80", "--exit" }) start.ArgumentList.Add(a);
+                // skipmodals: some scenes' own entering actor triggers a dialogue (e.g. cube 128's greeting), which
+                // blocks forever in the engine's own frame-present call with no window to dismiss it from -- not a
+                // bug, see docs/CONTROL.md's "skipmodals" entry, but without this every such scene reads as a hang.
+                foreach (var a in new[] { "--headless", "--exec-at", "4", "skipmodals 1", "--exec-at", "60", "status", "--tick", "80", "--exit" }) start.ArgumentList.Add(a);
                 using var process = Process.Start(start)!;
                 // Reading synchronously (ReadToEnd) before WaitForExit deadlocks forever if the engine hangs without closing its
                 // output pipe: WaitForExit's own timeout never gets a chance to run. Collect output via the async events instead
@@ -49,7 +61,11 @@ internal static class Lba2PlayAllTest
                 var crashed = output.Contains("CRASH", StringComparison.Ordinal);
                 var entered = output.Contains($"Cube: {scene}", StringComparison.Ordinal) && output.Contains("Obj:", StringComparison.Ordinal);
                 var ok = exited && !crashed && entered;
-                if (!ok)
+                if (!ok && KnownNonEnterable.Contains(scene))
+                {
+                    Console.WriteLine($"  scene {scene}: skipped (known non-enterable, not a bug -- see KnownNonEnterable)");
+                }
+                else if (!ok)
                 {
                     var reason = !exited ? "timed out / hung" : crashed ? "CRASHED" : "never reported entering the scene";
                     var detail = output.Split('\n').FirstOrDefault(l => l.Contains("Cube:") || l.Contains("CRASH"))?.Trim();

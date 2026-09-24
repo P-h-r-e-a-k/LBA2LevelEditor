@@ -972,6 +972,18 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
     return 1;
 }
 
+// AffGrilleExtWide is reachable only from RENDERER_API.CPP (the editor's wide/minimap
+// preview) -- this file (EXTFUNC.CPP) is compiled into both that renderer target and the
+// standalone game executable, but RendererLoadCubeScene/RendererLoadNeighborCubeData are
+// defined only in RENDERER_API.CPP itself, which the standalone exe never links. Without
+// this guard the exe build carries a call to a symbol with no definition anywhere in its
+// link: GCC's LTO can prove the (genuinely unreachable there) call dead and silently drop
+// it in a Release build, so `cmake --build` reports success, but a plain -O0 Debug build
+// (no LTO, nothing to prove it dead) fails to link outright -- undefined reference to
+// `RendererLoadNeighborCubeData(int, int)`. Found while trying to get a debug build of
+// lba2cc.exe running under gdb.
+#ifdef LBA2_RENDERER_HOST
+
 // Matches RENDERER_API.CPP's own WORLD_CUBE_SIZE (HOLO.H's SCE: 32768 world
 // units per exterior cube), duplicated rather than shared to keep this
 // file's only dependency on the renderer API boundary at zero.
@@ -1104,6 +1116,8 @@ void AffGrilleExtWide(int radiusCubes) {
 
     CopyScreen(Log, Screen);
 }
+
+#endif // LBA2_RENDERER_HOST
 
 void AffGrilleExt() {
     SetFollowCamera(VueOffsetX, VueOffsetY, VueOffsetZ,

@@ -187,7 +187,12 @@ internal static class Lba2Play
             if (File.Exists(made)) File.Delete(made);
             if (File.Exists(target)) File.Delete(target);
             var start = new ProcessStartInfo(engine) { WorkingDirectory = gameDirectory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            // skipmodals: this headless probe run has no window and never dismisses a dialogue, so a scene whose
+            // entering actor triggers one (e.g. cube 128's own greeting) would otherwise sit blocked in the engine's
+            // own frame-present call until the 40s timeout below kills it -- a real, if minor, "Play scene" delay
+            // followed by the wrong fallback (a raw cube jump, which hits the same block again once actually visible).
             foreach (var arg in new[] { "--headless", "--game-dir", gameDirectory, "--user-dir", user, "--no-autosave", "--resolution", "640x480",
+                                        "--exec-at", "4", "skipmodals 1",
                                         "--exec-at", "5", $"cube {scene}", "--exec-at", "39", "status", "--exec-at", "40", "savebug editorplay", "--tick", "80", "--exit" })
                 start.ArgumentList.Add(arg);
             using var process = Process.Start(start);

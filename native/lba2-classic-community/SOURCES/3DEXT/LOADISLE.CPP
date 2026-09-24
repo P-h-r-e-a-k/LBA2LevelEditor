@@ -185,6 +185,21 @@ void LoadIsland() {
 S32 LoadCube(S32 x, S32 y) {
     S32 index;
 
+    // Defends against a real collision, not a hypothetical one: NUM_CUBE_PHANTOM (COMMON.H) is 94, and
+    // SCENE.HQR's own scene 94 ("Empty water outside scene") is real content, so ChangeCube(94) -- reachable
+    // only from developer tooling (the console's `cube` command, or a scene-preview save prepared from a raw
+    // cube jump), never from real gameplay -- makes InitGrilleExt() take its NUM_CUBE_PHANTOM branch, which
+    // skips LoadIsland()/LoadCube() for the primary cube entirely (InitSeaCube() instead). DrawHorizon2ZBuf()
+    // has no way to know that happened and calls LoadCube() for the surrounding cubes every frame regardless,
+    // reading HQR_CubeInfos (and the island's other per-cube headers) while they still point at no file --
+    // HQR_Get's own fatal-error path then aborts the process. IsleMapIndex itself is part of that same
+    // per-island load, so this also covers any future caller of LoadCube() before an island is loaded, not
+    // just this one collision.
+    if (!HQR_CubeInfos || !HQR_CubeInfos->Name[0]) {
+        CubeBitField = 0xFFFF;
+        return FALSE; // island not loaded -- same "no cube" signal every caller already handles
+    }
+
     index = y * 16 + x;
     index = IsleMapIndex[index] & 127; // bug compilo ou debug ?
 

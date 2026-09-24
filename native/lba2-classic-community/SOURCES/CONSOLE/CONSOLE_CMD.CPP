@@ -99,8 +99,21 @@ static void cmd_cube(int argc, const char *argv[]) {
         Console_Print("Usage: cube <number>");
         return;
     }
+    S32 target = (S32)strtol(argv[1], NULL, 0);
+    /* NUM_CUBE_PHANTOM (94) is a reserved sentinel, not a real destination -- InitGrilleExt() special-cases
+       NumCube == NUM_CUBE_PHANTOM to skip loading any island (the buggy/vehicle off-the-map-edge case), which
+       leaves every per-island HQR header and the terrain buffers it feeds (ground mesh, height map, shadow
+       lookups, ...) pointing at nothing. SCENE.HQR happens to have real content at index 94 too ("Empty water
+       outside scene"), so this collision is only reachable by asking to enter cube 94 directly, something no
+       real gameplay path does (real code reaches phantom mode a different way, by setting NewCube itself, not
+       through this command) -- confirmed with gdb: it reliably aborts or segfaults a few frames after landing,
+       depending on which of several now-unset buffers gets read first. */
+    if (target == NUM_CUBE_PHANTOM) {
+        Console_Print("Cube %d is NUM_CUBE_PHANTOM (reserved for the buggy/vehicle off-map state), not enterable directly", target);
+        return;
+    }
     Console_Close();
-    NewCube = (S32)strtol(argv[1], NULL, 0);
+    NewCube = target;
     Console_Print("Cube %d (change on next frame)", NewCube);
 }
 

@@ -148,6 +148,18 @@
       }
     },
     {
+      "name": "windows_ucrt64_sanitize",
+      "inherits": "windows_ucrt64",
+      "displayName": "Windows UCRT64 (Address + UndefinedBehavior sanitizers)",
+      "description": "Native 64-bit MSYS2 UCRT64 build under ASan and UBSan, for chasing a specific native fault. Same flags as linux_sanitize; alignment checking is off for the same reason (see docs/CI.md). Pair with LBA2_DBG_ISOLATE=1 at runtime to un-merge MEM.CPP's shared arena, or a spill never reaches either sanitizer.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize=alignment -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
       "hidden": true,
       "name": "android_common",
       "inherits": "default",
@@ -224,6 +236,10 @@
     {
       "name": "windows_mingw64",
       "configurePreset": "windows_mingw64"
+    },
+    {
+      "name": "windows_ucrt64_sanitize",
+      "configurePreset": "windows_ucrt64_sanitize"
     },
     {
       "name": "android_arm64",
