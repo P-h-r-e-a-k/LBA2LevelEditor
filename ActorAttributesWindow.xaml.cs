@@ -373,6 +373,11 @@ public partial class ActorAttributesWindow : Window
     // for a since-fixed animation/body group-count mismatch -- see AnimFitsBody's own comment, EXTFUNC.CPP).
     // Recalibrate checks this set before making any native call and shows a clear fallback message instead.
     private readonly HashSet<int> unsafeToPreviewBodies = new();
+    // Bodies whose own entity has no animation with enough groups for them at all (see SyncAnimationsToBody's
+    // own comment -- ChooseAnimations.Fits) -- the native AnimFitsBody rejects every one of this body's kind
+    // of actor's own animations, guaranteed, so there is no point attempting a native render at all. Checked
+    // the same way as unsafeToPreviewBodies, with its own honest message.
+    private readonly HashSet<int> noCompatibleAnimationBodies = new();
 
     private static string GameDirectory => EditorSettings.Current.GameDirectory;
 
@@ -383,7 +388,14 @@ public partial class ActorAttributesWindow : Window
         try
         {
             bodyArchive ??= HqrArchive.Open(Path.Combine(GameDirectory, "BODY.HQR"));
-            if (bodyArchive.IsValid(body)) count = LbaBodyStudio.Body.Read(bodyArchive.Read(body), 2).Bones.Count;
+            // allowStatic: true -- BODY.HQR isn't only humanoid/animated characters; it also holds simple
+            // static props (confirmed real cases: a "Dot" marker, an "Empty space suit," a "mushroom," a
+            // "Gem" pickup -- all genuinely marked Static in their own header, Info&0x100==0). Without this,
+            // Body.Read's own default (allowStatic: false, meant for callers that specifically need an
+            // animated template) rejected every one of them with "Choose an animated body template.", which
+            // this catch block then mislabelled as unsafeToPreviewBodies -- showing the "too large... exceeds
+            // its point/primitive limit" fallback for a body that was never actually oversized at all.
+            if (bodyArchive.IsValid(body)) count = LbaBodyStudio.Body.Read(bodyArchive.Read(body), 2, allowStatic: true).Bones.Count;
         }
         catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
         {
@@ -422,13 +434,25 @@ public partial class ActorAttributesWindow : Window
         // (a body that no entity has: the list stays as it is)
         if (entityTable?.ChooseAnimations(body, bones, AnimGroups, currentAnim) is not { } choice) return currentAnim;
 
-        Func<int, bool>? otherFits = bones is { } b ? anim => AnimGroups(anim) == b : null;
+        // >= (not ==): matches the native AnimFitsBody's own real requirement (EXTFUNC.CPP -- an animation
+        // with MORE groups than the body needs is safe, only fewer is not), same reasoning as ChooseAnimations
+        // itself now uses for its own fallback tier (Lba2EntityTable.cs).
+        Func<int, bool>? otherFits = bones is { } b ? anim => AnimGroups(anim) is { } g && g >= b : null;
         var list = BuildAnimOptions(choice.Natural, cachedAnimOptions!, otherFits);
         animOptionsForActor = list;
         animOptionsAreBodySpecific = true;
         animFilter!.Refresh();
         AnimCombo.Text = list.FirstOrDefault(o => o.Index == choice.Chosen)?.Display ?? choice.Chosen.ToString();
-        StatusLabel.Text = choice.Chosen == currentAnim
+        // Real, confirmed case (BODY.HQR 251): a body whose own entity has NO animation with enough groups
+        // for it at all (not a selection bug -- see ChooseAnimations's own comment) used to still get handed
+        // whatever Choice.Chosen picked as a last resort, which the native AnimFitsBody then rejected outright,
+        // showing the misleading "no body to preview for this index" after a failed render attempt. Tracked
+        // the same way unsafeToPreviewBodies tracks a body Validate() itself rejects -- known upfront, shown
+        // as an honest fallback message, never even attempted natively.
+        if (choice.Fits) noCompatibleAnimationBodies.Remove(body); else noCompatibleAnimationBodies.Add(body);
+        StatusLabel.Text = !choice.Fits
+            ? $"No animation in ANIM.HQR has enough groups ({bones} needed) to safely preview this body -- the native renderer would reject every one of this body's kind of actor's animations."
+            : choice.Chosen == currentAnim
             ? $"Animation list: the animations of this body's kind of actor ({choice.Natural.Count})."
             : $"Animation {currentAnim} doesn't belong to this body; using {choice.Chosen}. The list is now this body's kind of actor's animations ({choice.Natural.Count}).";
         return choice.Chosen;
@@ -634,6 +658,14 @@ public partial class ActorAttributesWindow : Window
             ShowPreviewFallback("this body is too large for the classic engine to preview (exceeds its point/primitive limit)");
             return;
         }
+        // See noCompatibleAnimationBodies's own comment -- guaranteed to fail AnimFitsBody natively, so don't
+        // even try.
+        if (noCompatibleAnimationBodies.Contains(previewBody))
+        {
+            previewCalibration = null;
+            ShowPreviewFallback("no animation has enough bone groups to safely preview this body");
+            return;
+        }
         if (nativeRenderBusy) return; // see nativeRenderBusy's own comment -- another native preview call is already in flight
         nativeRenderBusy = true;
         try
@@ -700,6 +732,11 @@ public partial class ActorAttributesWindow : Window
             if (unsafeToPreviewBodies.Contains(previewBody))
             {
                 ShowPreviewFallback("this body is too large for the classic engine to preview (exceeds its point/primitive limit)");
+                return;
+            }
+            if (noCompatibleAnimationBodies.Contains(previewBody))
+            {
+                ShowPreviewFallback("no animation has enough bone groups to safely preview this body");
                 return;
             }
 

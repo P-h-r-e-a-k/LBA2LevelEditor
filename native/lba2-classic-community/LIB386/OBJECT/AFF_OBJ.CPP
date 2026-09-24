@@ -28,6 +28,7 @@
 typedef S32 (*Poly_Jump_Fn)(U32 typePoly, void *poly);
 
 extern Poly_Jump_Fn Poly_Jump[];
+extern bool g_previewFlattenTransparent; // see its own definition/comment further down this file
 
 typedef struct
 {
@@ -317,7 +318,12 @@ S32 Triangle_Solid(U32 typePoly, void *poly) {
     ListFillPoly[2].Pt_XE = Obj_ListProjectedPoints[poly3->P3].X;
     ListFillPoly[2].Pt_YE = Obj_ListProjectedPoints[poly3->P3].Y;
 
-    return Fill_Poly(typePoly >> 2, poly3->Couleur & 0xFF, 3, ListFillPoly);
+    // See g_previewFlattenTransparent's own comment -- type 2 (TRANSPARENT) is one of the types Poly_Jump[]
+    // routes here (same as type 0, SOLID); forcing it to 0 renders a plain flat fill instead of blending with
+    // whatever's already on screen, which only makes sense outside the isolated body preview.
+    S32 realType = typePoly >> 2;
+    if (realType == 2 && g_previewFlattenTransparent) realType = 0;
+    return Fill_Poly(realType, poly3->Couleur & 0xFF, 3, ListFillPoly);
 }
 
 S32 Quad_Solid(U32 typePoly, void *poly) {
@@ -333,7 +339,10 @@ S32 Quad_Solid(U32 typePoly, void *poly) {
     ListFillPoly[3].Pt_XE = Obj_ListProjectedPoints[poly4->P4].X;
     ListFillPoly[3].Pt_YE = Obj_ListProjectedPoints[poly4->P4].Y;
 
-    return Fill_Poly(typePoly >> 2, poly4->Couleur & 0xFF, 4, ListFillPoly);
+    // See Triangle_Solid's own matching comment.
+    S32 realType = typePoly >> 2;
+    if (realType == 2 && g_previewFlattenTransparent) realType = 0;
+    return Fill_Poly(realType, poly4->Couleur & 0xFF, 4, ListFillPoly);
 }
 
 // ************
@@ -439,6 +448,18 @@ S32 Triangle_Texture_Solid(U32 typePoly, void *poly) {
     ListFillPoly[2].Pt_MapV = poly3->V3;
 
     U32 textureInfo = PtrTextures[poly3->HandleText];
+    // A texture handle table slot that was never actually assigned a real region reads back as this exact
+    // placeholder pattern (offset 0, repeat mask 0xFFFF -- the whole 64KB page, which no real small per-body
+    // texture region would ever need) -- confirmed across many real, shipped BODY.HQR entries (12, 268, 306,
+    // 399, 457 and others) where the MAJORITY of a body's own textured faces reference exactly this value,
+    // and every one of those bodies was reported rendering as blank/near-invisible. STRUC_POLY3_TEXTURE (see
+    // AFF_OBJ.INC) carries its own Couleur field for exactly this reason -- it would otherwise be pointless to
+    // store on a textured polygon at all. Falling back to a flat, untextured (Solid) fill with that colour is
+    // what makes these bodies render as anything at all instead of silently drawing nothing (chroma-key
+    // sampling this placeholder slot always reads 0, which the chroma-key test treats as "transparent").
+    if (textureInfo == 0xFFFF0000) {
+        return Fill_Poly(0 /* POLY_SOLID */, poly3->Couleur & 0xFF, 3, ListFillPoly);
+    }
     RepMask = textureInfo >> 16;
     PtrMap = ObjPtrMap + (textureInfo & 0xFFFF);
 
@@ -467,6 +488,10 @@ S32 Quad_Texture_Solid(U32 typePoly, void *poly) {
     ListFillPoly[3].Pt_MapV = poly4->V4;
 
     U32 textureInfo = PtrTextures[poly4->HandleText];
+    // See Triangle_Texture_Solid's own matching comment -- same placeholder-handle fallback.
+    if (textureInfo == 0xFFFF0000) {
+        return Fill_Poly(0 /* POLY_SOLID */, poly4->Couleur & 0xFF, 4, ListFillPoly);
+    }
     RepMask = textureInfo >> 16;
     PtrMap = ObjPtrMap + (textureInfo & 0xFFFF);
 
@@ -1179,6 +1204,24 @@ S32 Sphere_Transp(U32 typePoly, void *poly) {
 // missing-geometry or transform bug) would otherwise render as a hole
 // straight through to the background for roughly half the turn.
 bool g_disableBackfaceCulling = false;
+
+// Off by default (matches every real in-game render, where a TRANSPARENT-type polygon's own blend -- Filler_
+// Transparent, POLYFLAT.CPP: "(existingPixel & 0x0F) | fillColorByte", keeping whatever's already on screen's
+// own low nibble and only imposing the new colour's own bank -- makes real, intentional sense against real
+// terrain/other already-drawn geometry behind it). The actor-attributes editor's isolated body preview clears
+// its own framebuffer to a single flat colour (ClsTerrainZBuf, EXTFUNC.CPP) before drawing just one object
+// alone against it -- there is no real terrain or prior geometry for a transparent polygon to blend with in
+// that context, so every pixel it touches blends against that one flat clear colour (or, at a seam between
+// two adjacent opaque polygons with a one-pixel rasterizer gap between them, the clear colour again) instead
+// of anything resembling the intended see-through effect. Confirmed two real, distinct symptoms from this:
+// a body built ENTIRELY from transparent polygons (BODY.HQR 125) rendering as nothing visible at all (its own
+// blend against the flat background happened to read back close enough to the background itself), and two
+// bodies mixing transparent polygons with opaque ones (24, 88) showing bright, wrong-coloured seam lines
+// exactly at the gaps between them. Turned on only for the body preview's own render (see its own call site,
+// EXTFUNC.CPP) to render transparent-type polygons as a plain flat Solid fill instead -- not accurate to how
+// the body would look inset into real geometry, but shows real, stable, correctly-coloured geometry instead
+// of blending unpredictably against a background that was never meant to be blended with in the first place.
+bool g_previewFlattenTransparent = false;
 
 bool TestVisible(STRUC_POLY3_ENV *poly, bool ignoreWinding) {
     TYPE_PT projectedP1 = Obj_ListProjectedPoints[poly->P1];

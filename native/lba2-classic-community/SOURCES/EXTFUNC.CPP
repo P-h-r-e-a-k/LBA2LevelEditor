@@ -493,6 +493,7 @@ extern void *GivePtrBody(S32 index);
 extern void *GivePtrAnim(S32 index);
 extern U8 *BufferTexture; // GLOBAL.CPP -- the character/body texture page (RESS_TEXTURES, loaded by RendererBootAssets); see AffichageBodyPreview's own call site for why this needs handing to obj->Texture explicitly
 extern bool g_disableBackfaceCulling;
+extern bool g_previewFlattenTransparent; // see AFF_OBJ.CPP's own comment
 extern volatile S32 TimerLock; // TIMERWIN.CPP -- see AffichageBodyPreview's own comment on why this gets force-cleared there
 extern void ChoicePalette(void); // AMBIANCE.CPP -- see AffichageBodyPreview's own call site for why this runs every call
 
@@ -956,10 +957,12 @@ int AffichageBodyPreview(int body, int anim, int cameraBeta, int cameraDistance)
             // body modeled single-sided for its habitual viewing side
             // would otherwise render with entire groups missing.
             g_disableBackfaceCulling = true;
+            g_previewFlattenTransparent = true;
             NativeDebugLog("AffichageBodyPreview: calling ObjectDisplay");
             ObjectDisplay(&ptrobj->Obj);
             NativeDebugLog("AffichageBodyPreview: ObjectDisplay returned");
             g_disableBackfaceCulling = false;
+            g_previewFlattenTransparent = false;
         }
     }
 

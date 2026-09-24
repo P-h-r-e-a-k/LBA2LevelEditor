@@ -74,17 +74,36 @@ internal sealed class Lba2EntityTable
     // entities that have the body (only those with as many groups as the body has bones, when it is known and some do), and the current animation kept when it
     // is one of them or otherwise has as many groups as the body has bones, else the body's standing animation (generic animation 0), else the first.
     // Null when no entity has this body (one made with Body Studio, for instance): nothing to go by.
-    public sealed record Choice(IReadOnlyList<int> Natural, int Chosen);
+    // Fits is false only when NONE of this entity's own animations have enough groups for the body (a real
+    // data mismatch in the archive itself, not a selection bug -- see ChooseAnimations's own comment) -- Chosen
+    // is still populated in that case (the closest available, picked the same way as ever), but the caller
+    // should not expect the native renderer to actually accept it.
+    public sealed record Choice(IReadOnlyList<int> Natural, int Chosen, bool Fits);
 
     public Choice? ChooseAnimations(int body, int? bones, Func<int, int?> groups, int currentAnim)
     {
         var owned = EntitiesWithBody(body).SelectMany(e => e.Anims).GroupBy(a => a.Anim).Select(g => g.First()).ToList();
         if (owned.Count == 0) return null;
         var fitting = bones is { } n ? owned.Where(a => groups(a.Anim) == n).ToList() : owned;
+        // No animation has EXACTLY as many groups as the body has bones (real, confirmed case: BODY.HQR 251,
+        // 21 bones, none of its entity's own listed animations happen to have exactly 21 groups) -- falling
+        // back to "any of this entity's own animations, fit or not" used to pick one the native renderer's
+        // own AnimFitsBody (EXTFUNC.CPP) then rejects outright (animGroups must be >= the body's own group
+        // count, since ObjectDisplay's transform loop walks the ANIMATION's own per-group data once per BODY
+        // group -- fewer groups than that is an out-of-bounds read, not just a visual mismatch), silently
+        // showing "no body to preview for this index" instead of a real render. Prefer any animation that
+        // still satisfies that same >= requirement (extra groups beyond the body's own just go unused, same
+        // as AnimFitsBody itself treats it) before giving up and using literally anything.
+        if (fitting.Count == 0 && bones is { } atLeast) fitting = owned.Where(a => groups(a.Anim) >= atLeast).ToList();
+        // Confirmed real case (BODY.HQR 251): even the >= fallback above can come up empty -- this entity's
+        // own animations are ALL genuinely too short for this body (251's own tallest is 20 groups, needs 21).
+        // No amount of re-selecting among them fixes that; the caller needs to know so it can show an honest
+        // message instead of attempting (and failing) a native render with whatever this last-resort tier picks.
+        var fits = fitting.Count > 0;
         if (fitting.Count == 0) fitting = owned;
         var natural = fitting.Select(a => a.Anim).ToList();
         var keep = natural.Contains(currentAnim) || bones is { } count && groups(currentAnim) == count;
         var chosen = keep ? currentAnim : fitting.Where(a => a.Generic == 0).Select(a => (int?)a.Anim).FirstOrDefault() ?? natural[0];
-        return new Choice(natural, chosen);
+        return new Choice(natural, chosen, fits);
     }
 }

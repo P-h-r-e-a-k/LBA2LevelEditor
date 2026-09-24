@@ -82,6 +82,8 @@ internal static class Program
             "package" => PackageRoster(args.Length > 1 ? args[1] : "Assets"),
             "testanims" => TestAnimsCmd(args[1]),
             "dumpheader" => DumpHeader(args[1], int.Parse(args[2])),
+            "validatecheck" => ValidateCheck(args[1], int.Parse(args[2]), args.Length > 3 ? int.Parse(args[3]) : 2),
+            "animgroups" => AnimGroupsCmd(args[1], int.Parse(args[2])),
             "hqrpreview" => HqrPreview(args[1], int.Parse(args[2]), args.Length > 3 ? args[3] : Path.GetTempPath(), args.Length > 4 ? int.Parse(args[4]) : 2),
             "hqrpreviewress" => HqrPreviewRess(args[1], int.Parse(args[2]), int.Parse(args[3]), args[4], args.Length > 5 ? int.Parse(args[5]) : 2),
             "testappend" => TestAppend(game),
@@ -936,6 +938,37 @@ internal static class Program
         var lines = BitConverter.ToInt32(raw, 72);
         var spheres = BitConverter.ToInt32(raw, 80);
         Console.WriteLine($"  Faces={polys} Lines={lines} Spheres={spheres} combined={polys + lines + spheres} (Body.Validate()'s own Limit=550)");
+        return 0;
+    }
+
+    // Reports the EXACT reason Body.Read (and therefore ActorAttributesWindow's own BodyBones/
+    // unsafeToPreviewBodies path) rejects a body, instead of just "it's in unsafeToPreviewBodies" -- the UI's
+    // own fallback message always says "too large... exceeds its point/primitive limit" regardless of which
+    // of Validate()'s several checks actually failed, which is misleading for anything other than a genuine
+    // Vertices/Bones overflow.
+    private static int ValidateCheck(string hqrPath, int index, int game)
+    {
+        var raw = new Hqr(hqrPath).Read(index);
+        try
+        {
+            var body = Body.Read(raw, game);
+            Console.WriteLine($"entry {index}: reads fine -- {body.Vertices.Count} points, {body.Bones.Count} bones, {body.Faces.Count} faces, {body.Lines.Count} lines, {body.Spheres.Count} spheres");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"entry {index}: {e.GetType().Name}: {e.Message}");
+        }
+        return 0;
+    }
+
+    // Raw ANIM.HQR group count (byte offset 2, the same U16 both Body.cs's own AnimGroups helper in
+    // ActorAttributesWindow and the native AnimFitsBody read) -- for cross-checking a specific animation
+    // index against a body's own NbGroupes/Bones.Count without needing a live app session.
+    private static int AnimGroupsCmd(string hqrPath, int index)
+    {
+        var raw = new Hqr(hqrPath).Read(index);
+        var groups = BitConverter.ToUInt16(raw, 2);
+        Console.WriteLine($"entry {index}: {raw.Length} bytes, groups={groups}");
         return 0;
     }
 
