@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -96,12 +97,13 @@ public partial class MainWindow
         if (wantTerrain) OnTerrainStateChanged();
         BuildSceneHelp.Text = BuildHelpText();
 
-        ZoneDetailsTab.Visibility = editMode == EditMode.Script ? Visibility.Collapsed : Visibility.Visible;
-        BuildTab.Visibility = editMode == EditMode.Build ? Visibility.Visible : Visibility.Collapsed;
-        ScriptTab.Visibility = editMode == EditMode.Script ? Visibility.Visible : Visibility.Collapsed;
-        PlayTab.Visibility = Visibility.Visible;
-        var home = editMode switch { EditMode.Build => (TabItem)BuildTab, EditMode.Script => ScriptTab, _ => ZonesTab };
-        if (selectTab || SideTabs.SelectedItem is not TabItem { Visibility: Visibility.Visible }) SideTabs.SelectedItem = home;
+        SetPanelVisible(ZoneDetailsTab, editMode != EditMode.Script);
+        SetPanelVisible(BuildTab, editMode == EditMode.Build);
+        SetPanelVisible(ScriptTab, editMode == EditMode.Script);
+        SetPanelVisible(PlayTab, true);
+        var home = editMode switch { EditMode.Build => BuildTab, EditMode.Script => ScriptTab, _ => ZonesTab };
+        var currentlyShown = new[] { ZonesTab, ZoneDetailsTab, BuildTab, ScriptTab, PlayTab }.FirstOrDefault(t => t.IsActive);
+        if (selectTab || currentlyShown is not { IsVisible: true }) ActivatePanel(home);
 
         UpdateZoneEditability();
         SyncAudioControls();
@@ -148,7 +150,7 @@ public partial class MainWindow
         terrainShown = show;
         TerrainMapHost.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         SceneViewBorder.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
-        MinimapPanel.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
+        SetPanelVisible(MinimapAnchorable, !show);
         if (show) return;
         if (sceneViewStale) RefreshSceneViewIfStale();
         else if (interiorSceneActive) ApplyInteriorView();

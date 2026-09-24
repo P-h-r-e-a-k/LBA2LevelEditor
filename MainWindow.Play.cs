@@ -95,7 +95,7 @@ public partial class MainWindow
         PlayOverlay.Visibility = Visibility.Visible;
         PlayButton.Visibility = Visibility.Collapsed;
         PlayRunningPanel.Visibility = Visibility.Visible;
-        SideTabs.SelectedItem = PlayTab;
+        ActivatePanel(PlayTab);
         playing = true;
         PlayStatus.Text = status;
         PlayOverlay.UpdateLayout();

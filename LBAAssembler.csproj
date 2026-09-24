@@ -101,5 +101,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Assets\FileDesc\*.HQD" LogicalName="FileDesc.%(Filename)%(Extension)" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Dirkster.AvalonDock" Version="5.0.0" />
+  </ItemGroup>
 
 </Project>

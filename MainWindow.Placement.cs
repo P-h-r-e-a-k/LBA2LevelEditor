@@ -69,7 +69,7 @@ public partial class MainWindow
         RestartPlayButton.Visibility = Visibility.Collapsed;
         PlayRunningPanel.Visibility = Visibility.Visible; PlayRunningPanel.Margin = new Thickness(0, 8, 0, 0);
         PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press Start here for his own spot. Esc cancels.";
-        SideTabs.SelectedItem = PlayTab;
+        ActivatePanel(PlayTab);
         BuildPlacementMarker();
         UpdatePlacementMarker();
         return true;
@@ -270,7 +270,7 @@ public partial class MainWindow
         RestartPlayButton.Visibility = Visibility.Collapsed;
         PlayRunningPanel.Visibility = Visibility.Visible; PlayRunningPanel.Margin = new Thickness(0, 8, 0, 0);
         PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press Start here for his own spot. Esc cancels.";
-        SideTabs.SelectedItem = PlayTab;
+        ActivatePanel(PlayTab);
         BuildPlacementMarker();
         UpdatePlacementMarker();
         return true;

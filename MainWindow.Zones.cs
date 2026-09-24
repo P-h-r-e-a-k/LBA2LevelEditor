@@ -62,7 +62,7 @@ public partial class MainWindow
         zoneOriginal = zone is null ? null : LookupZone(zone);
         LoadZoneForm();
         SyncZoneListSelection();
-        if (showTab && zone is not null && ZoneDetailsTab.Visibility == Visibility.Visible) SideTabs.SelectedItem = ZoneDetailsTab;
+        if (showTab && zone is not null && ZoneDetailsTab.IsVisible) ActivatePanel(ZoneDetailsTab);
         RefreshActorOverlayForSelection();
         if (center && zone is not null && interiorSceneActive) CenterOnZone(zone);
     }
@@ -73,12 +73,6 @@ public partial class MainWindow
         if (shape is null) return;
         interiorCenter = new Point(shape.Corners.Average(p => p.X), shape.Corners.Average(p => p.Y));
         ApplyInteriorView();
-    }
-
-    private void SideTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (e.OriginalSource != SideTabs) return;
-        if (ReferenceEquals(SideTabs.SelectedItem, ZoneDetailsTab)) RefreshZoneList();
     }
 
     private void RefreshZoneListIfVisible()

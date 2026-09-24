@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:LBAAssembler"
+        xmlns:xcad="https://github.com/Dirkster99/AvalonDock"
         Title="LBA Assembler" Height="760" Width="1280" MinHeight="620" MinWidth="980"
         Background="#FFFFFF" Foreground="#10243E" FontFamily="Segoe UI" Loaded="Window_Loaded" Closing="Window_Closing">
     <Window.Resources>
@@ -121,6 +122,19 @@
                 <MenuItem Header="_Explore mode" InputGestureText="Ctrl+1" Click="ModeMenu_Click" Tag="0"/>
                 <MenuItem Header="_Build mode" InputGestureText="Ctrl+2" Click="ModeMenu_Click" Tag="1"/>
                 <MenuItem Header="_Script mode" InputGestureText="Ctrl+3" Click="ModeMenu_Click" Tag="2"/>
+                <Separator/>
+                <MenuItem Header="_Panels" ToolTip="Bring back a panel you closed or floated out of reach">
+                    <MenuItem Header="Location" Click="ShowPanel_Click" Tag="Location"/>
+                    <MenuItem Header="Mode" Click="ShowPanel_Click" Tag="Mode"/>
+                    <MenuItem Header="Zones" Click="ShowPanel_Click" Tag="Zones"/>
+                    <MenuItem Header="Details" Click="ShowPanel_Click" Tag="Details"/>
+                    <MenuItem Header="Build" Click="ShowPanel_Click" Tag="Build"/>
+                    <MenuItem Header="Play" Click="ShowPanel_Click" Tag="Play"/>
+                    <MenuItem Header="Script" Click="ShowPanel_Click" Tag="Script"/>
+                    <MenuItem Header="Minimap" Click="ShowPanel_Click" Tag="Minimap"/>
+                    <Separator/>
+                    <MenuItem Header="Reset panel layout" Click="ResetPanelLayout_Click"/>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Scenes" Foreground="#10243E">
                 <MenuItem x:Name="Lba1Menu" Header="LBA_1" SubmenuOpened="GameMenu_SubmenuOpened"><MenuItem Header="…"/></MenuItem>
@@ -143,311 +157,321 @@
             </MenuItem>
         </Menu>
 
-        <Border x:Name="TopBar" DockPanel.Dock="Top" Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="0,0,0,1" Padding="16,8">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Margin="0,0,20,0" VerticalAlignment="Center" MinWidth="220" MaxWidth="440">
-                    <TextBlock x:Name="LocationGame" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
-                    <TextBlock x:Name="LocationArea" FontSize="14" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
-                <StackPanel Grid.Column="0" Margin="0,0,16,0" Visibility="Collapsed">
-                    <TextBlock Text="Game" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                    <ComboBox x:Name="GameCombo" Style="{StaticResource DropdownBox}" Width="84" Padding="8,4" SelectionChanged="GameCombo_SelectionChanged">
-                        <ComboBoxItem Content="LBA1" Tag="1"/>
-                        <ComboBoxItem Content="LBA2" Tag="2" IsSelected="True"/>
-                    </ComboBox>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Margin="0,0,16,0" Visibility="Collapsed">
-                    <TextBlock Text="Island" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                    <ComboBox x:Name="IslandCombo" Style="{StaticResource DropdownBox}" Width="170" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"/>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Margin="0,0,16,0" Visibility="Collapsed">
-                    <TextBlock Text="Scene" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                    <ComboBox x:Name="SceneCombo" Style="{StaticResource DropdownBox}" Width="300" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"/>
-                </StackPanel>
-                <CheckBox x:Name="JoinAreasCheck" Grid.Column="4" Content="Join connected areas" Visibility="Collapsed" VerticalAlignment="Bottom" Margin="0,0,16,7"
-                          Foreground="#10243E" Click="JoinAreas_Click"
-                          ToolTip="LBA1: show scenes that join edge to edge (an island's outdoor areas) as one continuous map"/>
-                <StackPanel Grid.Column="5" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock x:Name="DocumentTitle" Text="Island" FontSize="16" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock x:Name="DocumentSummary" Text="" Foreground="#4E6B8A" FontSize="11" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+        <xcad:DockingManager x:Name="DockManager" AllowMixedOrientation="True">
+            <xcad:LayoutRoot>
+                <xcad:LayoutPanel Orientation="Vertical">
+                    <xcad:LayoutAnchorablePaneGroup DockHeight="66" Orientation="Horizontal">
+                        <xcad:LayoutAnchorablePane>
+                            <xcad:LayoutAnchorable x:Name="LocationAnchorable" Title="Location" ContentId="Location" CanClose="False">
+                                <Grid Background="#E8F0FA">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,20,0" VerticalAlignment="Center" MinWidth="220" MaxWidth="440">
+                                        <TextBlock x:Name="LocationGame" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
+                                        <TextBlock x:Name="LocationArea" FontSize="14" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="0" Margin="0,0,16,0" Visibility="Collapsed">
+                                        <TextBlock Text="Game" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="GameCombo" Style="{StaticResource DropdownBox}" Width="84" Padding="8,4" SelectionChanged="GameCombo_SelectionChanged">
+                                            <ComboBoxItem Content="LBA1" Tag="1"/>
+                                            <ComboBoxItem Content="LBA2" Tag="2" IsSelected="True"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="0,0,16,0" Visibility="Collapsed">
+                                        <TextBlock Text="Island" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="IslandCombo" Style="{StaticResource DropdownBox}" Width="170" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Margin="0,0,16,0" Visibility="Collapsed">
+                                        <TextBlock Text="Scene" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="SceneCombo" Style="{StaticResource DropdownBox}" Width="300" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="JoinAreasCheck" Grid.Column="4" Content="Join connected areas" Visibility="Collapsed" VerticalAlignment="Bottom" Margin="0,0,16,7"
+                                              Foreground="#10243E" Click="JoinAreas_Click"
+                                              ToolTip="LBA1: show scenes that join edge to edge (an island's outdoor areas) as one continuous map"/>
+                                    <StackPanel Grid.Column="5" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <TextBlock x:Name="DocumentTitle" Text="Island" FontSize="16" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock x:Name="DocumentSummary" Text="" Foreground="#4E6B8A" FontSize="11" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </xcad:LayoutAnchorable>
+                        </xcad:LayoutAnchorablePane>
+                    </xcad:LayoutAnchorablePaneGroup>
 
-        <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="330"/></Grid.ColumnDefinitions>
-            <Grid Grid.Column="0" Background="#E8F0FA">
-                <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
-                <Border Grid.Row="0" BorderBrush="#A9C3E0" BorderThickness="0,0,0,1" Padding="16,0">
-                  <Grid>
-                    <DockPanel x:Name="ViewToolbar" VerticalAlignment="Center">
-                        <Button Content="▦" Click="Reset_Click" ToolTip="Reset view" Style="{StaticResource IconButton}"/>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                            <CheckBox x:Name="RotateViewCheckBox" Content="Rotate/tilt with mouse" IsChecked="True" Foreground="#234A72" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0"/>
-                            <CheckBox x:Name="SkyCheckBox" Content="Sky" IsChecked="True" Foreground="#234A72" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0" Checked="SkyCheckBox_Changed" Unchecked="SkyCheckBox_Changed"/>
-                            <Button Content="−" Click="ZoomOut_Click" Style="{StaticResource IconButton}"/>
-                            <TextBox x:Name="ZoomLabel" Text="100%" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="8,0" Width="40" TextAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#234A72" KeyDown="ZoomLabel_KeyDown" LostFocus="ZoomLabel_LostFocus" GotFocus="ZoomLabel_GotFocus"/>
-                            <Button Content="+" Click="ZoomIn_Click" Style="{StaticResource IconButton}"/>
-                        </StackPanel>
-                    </DockPanel>
-                  </Grid>
-                </Border>
-                <Border x:Name="SceneViewBorder" Grid.Row="1" Background="#E8F0FA" ClipToBounds="True">
-                    <Grid>
-                        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
-                        <Grid x:Name="ViewportHost" Grid.Row="0" Grid.Column="0" ClipToBounds="True" SizeChanged="ViewportHost_SizeChanged" MouseWheel="TerrainViewport_MouseWheel" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown" MouseLeave="Viewport_MouseLeave"
-                              MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp">
-                            <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" ClipToBounds="True" />
-                            <Canvas x:Name="InteriorHost" Background="Black" Visibility="Collapsed" ClipToBounds="True">
-                                <Image x:Name="InteriorViewImage" Stretch="None" SnapsToDevicePixels="False"/>
-                            </Canvas>
-                            <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
-                            <Canvas x:Name="BrushOverlayCanvas" IsHitTestVisible="False"/>
-                            <Canvas x:Name="PlacementCanvas"/>
-                        </Grid>
-                        <ScrollBar x:Name="PanVerticalScrollBar" Grid.Row="0" Grid.Column="1" Orientation="Vertical"
-                                   SmallChange="8192" LargeChange="65536"
-                                   Scroll="PanVerticalScrollBar_Scroll"/>
-                        <ScrollBar x:Name="PanHorizontalScrollBar" Grid.Row="1" Grid.Column="0" Orientation="Horizontal"
-                                   SmallChange="8192" LargeChange="65536"
-                                   Scroll="PanHorizontalScrollBar_Scroll"/>
-                    </Grid>
-                </Border>
-                <Border x:Name="TerrainMapHost" Grid.Row="1" Background="#FFFFFF" ClipToBounds="True" Visibility="Collapsed"/>
-                <DockPanel Grid.Row="2" Background="#E8F0FA" LastChildFill="True" Margin="16,0">
-                    <StackPanel x:Name="BusyPanel" Orientation="Horizontal" DockPanel.Dock="Right" Visibility="Collapsed" Margin="0,0,4,0" VerticalAlignment="Center">
-                        <ProgressBar IsIndeterminate="True" Width="80" Height="8" Margin="0,0,8,0"/>
-                        <TextBlock x:Name="BusyLabel" Text="Working…" FontFamily="Consolas" FontSize="10" Foreground="#4E6B8A" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <TextBlock x:Name="FileLabel" Text="" FontFamily="Consolas" FontSize="10" Foreground="#7C93AC" VerticalAlignment="Center"/>
-                </DockPanel>
-            </Grid>
-
-            <Border Grid.Column="1" BorderBrush="#A9C3E0" BorderThickness="1,0,0,0" Background="#E8F0FA">
-                <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                    <Border Grid.Row="0" Padding="16,12,16,10" BorderBrush="#A9C3E0" BorderThickness="0,0,0,1">
-                        <StackPanel>
-                            <TextBlock Text="Mode" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                            <UniformGrid Columns="3">
-                                <RadioButton x:Name="ModeExploreButton" Content="Explore" GroupName="mode" IsChecked="True" Style="{StaticResource ModeButton}" Checked="Mode_Checked" Tag="0"
-                                             ToolTip="Just look: move the scene around, select actors and zones. Nothing can be changed here. (Ctrl+1)"/>
-                                <RadioButton x:Name="ModeBuildButton" Content="Build" GroupName="mode" Style="{StaticResource ModeButton}" Checked="Mode_Checked" Tag="1"
-                                             ToolTip="Make the changes: terrain, light and shadows, ground, objects, actors and zones. (Ctrl+2)"/>
-                                <RadioButton x:Name="ModeScriptButton" Content="Script" GroupName="mode" Style="{StaticResource ModeButton}" Checked="Mode_Checked" Tag="2"
-                                             ToolTip="Edit the actors' scripts: click an actor to open its script. (Ctrl+3)"/>
-                            </UniformGrid>
-                        </StackPanel>
-                    </Border>
-                    <TabControl x:Name="SideTabs" Grid.Row="1" SelectionChanged="SideTabs_SelectionChanged">
-                        <TabItem Header="Zones" x:Name="ZonesTab">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel Margin="20,18,20,18">
-                                    <CheckBox x:Name="ZoneMasterCheck" Content="Show scene zones" IsChecked="True" Foreground="#10243E" Click="ZoneMaster_Click"/>
-                                    <CheckBox x:Name="PathsCheck" Content="Show actor paths" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0" Click="Paths_Click"/>
-                                    <CheckBox x:Name="HighlightCheck" Content="Highlight selected actor / zone" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0" Click="Highlight_Click"/>
-                                    <Separator Margin="0,14,0,14"/>
-                                    <TextBlock Text="Zone types" Style="{StaticResource Eyebrow}" Margin="0,0,0,10"/>
-                                    <StackPanel x:Name="ZoneTypeList"/>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </TabItem>
-                        <TabItem Header="Details" x:Name="ZoneDetailsTab">
-                            <Grid Margin="16,14,16,10">
-                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="104"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                                    <Button DockPanel.Dock="Right" Content="↻" Width="24" Height="20" Padding="0" Style="{StaticResource IconButton}" ToolTip="Refresh the list from what is in view" Click="ZoneListRefresh_Click"/>
-                                    <TextBlock x:Name="ZoneListHeader" Text="Zones in view" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-                                </DockPanel>
-                                <ListBox x:Name="ZoneListBox" Grid.Row="1" Background="#FFFFFF" BorderBrush="#A9C3E0" Foreground="#10243E" FontFamily="Consolas" FontSize="11"
-                                         SelectionChanged="ZoneList_SelectionChanged">
-                                    <ListBox.ItemContainerStyle>
-                                        <Style TargetType="ListBoxItem">
-                                            <Setter Property="Padding" Value="4,2"/>
-                                            <Setter Property="Foreground" Value="#10243E"/>
-                                            <Style.Triggers>
-                                                <Trigger Property="IsSelected" Value="True">
-                                                    <Setter Property="Background" Value="#1B6EC2"/>
-                                                    <Setter Property="Foreground" Value="#FFFFFF"/>
-                                                </Trigger>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#C3DBF5"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ListBox.ItemContainerStyle>
-                                </ListBox>
-                                <ScrollViewer Grid.Row="2" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                        <TextBlock x:Name="ZoneNoSelection" Text="Click a zone's outline in the map, or pick one from the list, to see and change its data." TextWrapping="Wrap"
-                                                   Foreground="#7C93AC" FontFamily="Consolas" FontSize="10"/>
-                                        <StackPanel x:Name="ZoneDetails" Visibility="Collapsed">
-                                            <TextBlock x:Name="ZoneTitle" FontSize="15"/>
-                                            <TextBlock x:Name="ZoneSubtitle" Foreground="#4E6B8A" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,10"/>
-
-                                            <TextBlock Text="Bounds (scene units)" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
-                                            <UniformGrid Columns="3" Margin="0,0,0,2">
-                                                <StackPanel Margin="0,0,4,0"><TextBlock Text="Min X" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MinXBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
-                                                <StackPanel Margin="0,0,4,0"><TextBlock Text="Min Y" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MinYBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
-                                                <StackPanel><TextBlock Text="Min Z" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MinZBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
-                                            </UniformGrid>
-                                            <UniformGrid Columns="3" Margin="0,4,0,4">
-                                                <StackPanel Margin="0,0,4,0"><TextBlock Text="Max X" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MaxXBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
-                                                <StackPanel Margin="0,0,4,0"><TextBlock Text="Max Y" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MaxYBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
-                                                <StackPanel><TextBlock Text="Max Z" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MaxZBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
-                                            </UniformGrid>
-                                            <TextBlock x:Name="ZoneSizeText" FontFamily="Consolas" FontSize="11" Foreground="#10243E" TextWrapping="Wrap" Margin="0,2,0,12"/>
-
-                                            <TextBlock x:Name="ZoneDataHeader" Text="Zone data" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
-                                            <StackPanel x:Name="ZoneFieldsPanel"/>
-                                            <TextBlock x:Name="ZoneDestinationText" FontSize="11" Foreground="#1B6EC2" TextWrapping="Wrap" Margin="0,4,0,0"/>
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                                <Button x:Name="ZoneApplyButton" Content="Apply" Style="{StaticResource PrimaryButton}" Padding="14,6" Click="ZoneApply_Click" ToolTip="Write these values into SCENE.HQR (the first save keeps SCENE.HQR.bak)"/>
-                                                <Button x:Name="ZoneRevertButton" Content="Revert" Style="{StaticResource QuietButton}" Padding="12,6" Margin="8,0,0,0" Click="ZoneRevert_Click"/>
-                                                <Button x:Name="ZoneGotoButton" Content="Go to destination" Style="{StaticResource QuietButton}" Padding="10,6" Margin="8,0,0,0" Click="ZoneGoto_Click"/>
+                    <xcad:LayoutPanel Orientation="Horizontal">
+                        <xcad:LayoutDocumentPane>
+                            <xcad:LayoutDocument x:Name="ViewportDocument" Title="Viewport" ContentId="Viewport" CanClose="False" CanFloat="False">
+                                <Grid Background="#E8F0FA">
+                                    <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
+                                    <Border Grid.Row="0" BorderBrush="#A9C3E0" BorderThickness="0,0,0,1" Padding="16,0">
+                                      <Grid>
+                                        <DockPanel x:Name="ViewToolbar" VerticalAlignment="Center">
+                                            <Button Content="▦" Click="Reset_Click" ToolTip="Reset view" Style="{StaticResource IconButton}"/>
+                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                <CheckBox x:Name="RotateViewCheckBox" Content="Rotate/tilt with mouse" IsChecked="True" Foreground="#234A72" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0"/>
+                                                <CheckBox x:Name="SkyCheckBox" Content="Sky" IsChecked="True" Foreground="#234A72" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="0,0,16,0" Checked="SkyCheckBox_Changed" Unchecked="SkyCheckBox_Changed"/>
+                                                <Button Content="−" Click="ZoomOut_Click" Style="{StaticResource IconButton}"/>
+                                                <TextBox x:Name="ZoomLabel" Text="100%" FontFamily="Consolas" FontSize="10" VerticalAlignment="Center" Margin="8,0" Width="40" TextAlignment="Center" Background="Transparent" BorderThickness="0" Foreground="#234A72" KeyDown="ZoomLabel_KeyDown" LostFocus="ZoomLabel_LostFocus" GotFocus="ZoomLabel_GotFocus"/>
+                                                <Button Content="+" Click="ZoomIn_Click" Style="{StaticResource IconButton}"/>
                                             </StackPanel>
-                                            <TextBlock x:Name="ZoneStatus" FontSize="11" Foreground="#4E6B8A" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                        </DockPanel>
+                                      </Grid>
+                                    </Border>
+                                    <Border x:Name="SceneViewBorder" Grid.Row="1" Background="#E8F0FA" ClipToBounds="True">
+                                        <Grid>
+                                            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
+                                            <Grid x:Name="ViewportHost" Grid.Row="0" Grid.Column="0" ClipToBounds="True" SizeChanged="ViewportHost_SizeChanged" MouseWheel="TerrainViewport_MouseWheel" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown" MouseLeave="Viewport_MouseLeave"
+                                                  MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp">
+                                                <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" ClipToBounds="True" />
+                                                <Canvas x:Name="InteriorHost" Background="Black" Visibility="Collapsed" ClipToBounds="True">
+                                                    <Image x:Name="InteriorViewImage" Stretch="None" SnapsToDevicePixels="False"/>
+                                                </Canvas>
+                                                <Canvas x:Name="ActorMarkerCanvas" IsHitTestVisible="True"/>
+                                                <Canvas x:Name="BrushOverlayCanvas" IsHitTestVisible="False"/>
+                                                <Canvas x:Name="PlacementCanvas"/>
+                                            </Grid>
+                                            <ScrollBar x:Name="PanVerticalScrollBar" Grid.Row="0" Grid.Column="1" Orientation="Vertical"
+                                                       SmallChange="8192" LargeChange="65536"
+                                                       Scroll="PanVerticalScrollBar_Scroll"/>
+                                            <ScrollBar x:Name="PanHorizontalScrollBar" Grid.Row="1" Grid.Column="0" Orientation="Horizontal"
+                                                       SmallChange="8192" LargeChange="65536"
+                                                       Scroll="PanHorizontalScrollBar_Scroll"/>
+                                        </Grid>
+                                    </Border>
+                                    <Border x:Name="TerrainMapHost" Grid.Row="1" Background="#FFFFFF" ClipToBounds="True" Visibility="Collapsed"/>
+                                    <DockPanel Grid.Row="2" Background="#E8F0FA" LastChildFill="True" Margin="16,0">
+                                        <StackPanel x:Name="BusyPanel" Orientation="Horizontal" DockPanel.Dock="Right" Visibility="Collapsed" Margin="0,0,4,0" VerticalAlignment="Center">
+                                            <ProgressBar IsIndeterminate="True" Width="80" Height="8" Margin="0,0,8,0"/>
+                                            <TextBlock x:Name="BusyLabel" Text="Working…" FontFamily="Consolas" FontSize="10" Foreground="#4E6B8A" VerticalAlignment="Center"/>
                                         </StackPanel>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Grid>
-                        </TabItem>
-                        <TabItem Header="Build" x:Name="BuildTab">
-                            <Grid>
-                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                <StackPanel x:Name="BuildViewBar" Grid.Row="0" Margin="16,12,16,2">
-                                    <TextBlock Text="What to edit" Style="{StaticResource Eyebrow}" Margin="0,0,0,6"/>
-                                    <StackPanel Orientation="Horizontal">
-                                        <RadioButton x:Name="BuildTerrainRadio" Content="Terrain" GroupName="buildview" IsChecked="True" Foreground="#10243E" Margin="0,0,16,0" Checked="BuildView_Changed"
-                                                     ToolTip="Sculpt the island in the 3D view, live: heights, levelling, baked light and shadows, ground, objects"/>
-                                        <RadioButton x:Name="BuildSceneRadio" Content="Actors and zones" GroupName="buildview" Foreground="#10243E" Checked="BuildView_Changed"
-                                                     ToolTip="Add and edit actors and zones in the 3D view"/>
-                                    </StackPanel>
-                                </StackPanel>
-                                <ContentControl x:Name="TerrainPanelHost" Grid.Row="1"/>
-                                <ScrollViewer x:Name="BuildScenePanel" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                                    <StackPanel Margin="16,10,16,16">
-                                        <TextBlock x:Name="BuildSceneHelp" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#234A72"/>
-                                        <TextBlock Text="Editors" Style="{StaticResource Eyebrow}" Margin="0,16,0,6"/>
-                                        <Button x:Name="BuildSceneEditorButton" Content="Scene editor (actors, zones, points)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BuildSceneEditor_Click"/>
-                                        <Button x:Name="BuildGridButton" Content="Interior map (grid editor)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="GridEditor_Click"/>
-                                        <Button Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
-                                        <Button Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
-                                        <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
-                                        <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Grid>
-                        </TabItem>
-                        <TabItem Header="Play" x:Name="PlayTab">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <StackPanel Margin="20,16,20,16">
-                                    <TextBlock x:Name="PlayIntro" Text="Play a scene" Style="{StaticResource Eyebrow}"/>
-                                    <TextBlock x:Name="PlayIntroText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#234A72" Margin="0,8,0,12"/>
-                                    <Button x:Name="PlayButton" Content="▶  Play scene" Style="{StaticResource PrimaryButton}" Padding="14,10" HorizontalAlignment="Stretch" Click="PlayScene_Click"/>
-                                    <StackPanel x:Name="PlayRunningPanel" Orientation="Horizontal" Visibility="Collapsed">
-                                        <Button x:Name="StopPlayButton" Content="■  Stop" Style="{StaticResource PrimaryButton}" Padding="18,10" Click="StopPlay_Click" ToolTip="End the game and go back to the editor"/>
-                                        <Button x:Name="RestartPlayButton" Content="↻  Restart" Style="{StaticResource QuietButton}" Padding="14,10" Margin="8,0,0,0" Click="RestartPlay_Click" ToolTip="Start the scene again from the beginning"/>
-                                    </StackPanel>
-                                    <CheckBox x:Name="PlacementCheck" Content="Choose where Twinsen starts" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0"
-                                              ToolTip="Pressing Play first shows the scene with Twinsen on it: drag him where you want him and let go to start the game there"/>
-                                    <TextBlock x:Name="PlayStatus" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#4E6B8A" Margin="0,8,0,4"/>
-                                    <TextBlock x:Name="AudioHeading" Text="Sound" Style="{StaticResource Eyebrow}" Margin="0,0,0,6"/>
-                                    <CheckBox x:Name="AudioMuteCheck" Content="Mute all sound" Foreground="#10243E" Click="AudioMute_Click"/>
-                                    <Grid Margin="0,10,0,0">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="38"/></Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/></Grid.RowDefinitions>
-                                        <TextBlock Grid.Row="0" Text="Music" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-                                        <Slider x:Name="AudioMusicSlider" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="AudioSlider_Changed" ToolTip="The game's music"/>
-                                        <TextBlock x:Name="AudioMusicValue" Grid.Row="0" Grid.Column="2" Foreground="#10243E" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" TextAlignment="Right"/>
-                                        <TextBlock Grid.Row="1" Text="Voices" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-                                        <Slider x:Name="AudioVoicesSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="AudioSlider_Changed" ToolTip="Spoken dialogue"/>
-                                        <TextBlock x:Name="AudioVoicesValue" Grid.Row="1" Grid.Column="2" Foreground="#10243E" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" TextAlignment="Right"/>
-                                        <TextBlock Grid.Row="2" Text="Effects" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-                                        <Slider x:Name="AudioEffectsSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="AudioSlider_Changed" ToolTip="Sound effects (footsteps, hits, doors ...)"/>
-                                        <TextBlock x:Name="AudioEffectsValue" Grid.Row="2" Grid.Column="2" Foreground="#10243E" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" TextAlignment="Right"/>
-                                    </Grid>
-                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                        <Button Content="Reset balance" Style="{StaticResource QuietButton}" Padding="10,4" Click="AudioReset_Click" ToolTip="Music low, speech and effects up: the games' own balance drowns the speech"/>
-                                    </StackPanel>
-                                    <TextBlock x:Name="AudioNote" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#7C93AC" Margin="0,8,0,0"/>
-                                    <StackPanel x:Name="PlayEngineOptions">
-                                        <TextBlock Text="Console commands" Style="{StaticResource Eyebrow}" Margin="0,18,0,4"/>
-                                        <TextBox x:Name="PlayCommandsBox" Style="{StaticResource FieldBox}" Padding="6,4" AcceptsReturn="True" TextWrapping="Wrap" Height="96" VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
-                                                 ToolTip="One per line or separated by ';': give &lt;item&gt;, vargame &lt;n&gt; &lt;value&gt;, behaviour &lt;0..4&gt;, teleport &lt;x&gt; &lt;y&gt; &lt;z&gt;, weapon &lt;n&gt; ..."/>
-                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                            <Button Content="Every item" Style="{StaticResource QuietButton}" Padding="10,4" Click="PlayEveryItem_Click" ToolTip="Sets the inventory flags 0..40 (holomap, magic ball, sword, keys ...) with vargame"/>
-                                            <Button Content="Clear" Style="{StaticResource QuietButton}" Padding="10,4" Click="PlayClearCommands_Click"/>
-                                        </StackPanel>
-                                        <TextBlock Text="Things like `give`, `vargame 94 1`, `behaviour 2` or `teleport 24000 4096 6000` set Twinsen up. Nothing is saved: autosave is off and the game's saves live in a folder of their own." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#7C93AC" Margin="0,14,0,0"/>
-                                    </StackPanel>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </TabItem>
-                        <TabItem Header="Script" x:Name="ScriptTab">
-                            <Grid Margin="16,14,16,10">
-                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                                <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                                    <Button DockPanel.Dock="Right" Content="↻" Width="24" Height="20" Padding="0" Style="{StaticResource IconButton}" ToolTip="Refresh the list from what is in view" Click="ScriptActorsRefresh_Click"/>
-                                    <TextBlock x:Name="ScriptActorsHeader" Text="Actors in view" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-                                </DockPanel>
-                                <TextBlock x:Name="ScriptHelp" Grid.Row="1" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#234A72" Margin="0,0,0,8"
-                                           Text="Click an actor in the view, or double-click one here, to open its script. Scripts stay in the editor until they are saved from their window."/>
-                                <ListBox x:Name="ScriptActorList" Grid.Row="2" Background="#FFFFFF" BorderBrush="#A9C3E0" Foreground="#10243E" FontFamily="Consolas" FontSize="11"
-                                         MouseDoubleClick="ScriptActorList_DoubleClick" SelectionChanged="ScriptActorList_SelectionChanged">
-                                    <ListBox.ItemContainerStyle>
-                                        <Style TargetType="ListBoxItem">
-                                            <Setter Property="Padding" Value="4,3"/>
-                                            <Setter Property="Foreground" Value="#10243E"/>
-                                            <Style.Triggers>
-                                                <Trigger Property="IsSelected" Value="True">
-                                                    <Setter Property="Background" Value="#1B6EC2"/>
-                                                    <Setter Property="Foreground" Value="#FFFFFF"/>
-                                                </Trigger>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#C3DBF5"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ListBox.ItemContainerStyle>
-                                </ListBox>
-                            </Grid>
-                        </TabItem>
-                    </TabControl>
+                                        <TextBlock x:Name="FileLabel" Text="" FontFamily="Consolas" FontSize="10" Foreground="#7C93AC" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <!-- while a scene is played: the game (LBA2's engine, or the LBA1 play view) takes the viewer's place; the side panels stay -->
+                                    <Border x:Name="PlayOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="Black" Panel.ZIndex="50" ClipToBounds="True">
+                                        <Border x:Name="PlayHostBorder" Background="Black" ClipToBounds="True"/>
+                                    </Border>
+                                </Grid>
+                            </xcad:LayoutDocument>
+                        </xcad:LayoutDocumentPane>
 
-                    <Border x:Name="MinimapPanel" Grid.Row="2" BorderBrush="#A9C3E0" BorderThickness="0,1,0,0" Padding="20,10,20,14">
-                        <StackPanel>
-                            <DockPanel>
-                                <Button x:Name="MinimapToggle" DockPanel.Dock="Right" Content="▾" Width="26" Height="22" Style="{StaticResource IconButton}" ToolTip="Collapse minimap" Click="MinimapToggle_Click"/>
-                                <TextBlock Text="Minimap" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-                            </DockPanel>
-                            <Border x:Name="MinimapBody" Margin="0,10,0,0" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1" Padding="4">
-                                <ScrollViewer x:Name="MinimapScrollViewer" Width="222" Height="222" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                    <Grid x:Name="MinimapContent" Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown" ToolTip="Double-click to pop out">
-                                        <Image x:Name="MinimapImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
-                                        <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
-                                        <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                        <xcad:LayoutPanel Orientation="Vertical" DockWidth="330">
+                            <xcad:LayoutAnchorablePane DockHeight="76">
+                                <xcad:LayoutAnchorable x:Name="ModeAnchorable" Title="Mode" ContentId="Mode" CanClose="False">
+                                    <StackPanel Background="#E8F0FA" Margin="16,12,16,10">
+                                        <UniformGrid Columns="3">
+                                            <RadioButton x:Name="ModeExploreButton" Content="Explore" GroupName="mode" IsChecked="True" Style="{StaticResource ModeButton}" Checked="Mode_Checked" Tag="0"
+                                                         ToolTip="Just look: move the scene around, select actors and zones. Nothing can be changed here. (Ctrl+1)"/>
+                                            <RadioButton x:Name="ModeBuildButton" Content="Build" GroupName="mode" Style="{StaticResource ModeButton}" Checked="Mode_Checked" Tag="1"
+                                                         ToolTip="Make the changes: terrain, light and shadows, ground, objects, actors and zones. (Ctrl+2)"/>
+                                            <RadioButton x:Name="ModeScriptButton" Content="Script" GroupName="mode" Style="{StaticResource ModeButton}" Checked="Mode_Checked" Tag="2"
+                                                         ToolTip="Edit the actors' scripts: click an actor to open its script. (Ctrl+3)"/>
+                                        </UniformGrid>
+                                    </StackPanel>
+                                </xcad:LayoutAnchorable>
+                            </xcad:LayoutAnchorablePane>
+
+                            <xcad:LayoutAnchorablePane>
+                                <xcad:LayoutAnchorable x:Name="ZonesTab" Title="Zones" ContentId="Zones">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Background="#E8F0FA">
+                                        <StackPanel Margin="20,18,20,18">
+                                            <CheckBox x:Name="ZoneMasterCheck" Content="Show scene zones" IsChecked="True" Foreground="#10243E" Click="ZoneMaster_Click"/>
+                                            <CheckBox x:Name="PathsCheck" Content="Show actor paths" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0" Click="Paths_Click"/>
+                                            <CheckBox x:Name="HighlightCheck" Content="Highlight selected actor / zone" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0" Click="Highlight_Click"/>
+                                            <Separator Margin="0,14,0,14"/>
+                                            <TextBlock Text="Zone types" Style="{StaticResource Eyebrow}" Margin="0,0,0,10"/>
+                                            <StackPanel x:Name="ZoneTypeList"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </xcad:LayoutAnchorable>
+                                <xcad:LayoutAnchorable x:Name="ZoneDetailsTab" Title="Details" ContentId="Details" IsSelectedChanged="ZoneDetailsTab_IsSelectedChanged">
+                                    <Grid Margin="16,14,16,10" Background="#E8F0FA">
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="104"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                            <Button DockPanel.Dock="Right" Content="↻" Width="24" Height="20" Padding="0" Style="{StaticResource IconButton}" ToolTip="Refresh the list from what is in view" Click="ZoneListRefresh_Click"/>
+                                            <TextBlock x:Name="ZoneListHeader" Text="Zones in view" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                        <ListBox x:Name="ZoneListBox" Grid.Row="1" Background="#FFFFFF" BorderBrush="#A9C3E0" Foreground="#10243E" FontFamily="Consolas" FontSize="11"
+                                                 SelectionChanged="ZoneList_SelectionChanged">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="ListBoxItem">
+                                                    <Setter Property="Padding" Value="4,2"/>
+                                                    <Setter Property="Foreground" Value="#10243E"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter Property="Background" Value="#1B6EC2"/>
+                                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#C3DBF5"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                        </ListBox>
+                                        <ScrollViewer Grid.Row="2" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
+                                            <StackPanel>
+                                                <TextBlock x:Name="ZoneNoSelection" Text="Click a zone's outline in the map, or pick one from the list, to see and change its data." TextWrapping="Wrap"
+                                                           Foreground="#7C93AC" FontFamily="Consolas" FontSize="10"/>
+                                                <StackPanel x:Name="ZoneDetails" Visibility="Collapsed">
+                                                    <TextBlock x:Name="ZoneTitle" FontSize="15"/>
+                                                    <TextBlock x:Name="ZoneSubtitle" Foreground="#4E6B8A" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,10"/>
+
+                                                    <TextBlock Text="Bounds (scene units)" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
+                                                    <UniformGrid Columns="3" Margin="0,0,0,2">
+                                                        <StackPanel Margin="0,0,4,0"><TextBlock Text="Min X" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MinXBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
+                                                        <StackPanel Margin="0,0,4,0"><TextBlock Text="Min Y" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MinYBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
+                                                        <StackPanel><TextBlock Text="Min Z" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MinZBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
+                                                    </UniformGrid>
+                                                    <UniformGrid Columns="3" Margin="0,4,0,4">
+                                                        <StackPanel Margin="0,0,4,0"><TextBlock Text="Max X" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MaxXBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
+                                                        <StackPanel Margin="0,0,4,0"><TextBlock Text="Max Y" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MaxYBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
+                                                        <StackPanel><TextBlock Text="Max Z" Style="{StaticResource Eyebrow}"/><TextBox x:Name="MaxZBox" Style="{StaticResource FieldBox}" Padding="4,3" TextChanged="ZoneBounds_TextChanged"/></StackPanel>
+                                                    </UniformGrid>
+                                                    <TextBlock x:Name="ZoneSizeText" FontFamily="Consolas" FontSize="11" Foreground="#10243E" TextWrapping="Wrap" Margin="0,2,0,12"/>
+
+                                                    <TextBlock x:Name="ZoneDataHeader" Text="Zone data" Style="{StaticResource Eyebrow}" Margin="0,0,0,4"/>
+                                                    <StackPanel x:Name="ZoneFieldsPanel"/>
+                                                    <TextBlock x:Name="ZoneDestinationText" FontSize="11" Foreground="#1B6EC2" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                                        <Button x:Name="ZoneApplyButton" Content="Apply" Style="{StaticResource PrimaryButton}" Padding="14,6" Click="ZoneApply_Click" ToolTip="Write these values into SCENE.HQR (the first save keeps SCENE.HQR.bak)"/>
+                                                        <Button x:Name="ZoneRevertButton" Content="Revert" Style="{StaticResource QuietButton}" Padding="12,6" Margin="8,0,0,0" Click="ZoneRevert_Click"/>
+                                                        <Button x:Name="ZoneGotoButton" Content="Go to destination" Style="{StaticResource QuietButton}" Padding="10,6" Margin="8,0,0,0" Click="ZoneGoto_Click"/>
+                                                    </StackPanel>
+                                                    <TextBlock x:Name="ZoneStatus" FontSize="11" Foreground="#4E6B8A" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </ScrollViewer>
                                     </Grid>
-                                </ScrollViewer>
-                            </Border>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </Border>
-            <!-- while a scene is played: the game (LBA2's engine, or the LBA1 play view) takes the viewer's place; the side panel stays -->
-            <Border x:Name="PlayOverlay" Grid.Column="0" Visibility="Collapsed" Background="Black" Panel.ZIndex="50" ClipToBounds="True">
-                <Border x:Name="PlayHostBorder" Background="Black" ClipToBounds="True"/>
-            </Border>
-        </Grid>
+                                </xcad:LayoutAnchorable>
+                                <xcad:LayoutAnchorable x:Name="BuildTab" Title="Build" ContentId="Build">
+                                    <Grid Background="#E8F0FA">
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                        <StackPanel x:Name="BuildViewBar" Grid.Row="0" Margin="16,12,16,2">
+                                            <TextBlock Text="What to edit" Style="{StaticResource Eyebrow}" Margin="0,0,0,6"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <RadioButton x:Name="BuildTerrainRadio" Content="Terrain" GroupName="buildview" IsChecked="True" Foreground="#10243E" Margin="0,0,16,0" Checked="BuildView_Changed"
+                                                             ToolTip="Sculpt the island in the 3D view, live: heights, levelling, baked light and shadows, ground, objects"/>
+                                                <RadioButton x:Name="BuildSceneRadio" Content="Actors and zones" GroupName="buildview" Foreground="#10243E" Checked="BuildView_Changed"
+                                                             ToolTip="Add and edit actors and zones in the 3D view"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <ContentControl x:Name="TerrainPanelHost" Grid.Row="1"/>
+                                        <ScrollViewer x:Name="BuildScenePanel" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                                            <StackPanel Margin="16,10,16,16">
+                                                <TextBlock x:Name="BuildSceneHelp" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#234A72"/>
+                                                <TextBlock Text="Editors" Style="{StaticResource Eyebrow}" Margin="0,16,0,6"/>
+                                                <Button x:Name="BuildSceneEditorButton" Content="Scene editor (actors, zones, points)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BuildSceneEditor_Click"/>
+                                                <Button x:Name="BuildGridButton" Content="Interior map (grid editor)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="GridEditor_Click"/>
+                                                <Button Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
+                                                <Button Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
+                                                <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
+                                                <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Grid>
+                                </xcad:LayoutAnchorable>
+                                <xcad:LayoutAnchorable x:Name="PlayTab" Title="Play" ContentId="Play">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" Background="#E8F0FA">
+                                        <StackPanel Margin="20,16,20,16">
+                                            <TextBlock x:Name="PlayIntro" Text="Play a scene" Style="{StaticResource Eyebrow}"/>
+                                            <TextBlock x:Name="PlayIntroText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#234A72" Margin="0,8,0,12"/>
+                                            <Button x:Name="PlayButton" Content="▶  Play scene" Style="{StaticResource PrimaryButton}" Padding="14,10" HorizontalAlignment="Stretch" Click="PlayScene_Click"/>
+                                            <StackPanel x:Name="PlayRunningPanel" Orientation="Horizontal" Visibility="Collapsed">
+                                                <Button x:Name="StopPlayButton" Content="■  Stop" Style="{StaticResource PrimaryButton}" Padding="18,10" Click="StopPlay_Click" ToolTip="End the game and go back to the editor"/>
+                                                <Button x:Name="RestartPlayButton" Content="↻  Restart" Style="{StaticResource QuietButton}" Padding="14,10" Margin="8,0,0,0" Click="RestartPlay_Click" ToolTip="Start the scene again from the beginning"/>
+                                            </StackPanel>
+                                            <CheckBox x:Name="PlacementCheck" Content="Choose where Twinsen starts" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0"
+                                                      ToolTip="Pressing Play first shows the scene with Twinsen on it: drag him where you want him and let go to start the game there"/>
+                                            <TextBlock x:Name="PlayStatus" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#4E6B8A" Margin="0,8,0,4"/>
+                                            <TextBlock x:Name="AudioHeading" Text="Sound" Style="{StaticResource Eyebrow}" Margin="0,0,0,6"/>
+                                            <CheckBox x:Name="AudioMuteCheck" Content="Mute all sound" Foreground="#10243E" Click="AudioMute_Click"/>
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="72"/><ColumnDefinition Width="*"/><ColumnDefinition Width="38"/></Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+                                                <TextBlock Grid.Row="0" Text="Music" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+                                                <Slider x:Name="AudioMusicSlider" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="AudioSlider_Changed" ToolTip="The game's music"/>
+                                                <TextBlock x:Name="AudioMusicValue" Grid.Row="0" Grid.Column="2" Foreground="#10243E" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" TextAlignment="Right"/>
+                                                <TextBlock Grid.Row="1" Text="Voices" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+                                                <Slider x:Name="AudioVoicesSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="AudioSlider_Changed" ToolTip="Spoken dialogue"/>
+                                                <TextBlock x:Name="AudioVoicesValue" Grid.Row="1" Grid.Column="2" Foreground="#10243E" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" TextAlignment="Right"/>
+                                                <TextBlock Grid.Row="2" Text="Effects" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+                                                <Slider x:Name="AudioEffectsSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10" VerticalAlignment="Center" ValueChanged="AudioSlider_Changed" ToolTip="Sound effects (footsteps, hits, doors ...)"/>
+                                                <TextBlock x:Name="AudioEffectsValue" Grid.Row="2" Grid.Column="2" Foreground="#10243E" FontFamily="Consolas" FontSize="11" VerticalAlignment="Center" TextAlignment="Right"/>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <Button Content="Reset balance" Style="{StaticResource QuietButton}" Padding="10,4" Click="AudioReset_Click" ToolTip="Music low, speech and effects up: the games' own balance drowns the speech"/>
+                                            </StackPanel>
+                                            <TextBlock x:Name="AudioNote" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#7C93AC" Margin="0,8,0,0"/>
+                                            <StackPanel x:Name="PlayEngineOptions">
+                                                <TextBlock Text="Console commands" Style="{StaticResource Eyebrow}" Margin="0,18,0,4"/>
+                                                <TextBox x:Name="PlayCommandsBox" Style="{StaticResource FieldBox}" Padding="6,4" AcceptsReturn="True" TextWrapping="Wrap" Height="96" VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
+                                                         ToolTip="One per line or separated by ';': give &lt;item&gt;, vargame &lt;n&gt; &lt;value&gt;, behaviour &lt;0..4&gt;, teleport &lt;x&gt; &lt;y&gt; &lt;z&gt;, weapon &lt;n&gt; ..."/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                    <Button Content="Every item" Style="{StaticResource QuietButton}" Padding="10,4" Click="PlayEveryItem_Click" ToolTip="Sets the inventory flags 0..40 (holomap, magic ball, sword, keys ...) with vargame"/>
+                                                    <Button Content="Clear" Style="{StaticResource QuietButton}" Padding="10,4" Click="PlayClearCommands_Click"/>
+                                                </StackPanel>
+                                                <TextBlock Text="Things like `give`, `vargame 94 1`, `behaviour 2` or `teleport 24000 4096 6000` set Twinsen up. Nothing is saved: autosave is off and the game's saves live in a folder of their own." TextWrapping="Wrap" FontFamily="Consolas" FontSize="10" Foreground="#7C93AC" Margin="0,14,0,0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </xcad:LayoutAnchorable>
+                                <xcad:LayoutAnchorable x:Name="ScriptTab" Title="Script" ContentId="Script">
+                                    <Grid Margin="16,14,16,10" Background="#E8F0FA">
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                            <Button DockPanel.Dock="Right" Content="↻" Width="24" Height="20" Padding="0" Style="{StaticResource IconButton}" ToolTip="Refresh the list from what is in view" Click="ScriptActorsRefresh_Click"/>
+                                            <TextBlock x:Name="ScriptActorsHeader" Text="Actors in view" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                        <TextBlock x:Name="ScriptHelp" Grid.Row="1" TextWrapping="Wrap" FontFamily="Consolas" FontSize="10.5" Foreground="#234A72" Margin="0,0,0,8"
+                                                   Text="Click an actor in the view, or double-click one here, to open its script. Scripts stay in the editor until they are saved from their window."/>
+                                        <ListBox x:Name="ScriptActorList" Grid.Row="2" Background="#FFFFFF" BorderBrush="#A9C3E0" Foreground="#10243E" FontFamily="Consolas" FontSize="11"
+                                                 MouseDoubleClick="ScriptActorList_DoubleClick" SelectionChanged="ScriptActorList_SelectionChanged">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="ListBoxItem">
+                                                    <Setter Property="Padding" Value="4,3"/>
+                                                    <Setter Property="Foreground" Value="#10243E"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter Property="Background" Value="#1B6EC2"/>
+                                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#C3DBF5"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                        </ListBox>
+                                    </Grid>
+                                </xcad:LayoutAnchorable>
+                            </xcad:LayoutAnchorablePane>
+
+                            <xcad:LayoutAnchorablePane DockHeight="270">
+                                <xcad:LayoutAnchorable x:Name="MinimapAnchorable" Title="Minimap" ContentId="Minimap">
+                                    <StackPanel Background="#E8F0FA">
+                                        <Border x:Name="MinimapBody" Margin="20,14,20,14" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1" Padding="4">
+                                            <ScrollViewer x:Name="MinimapScrollViewer" Width="222" Height="222" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                <Grid x:Name="MinimapContent" Cursor="Hand" MouseLeftButtonDown="Minimap_MouseDown" ToolTip="Double-click to pop out">
+                                                    <Image x:Name="MinimapImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                    <Canvas x:Name="MinimapActorCanvas" IsHitTestVisible="False"/>
+                                                    <Canvas x:Name="MinimapMarkerCanvas" IsHitTestVisible="False"/>
+                                                </Grid>
+                                            </ScrollViewer>
+                                        </Border>
+                                    </StackPanel>
+                                </xcad:LayoutAnchorable>
+                            </xcad:LayoutAnchorablePane>
+                        </xcad:LayoutPanel>
+                    </xcad:LayoutPanel>
+                </xcad:LayoutPanel>
+            </xcad:LayoutRoot>
+        </xcad:DockingManager>
     </DockPanel>
 </Window>
