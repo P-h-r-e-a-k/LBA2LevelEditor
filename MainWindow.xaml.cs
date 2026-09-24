@@ -2382,6 +2382,16 @@ public partial class MainWindow : Window
         var width = (int)Math.Ceiling(MinimapContent.ActualWidth);
         var height = (int)Math.Ceiling(MinimapContent.ActualHeight);
         if (width <= 0 || height <= 0) { minimapPopup.SetImage(null); return; }
+        // A forced, explicit Measure/Arrange at this exact size, right before rendering: without this,
+        // RenderTargetBitmap.Render silently painted only a small top-left portion of MinimapContent
+        // (roughly the ScrollViewer's own viewport size) even though ActualWidth/ActualHeight, DesiredSize
+        // and RenderSize all already reported the full content size -- some internal WPF layout/clip state
+        // for a ScrollViewer's non-IScrollInfo child appears to only get refreshed by a real Measure+Arrange
+        // pass, not by UpdateLayout() alone once the child has grown past what the viewport last arranged it
+        // at. Confirmed by giving the popup a bright, unmistakable background: most of the "black" area
+        // reported as missing was this real bug, not (as first suspected) legitimate empty cube tiles.
+        MinimapContent.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        MinimapContent.Arrange(new Rect(0, 0, width, height));
         var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         target.Render(MinimapContent);
         target.Freeze();
