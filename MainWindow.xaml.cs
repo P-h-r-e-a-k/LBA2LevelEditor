@@ -1020,7 +1020,32 @@ public partial class MainWindow : Window
         interiorActors = actors.OrderBy(a => a.Marker ? 0 : 1).ThenByDescending(a => a.HalfWidth * a.HalfHeight).ToList();
         interiorOverlay = new InteriorOverlay(routes, zones);
 
-        interiorContent = new Rect(0, 0, image.Width, image.Height);
+        // Tight bounding box around actually-drawn pixels (alpha != 0), not the whole render canvas -- an
+        // isometric render's own canvas is naturally much bigger than a single scene's own diamond of real
+        // content (sized to accommodate any joined-area layout), so using the raw canvas size as `content`
+        // here left BuildSceneMinimap's own scale computation seeing mostly transparent margin as if it were
+        // real content to fit, the same "enlarge the focus" gap its own scale-cap fix addresses on the other
+        // side. Same technique and same pixel padding as ShowInteriorSceneCore's own matching scan (LBA2).
+        {
+            int minX = image.Width, minY = image.Height, maxX = -1, maxY = -1;
+            var bgra = image.Bgra;
+            for (var y = 0; y < image.Height; y++)
+            {
+                var row = y * image.Width * 4;
+                for (var x = 0; x < image.Width; x++)
+                {
+                    if (bgra[row + x * 4 + 3] == 0) continue;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+            const int pad = 16;
+            interiorContent = maxX < 0
+                ? new Rect(0, 0, image.Width, image.Height)
+                : Rect.Intersect(new Rect(0, 0, image.Width, image.Height), new Rect(minX - pad, minY - pad, maxX - minX + 1 + pad * 2, maxY - minY + 1 + pad * 2));
+        }
         lba1ShownImage = image;
         nativeViewActive = false;
         interiorSceneActive = true;
@@ -1032,7 +1057,10 @@ public partial class MainWindow : Window
         if (!keepView)
         {
             interiorZoom = 0;
-            interiorCenter = new Point(image.Width / 2.0, image.Height / 2.0);
+            // interiorContent's own centre (the tight content bound above), not the raw canvas's -- matches
+            // ShowInteriorSceneCore's own equivalent (LBA2) so a fresh scene opens centred and zoomed on its
+            // real content instead of the canvas's own, usually off-centre, midpoint.
+            interiorCenter = new Point(interiorContent.X + interiorContent.Width / 2, interiorContent.Y + interiorContent.Height / 2);
             selectedActorIndex = null;
             SelectZone(null, showTab: false);
         }
@@ -1072,7 +1100,12 @@ public partial class MainWindow : Window
             MinimapBody.Background = Brushes.Black;      // (a scene's picture is on black, like the view itself)
         }
         sceneMinimapOrigin = content.TopLeft;
-        sceneMinimapScale = Math.Min(1.0, 214.0 / Math.Max(content.Width, content.Height));
+        // No Math.Min(1.0, ...) cap: a small scene's own content (LBA1 in particular, whose own call site below
+        // uses the whole render canvas as `content`, routinely much smaller than 214px) used to stay at its own
+        // native size, leaving most of the panel as plain black margin instead of the content filling it --
+        // scaling UP small content, not just ever down, is what "enlarge the focus so it fills the whole
+        // minimap" needs. The panel's own black background (set above) is deliberately left alone either way.
+        sceneMinimapScale = 214.0 / Math.Max(content.Width, content.Height);
         BitmapSource cropped = new CroppedBitmap(canvas, new Int32Rect((int)content.X, (int)content.Y, (int)content.Width, (int)content.Height));
         var thumbnail = new TransformedBitmap(cropped, new ScaleTransform(sceneMinimapScale, sceneMinimapScale));
         thumbnail.Freeze();
@@ -1087,22 +1120,24 @@ public partial class MainWindow : Window
         }
         MinimapScrollViewer.ScrollToHorizontalOffset(0);
         MinimapScrollViewer.ScrollToVerticalOffset(0);
+        RefreshMinimapPopup();
     }
 
     private void UpdateSceneMinimapViewport()
     {
         MinimapMarkerCanvas.Children.Clear();
-        if (!sceneMinimapActive || MinimapImage.Source is null || interiorZoom <= 0) return;
+        if (!sceneMinimapActive || MinimapImage.Source is null || interiorZoom <= 0) { RefreshMinimapPopup(); return; }
         var w = ViewportHost.ActualWidth / interiorZoom;
         var h = ViewportHost.ActualHeight / interiorZoom;
         var scale = sceneMinimapScale;
         var view = new Rect((interiorCenter.X - w / 2 - sceneMinimapOrigin.X) * scale, (interiorCenter.Y - h / 2 - sceneMinimapOrigin.Y) * scale, w * scale, h * scale);
         view.Intersect(new Rect(1, 1, interiorContent.Width * scale - 2, interiorContent.Height * scale - 2));
-        if (view.IsEmpty) return;
+        if (view.IsEmpty) { RefreshMinimapPopup(); return; }
         var box = new System.Windows.Shapes.Rectangle { Width = Math.Max(4, view.Width), Height = Math.Max(4, view.Height), Stroke = Brushes.Yellow, StrokeThickness = 1.5 };
         Canvas.SetLeft(box, view.X);
         Canvas.SetTop(box, view.Y);
         MinimapMarkerCanvas.Children.Add(box);
+        RefreshMinimapPopup();
     }
 
     // Puts the outdoor island's minimap back when leaving a scene view.
@@ -1117,6 +1152,7 @@ public partial class MainWindow : Window
         MinimapMarkerCanvas.Children.Clear();
         // The island's actor dots are redrawn by the next native render.
         actorMarkersIsland = null;
+        RefreshMinimapPopup();
     }
 
     // `key` is sceneIndex * 1000 + actorIndex.
@@ -2165,6 +2201,7 @@ public partial class MainWindow : Window
         Canvas.SetLeft(marker, px - markerSize / 2);
         Canvas.SetTop(marker, pz - markerSize / 2);
         MinimapMarkerCanvas.Children.Add(marker);
+        RefreshMinimapPopup();
     }
 
     // The minimap crops to the island's bounding box but that can still be
@@ -2202,7 +2239,12 @@ public partial class MainWindow : Window
         var useNative = nativeRenderer.DirectRendererReady;
 
         var (minX, minY, maxX, maxY) = island.PresentCubeBounds;
-        const int padding = 1;
+        // 0, not 1: a cube is CellsPerCube (64) * MinimapPixelsPerCell (4) = 256 pixels across, so even this
+        // single cube of margin on every side was up to 512 extra pixels of mostly-void (black) space on top
+        // of an island that can be as small as a handful of cubes -- exactly the "a lot of black space around
+        // the edge" the minimap was cropping down to island-present-cube bounds specifically to avoid. Present
+        // cubes already have their own real terrain drawn edge-to-edge (no natural bleed that needs covering).
+        const int padding = 0;
         minX = Math.Max(0, minX - padding);
         minY = Math.Max(0, minY - padding);
         maxX = Math.Min(15, maxX + padding);
@@ -2276,6 +2318,15 @@ public partial class MainWindow : Window
 
     private void Minimap_MouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ClickCount >= 2) { OpenMinimapPopup(); return; }
+        NavigateMinimapTo(e.GetPosition((Grid)sender));
+    }
+
+    // Shared by the docked minimap (Minimap_MouseDown, point already in its own image-pixel space) and the
+    // popped-out one (MinimapPopupWindow.ImageClicked, translated back to that same space by the popup itself
+    // -- see its own comment) -- one navigation path regardless of which view was clicked.
+    private void NavigateMinimapTo(Point point)
+    {
         // Same outdoor-coordinate-space assumption as MainWindow_KeyDown's
         // own guard above -- the minimap always shows the current outdoor
         // island regardless of whether an interior scene is on screen, and
@@ -2285,14 +2336,11 @@ public partial class MainWindow : Window
         if (sceneMinimapActive)
         {
             if (MinimapImage.Source is null || !interiorSceneActive) return;
-            var spot = e.GetPosition((Grid)sender);
-            interiorCenter = new Point(spot.X / sceneMinimapScale + sceneMinimapOrigin.X, spot.Y / sceneMinimapScale + sceneMinimapOrigin.Y);
+            interiorCenter = new Point(point.X / sceneMinimapScale + sceneMinimapOrigin.X, point.Y / sceneMinimapScale + sceneMinimapOrigin.Y);
             ApplyInteriorView();
             return;
         }
         if (interiorSceneActive || currentIsland is null || MinimapImage.Source is null) return;
-        var grid = (Grid)sender;
-        var point = e.GetPosition(grid);
         var worldX = (minimapCropOffsetXPixels + point.X) * MinimapWorldUnitsPerPixel;
         var worldZ = (minimapCropOffsetYPixels + point.Y) * MinimapWorldUnitsPerPixel;
         if (!IsWorldPositionOnIsland(worldX, worldZ)) return;
@@ -2301,6 +2349,43 @@ public partial class MainWindow : Window
         UpdateMinimapMarker();
         SyncPanScrollBars();
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
+    }
+
+    // The minimap "popped out" -- see MinimapPopupWindow's own comment. One instance at a time; double-
+    // clicking again while it's already open just refocuses it rather than opening a second.
+    private MinimapPopupWindow? minimapPopup;
+
+    private void OpenMinimapPopup()
+    {
+        if (minimapPopup is not null) { minimapPopup.Activate(); return; }
+        minimapPopup = new MinimapPopupWindow(this);
+        minimapPopup.ImageClicked += NavigateMinimapTo;
+        minimapPopup.Closed += (_, _) => minimapPopup = null;
+        RefreshMinimapPopup();
+        minimapPopup.Show();
+    }
+
+    // Pushed a fresh snapshot on every docked-minimap update (see each call site's own reasoning) rather than
+    // the popup rendering anything itself -- MinimapContent (the Grid holding the image and both overlay
+    // canvases, INSIDE the ScrollViewer) is full-sized in the visual tree even though the ScrollViewer only
+    // ever shows a 222x222 scrolled window onto it, so rendering that Grid directly (not the ScrollViewer)
+    // captures the WHOLE minimap -- image, actor dots, and the current-view box -- not just whatever portion
+    // happens to be scrolled into view in the small docked panel.
+    private void RefreshMinimapPopup()
+    {
+        if (minimapPopup is null) return;
+        // Forces layout to actually happen now: RenderTargetBitmap.Render captures whatever's already been
+        // laid out, and every caller here just modified MinimapContent's own children (a Canvas.Children.Add,
+        // a new MinimapImage.Source, ...) moments ago, which WPF would otherwise only apply on its own next
+        // regular layout pass -- without this, the popup could show a stale frame missing that change.
+        MinimapContent.UpdateLayout();
+        var width = (int)Math.Ceiling(MinimapContent.ActualWidth);
+        var height = (int)Math.Ceiling(MinimapContent.ActualHeight);
+        if (width <= 0 || height <= 0) { minimapPopup.SetImage(null); return; }
+        var target = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        target.Render(MinimapContent);
+        target.Freeze();
+        minimapPopup.SetImage(target);
     }
 
     // 100% is each view's own default distance (both happen to default to
@@ -2730,7 +2815,7 @@ public partial class MainWindow : Window
     {
         MinimapActorCanvas.Children.Clear();
         var library = nativeRenderer.RendererLibrary;
-        if (library is null || MinimapImage.Source is null) return;
+        if (library is null || MinimapImage.Source is null) { RefreshMinimapPopup(); return; }
         var count = library.GetActorCount();
         for (var i = 0; i < count; i++)
         {
@@ -2766,6 +2851,7 @@ public partial class MainWindow : Window
             Canvas.SetTop(dot, pz - 2.5);
             MinimapActorCanvas.Children.Add(dot);
         }
+        RefreshMinimapPopup();
     }
 
     // A small pole-and-pennant flag glyph (not a literal render of the
