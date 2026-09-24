@@ -188,17 +188,30 @@ internal static class Lba2Play
             if (File.Exists(target)) File.Delete(target);
             var start = new ProcessStartInfo(engine) { WorkingDirectory = gameDirectory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var arg in new[] { "--headless", "--game-dir", gameDirectory, "--user-dir", user, "--no-autosave", "--resolution", "640x480",
-                                        "--exec-at", "5", $"cube {scene}", "--exec-at", "40", "savebug editorplay", "--tick", "80", "--exit" })
+                                        "--exec-at", "5", $"cube {scene}", "--exec-at", "39", "status", "--exec-at", "40", "savebug editorplay", "--tick", "80", "--exit" })
                 start.ArgumentList.Add(arg);
             using var process = Process.Start(start);
             if (process is null) return null;
-            // the output is drained so the engine can never block on a full pipe
-            process.OutputDataReceived += (_, _) => { };
-            process.ErrorDataReceived += (_, _) => { };
+            // Drained via events (not ReadToEnd, which would deadlock the caller if the engine ever hangs without exiting) but
+            // kept, not discarded: a `status` line confirms the `cube` command actually landed before trusting the save it made.
+            // Some scenes (the LBA2 "demo reel" duplicates, e.g. cube 195 -- see docs/SCENES.md "standalone vignettes") sit on
+            // their own return-to-cube-0 zone and bounce straight back out when entered cold, so the resulting save would
+            // silently open in the wrong place if this weren't checked.
+            var landed = new System.Text.StringBuilder();
+            void OnLine(object? _, DataReceivedEventArgs e) { if (e.Data is not null) lock (landed) landed.AppendLine(e.Data); }
+            process.OutputDataReceived += OnLine;
+            process.ErrorDataReceived += OnLine;
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             if (!process.WaitForExit(40000)) { try { process.Kill(true); } catch (InvalidOperationException) { } return null; }
             if (!File.Exists(made)) return null;
+            string statusOutput;
+            lock (landed) statusOutput = landed.ToString();
+            if (!statusOutput.Contains($"Cube: {scene}", StringComparison.Ordinal))
+            {
+                DebugLog.Log($"Lba2Play: scene {scene} didn't hold when entered directly (probably only reachable from another scene); not using this save");
+                return null;
+            }
             File.Copy(made, target, overwrite: true);
             return SaveName;
         }
