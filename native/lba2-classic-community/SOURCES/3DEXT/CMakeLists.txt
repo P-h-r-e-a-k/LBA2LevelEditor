@@ -26,6 +26,15 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # though lba2cc linked fine.
     target_link_options(lba2_renderer PRIVATE "-Wno-stringop-overflow")
 endif()
+if(WIN32 AND LBA2_CONTROL_SERVER)
+    # Same rationale as SOURCES/CMakeLists.txt's identical block for ${LBA2_EXECUTABLE_NAME}: CONTROL_SERVER.CPP
+    # (compiled into lba2_renderer_engine whenever LBA2_CONTROL_SERVER is on, since that's a whole-project compile
+    # definition, not something this target can see and exclude) calls Winsock directly. The exe target links
+    # ws2_32 for it; this target -- linking the same engine library -- didn't, so a from-scratch build of
+    # lba2_renderer with LBA2_CONTROL_SERVER=ON failed at link time with dozens of "undefined reference to
+    # `__imp_WSAStartup`/`__imp_send`/..." (not the LTO stringop-overflow issue above -- a real missing library).
+    target_link_libraries(lba2_renderer PRIVATE ws2_32)
+endif()
 if(WIN32 AND LBA2_LINK_STATIC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # Same rationale as SOURCES/CMakeLists.txt's identical block for
     # ${LBA2_EXECUTABLE_NAME}: fold the GCC C++ runtime into the DLL so
