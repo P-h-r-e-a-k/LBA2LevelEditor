@@ -218,12 +218,58 @@ internal static class Lba2Play
                 return null;
             }
             File.Copy(made, target, overwrite: true);
+            if (!VerifySaveLoads(engine, gameDirectory, user, scene))
+            {
+                try { File.Delete(target); } catch (IOException) { }
+                return null;
+            }
             return SaveName;
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             DebugLog.Log($"Lba2Play: couldn't prepare a save for scene {scene}: {error.Message}");
             return null;
+        }
+    }
+
+    // A prepared save is only as good as the engine's own ability to load it back: some scenes' actor data
+    // trips a rare false-positive in LoadContexte's save-format auto-detection (SAVEGAME.CPP's own comment
+    // documents the gap -- a legacy-vs-portable heuristic bound "not a tight bound... garbage... can still
+    // alias a valid-looking offset"), misreading pointer-sized animation fields and segfaulting on the very
+    // next frame (confirmed live for scene 79 via a symbolized crash in ObjectSetInterDep, LIB386/ANIM/
+    // INTERDEP.CPP -- a real, pre-existing engine bug, not something introduced by this editor). Reproducing
+    // that crash in the real, visible Play session would just hand the user a worse failure than the existing
+    // "didn't hold" rejection above, so this loads the save right back in one more disposable headless run
+    // and rejects it (falls back to the plain `cube` command, same as any other prepare failure) if the
+    // engine doesn't come back cleanly -- a crash's own exit code is never 0 (see LIB386/SYSTEM/CRASH_WIN.CPP's
+    // own comment: the crash handler writes its log block, then hands the exception on to end the process with
+    // its code), so that alone is the check; no log-file parsing needed.
+    private static bool VerifySaveLoads(string engine, string gameDirectory, string user, int scene)
+    {
+        try
+        {
+            var start = new ProcessStartInfo(engine) { WorkingDirectory = gameDirectory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+            foreach (var arg in new[] { "--headless", "--game-dir", gameDirectory, "--user-dir", user, "--no-autosave", "--resolution", "640x480",
+                                        "--load", SaveName, "--exec-at", "30", "status", "--tick", "60", "--exit" })
+                start.ArgumentList.Add(arg);
+            using var process = Process.Start(start);
+            if (process is null) return false;
+            process.OutputDataReceived += (_, _) => { };
+            process.ErrorDataReceived += (_, _) => { };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            if (!process.WaitForExit(40000)) { try { process.Kill(true); } catch (InvalidOperationException) { } return false; }
+            if (process.ExitCode != 0)
+            {
+                DebugLog.Log($"Lba2Play: the save prepared for scene {scene} crashes the engine on load (exit code {process.ExitCode}); not using this save");
+                return false;
+            }
+            return true;
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            DebugLog.Log($"Lba2Play: couldn't verify the save for scene {scene} loads: {error.Message}");
+            return false;
         }
     }
 

@@ -28,7 +28,12 @@ public partial class MainWindow
     // Whether a placement has been started here (false: nothing to place him on, so the game just starts).
     private bool BeginLba2Placement()
     {
-        if (lba2JoinedView) return false;      // (a joined map has no engine picture to drop Twinsen on: the game starts at its first scene)
+        // A joined map has no single engine picture to drop Twinsen on (it's several scenes stitched into one
+        // composite image) -- unlike the other refusals below, this one used to be silent (no message at all),
+        // which for a scene only ever reachable through a join (e.g. 79, joined only under "Imperial Hotel" --
+        // see Lba2Areas.Links) meant the checkbox looked broken with no explanation. Play still starts the
+        // scene normally (LaunchPlay falls through to that below); only the drag-to-place step is skipped.
+        if (lba2JoinedView) { FileLabel.Text = "Can't choose where Twinsen starts from a joined multi-scene view -- starting the scene normally."; return false; }
         if (currentGame != GameKind.Lba2 || terrainShown || !Lba2Configured) return false;
         var scene = Lba2SceneToPlay();
         SceneModel model;

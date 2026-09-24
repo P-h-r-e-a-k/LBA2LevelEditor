@@ -55,7 +55,14 @@ public partial class MainWindow : Window
     private double interiorZoom = 1;
     private Point interiorCenter;
     private List<(int Index, int X, int Y, int HalfWidth, int HalfHeight, bool Marker)> interiorActors = new();
-    private const double InteriorMaxZoom = 4;
+    // InteriorFitCap only bounds the automatic Reset/Fit calculation (InteriorFitZoom), so a tiny scene doesn't
+    // fit-to-screen at an absurd zoom -- unrelated to how far a user can zoom in by hand. InteriorMaxZoom is
+    // that hand ceiling: 100 (10000%) for the text box or holding a +/- button, but the scroll wheel stays
+    // capped at the tighter InteriorWheelMaxZoom (5000%, matching the outdoor view's own wheel-vs-override
+    // split below) so a couple of notches can't run away to the far end of the override range by accident.
+    private const double InteriorFitCap = 4;
+    private const double InteriorMaxZoom = 100;
+    private const double InteriorWheelMaxZoom = 50;
     private CancellationTokenSource? nativeRenderCancellation;
     private readonly object nativeRenderGate = new();
     private bool nativeRenderInFlight;
@@ -615,7 +622,7 @@ public partial class MainWindow : Window
         var vw = ViewportHost.ActualWidth;
         var vh = ViewportHost.ActualHeight;
         if (vw < 1 || vh < 1 || interiorContent.Width < 1 || interiorContent.Height < 1) return 1;
-        return Math.Min(Math.Min(vw / interiorContent.Width, vh / interiorContent.Height), InteriorMaxZoom);
+        return Math.Min(Math.Min(vw / interiorContent.Width, vh / interiorContent.Height), InteriorFitCap);
     }
 
     // Applies interiorZoom/interiorCenter (clamped) to the canvas image, the
@@ -1817,16 +1824,17 @@ public partial class MainWindow : Window
         UpdatePlacementMarker();
     }
 
-    // Zooms by `factor`, keeping the canvas point under `anchor` (viewport
-    // coordinates) fixed.
-    private void ZoomInterior(double factor, Point? anchor = null)
+    // Zooms by `factor`, keeping the canvas point under `anchor` (viewport coordinates) fixed. `maxZoom` is the
+    // wheel's own tighter ceiling (InteriorWheelMaxZoom) or the override ceiling (InteriorMaxZoom, the default
+    // -- text box and holding a +/- button both want the wider range).
+    private void ZoomInterior(double factor, Point? anchor = null, double maxZoom = InteriorMaxZoom)
     {
         if (interiorZoom <= 0) return;
         var vw = ViewportHost.ActualWidth;
         var vh = ViewportHost.ActualHeight;
         var a = anchor ?? new Point(vw / 2, vh / 2);
         var before = new Point((a.X - vw / 2) / interiorZoom + interiorCenter.X, (a.Y - vh / 2) / interiorZoom + interiorCenter.Y);
-        interiorZoom = Math.Clamp(interiorZoom * factor, InteriorFitZoom(), InteriorMaxZoom);
+        interiorZoom = Math.Clamp(interiorZoom * factor, InteriorFitZoom(), maxZoom);
         interiorCenter = new Point(before.X - (a.X - vw / 2) / interiorZoom, before.Y - (a.Y - vh / 2) / interiorZoom);
         ApplyInteriorView();
     }
@@ -2535,13 +2543,21 @@ public partial class MainWindow : Window
     // jump the displayed percentage; zooming in (smaller distance) reads as
     // >100%, matching how "zoom" reads on a camera or a document viewer.
     private const double DefaultCameraDistance = 30000;
-    // Loosened from the original 3000-50000 (native) / 12000-120000 (software): neither end is load-bearing --
-    // AffGrilleExtWide's wideRadius stays fixed at 2 regardless of distance (see RunNativeRenderLoop's own
-    // comment), so cost doesn't change with zoom, and the software path is plain double math with no
-    // divide-by-zero or index risk at either extreme. Kept finite, not fully unbounded, only so a runaway
-    // scroll can't reach a distance so large or small the view is just a blank/degenerate frame.
-    private const int NativeMinDistance = 1000, NativeMaxDistance = 80000;
-    private const double SoftwareMinDistance = 3000, SoftwareMaxDistance = 300000;
+    // Two tiers, both loosened from the original single 3000-50000 (native) / 12000-120000 (software): neither
+    // end of either tier is load-bearing -- AffGrilleExtWide's wideRadius stays fixed at 2 regardless of
+    // distance (see RunNativeRenderLoop's own comment), so cost doesn't change with zoom, and the software path
+    // is plain double math with no divide-by-zero or index risk at either extreme. Kept finite, not fully
+    // unbounded, only so a runaway scroll (or a held button) can't reach a distance so large or small the view
+    // is just a blank/degenerate frame.
+    //
+    // The scroll wheel is capped at the tighter Wheel* range (5000%-10%) so a fast scroll can't run away to an
+    // extreme in a couple of notches; the text box and holding a +/- button both reach the wider override range
+    // instead (20000%-1%) -- both share the same distance bounds since native and software share
+    // DefaultCameraDistance.
+    private const double WheelMinDistance = 600, WheelMaxDistance = 300000;         // 5000%, 10%
+    private const double OverrideMinDistance = 150, OverrideMaxDistance = 3000000;  // 20000%, 1%
+    private const int NativeMinDistance = (int)OverrideMinDistance, NativeMaxDistance = (int)OverrideMaxDistance;
+    private const double SoftwareMinDistance = OverrideMinDistance, SoftwareMaxDistance = OverrideMaxDistance;
     private void UpdateZoomLabel()
     {
         if (interiorSceneActive) { ZoomLabel.Text = $"{Math.Round(interiorZoom * 100)}%"; return; }
@@ -2611,8 +2627,12 @@ public partial class MainWindow : Window
         else if (interiorSceneActive) FitInteriorView();
         else Reset_Click(sender, e);
     }
-    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1.25); return; } if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(NativeMinDistance, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(SoftwareMinDistance, cameraDistance - 4000); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
-    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1 / 1.25); return; } if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = Math.Min(NativeMaxDistance, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(SoftwareMaxDistance, cameraDistance + 4000); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
+    // A proportional step (~25%), not the old fixed +/-4000 units: now that these are RepeatButtons (holding
+    // one fires Click repeatedly -- see the XAML), a fixed step would take ~750 repeats to cross the override
+    // range's full 150-3000000 span. A ratio step covers it in ~44 regardless of where it starts, and matches
+    // the wheel/terrainEditor/interior zoom's own factor-based feel.
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1.25); return; } if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = (int)Math.Max(NativeMinDistance, nativeDistance / 1.25); RenderNativeCamera(); } else { cameraDistance = Math.Max(SoftwareMinDistance, cameraDistance / 1.25); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1 / 1.25); return; } if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = (int)Math.Min(NativeMaxDistance, nativeDistance * 1.25); RenderNativeCamera(); } else { cameraDistance = Math.Min(SoftwareMaxDistance, cameraDistance * 1.25); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
     // Gated on RotateViewCheckBox so the left mouse button can be freed up
     // for other uses (actor placement/selection, etc.) without it always
     // spinning the camera underneath whatever else is being clicked.
@@ -2715,7 +2735,10 @@ public partial class MainWindow : Window
         orbiting = false; interiorPanning = false;
         if (!paintingTerrain && !panning3D) Mouse.Capture(null);
     }
-    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.Delta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost)); return; } if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), NativeMinDistance, NativeMaxDistance); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, SoftwareMinDistance, SoftwareMaxDistance); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
+    // Capped at the tighter Wheel*/InteriorWheelMaxZoom range -- see NativeMinDistance's own comment. The text
+    // box and holding a +/- button (ZoomIn_Click/ZoomOut_Click/ApplyZoomFromTextBox) reach the wider override
+    // range instead.
+    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.Delta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost), InteriorWheelMaxZoom); return; } if (nativeViewActive) { nativeDistance = (int)Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), WheelMinDistance, WheelMaxDistance); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, WheelMinDistance, WheelMaxDistance); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
     private void RenderNativeCamera()
     {
         if (!nativeViewActive) return;
