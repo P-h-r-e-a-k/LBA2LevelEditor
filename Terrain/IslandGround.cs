@@ -190,6 +190,48 @@ internal static class IslandGround
         }
         return n;
     }
+
+    // Sets each ground triangle's Col (blocked/walkable) bit to whether ITS OWN slope -- from its three
+    // corners, not just the cell's overall rise -- is steeper than maxDegrees from horizontal. The engine
+    // reads Col through GiveTerrainCol (MAPTOOLS.CPP) to refuse a move onto that triangle, the same flag a
+    // hand-authored .ILE already uses for real walls of collision ground. Sets it both ways (also clearing
+    // a triangle that flattened back below the limit), so it stays a live reflection of the current terrain
+    // rather than a one-way stain -- call again with the stroke's own region after any height edit. There is
+    // no manual "paint collision" tool yet, so this can't clobber a hand-set flag; it would if one existed.
+    public static int SetSteepCollision(IslandFile island, IslandRegion region, double maxDegrees)
+    {
+        var n = 0;
+        var limitCos = Math.Cos(Math.Clamp(maxDegrees, 0, 90) * Math.PI / 180);
+        var cells = new HashSet<(int, int)>(region.Vertices(island).Select(v => (v.Gx, v.Gz)));
+        var corner = new (double X, double Y, double Z)[4];
+        foreach (var (gx, gz) in cells)
+        {
+            if (gx >= IslandFile.GridSize || gz >= IslandFile.GridSize) continue;
+            if (island.CubeAt(gx / IslandCube.Cells, gz / IslandCube.Cells) is not { HasPolygons: true } cube) continue;
+            if (island.HeightAt(gx, gz) is not { } y0 || island.HeightAt(gx, gz + 1) is not { } y1
+                || island.HeightAt(gx + 1, gz + 1) is not { } y2 || island.HeightAt(gx + 1, gz) is not { } y3) continue;
+            var x = gx % IslandCube.Cells; var z = gz % IslandCube.Cells;
+            var diagonal = new IslandPolygon(cube.Polygon(x, z, 0)).Diagonal;
+            var cs = IslandFile.CellSize;
+            corner[0] = (gx * (double)cs, y0, gz * (double)cs); corner[1] = (gx * (double)cs, y1, (gz + 1) * (double)cs);
+            corner[2] = ((gx + 1) * (double)cs, y2, (gz + 1) * (double)cs); corner[3] = ((gx + 1) * (double)cs, y3, gz * (double)cs);
+            for (var half = 0; half < 2; half++)
+            {
+                var tri = HalfCorners[(diagonal ? 2 : 0) + half];
+                var (p0x, p0y, p0z) = corner[tri[0]]; var (p1x, p1y, p1z) = corner[tri[1]]; var (p2x, p2y, p2z) = corner[tri[2]];
+                var ux = p1x - p0x; var uy = p1y - p0y; var uz = p1z - p0z;
+                var vx = p2x - p0x; var vy = p2y - p0y; var vz = p2z - p0z;
+                var nx = uy * vz - uz * vy; var ny = uz * vx - ux * vz; var nz = ux * vy - uy * vx;
+                var len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+                var steep = len > 1e-6 && Math.Abs(ny) / len < limitCos;
+                var polygon = new IslandPolygon(cube.Polygon(x, z, half));
+                if (polygon.Col == steep) continue;
+                cube.SetPolygon(x, z, half, polygon.With(col: steep).Raw);
+                n++;
+            }
+        }
+        return n;
+    }
 }
 
 // Decor objects: the bodies of the island's OBL placed in the cubes (positions and ZVs are in the cube's own frame, 0..32767).

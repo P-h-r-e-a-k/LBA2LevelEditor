@@ -124,6 +124,8 @@ internal sealed class IslandEditorView
     private readonly CheckBox horizontalBox = new() { Content = "Horizontal (flatten the slope too)" };
     private readonly CheckBox followBox = new() { Content = "Objects follow the ground", IsChecked = true };
     private readonly CheckBox diagonalBox = new() { Content = "Also copy the diagonal" };
+    private readonly CheckBox steepUnwalkableBox = new() { Content = "Block terrain steeper than the angle below" };
+    private readonly TextBox steepAngleBox = new() { Text = "45" };
     private readonly TextBox azimuthBox = new() { Text = "0" };
     private readonly TextBox elevationBox = new() { Text = "45" };
     private readonly TextBox gainBox = new() { Text = "11" };
@@ -270,9 +272,12 @@ internal sealed class IslandEditorView
         codeBox.SelectedIndex = 1;
         settings.Children.Add(FieldRow("Game code", codeBox, "what the ground does"));
         settings.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL for Add object"));
-        horizontalBox.Foreground = followBox.Foreground = diagonalBox.Foreground = Fore;
+        horizontalBox.Foreground = followBox.Foreground = diagonalBox.Foreground = steepUnwalkableBox.Foreground = Fore;
         terrainShadowBox.Foreground = decorShadowBox.Foreground = Fore;
         settings.Children.Add(horizontalBox); settings.Children.Add(followBox); settings.Children.Add(diagonalBox);
+        steepUnwalkableBox.ToolTip = "While raising, lowering, smoothing or otherwise reshaping the ground, marks any ground triangle steeper than this as blocked (Twinsen can't step onto it) -- and un-marks one that flattens back below it.";
+        settings.Children.Add(steepUnwalkableBox);
+        settings.Children.Add(FieldRow("Unwalkable angle °", steepAngleBox, "from horizontal; a cliff face is close to 90°"));
         stack.Children.Add(Section("Tool settings", settings, open: true, out _));
 
         stack.Children.Add(Section("Under the pointer", info, open: true, out _));
@@ -814,7 +819,7 @@ internal sealed class IslandEditorView
         stroking = true;
         history.Begin();
         strokePlane = null;
-        follow = tool is Tool.Raise or Tool.Lower or Tool.Smooth or Tool.Flatten or Tool.LevelPlane or Tool.Terrace or Tool.Relief && followBox.IsChecked == true ? new IslandOps.DecorFollow(island) : null;
+        follow = ChangesHeight(tool) && followBox.IsChecked == true ? new IslandOps.DecorFollow(island) : null;
         if (tool == Tool.LevelPlane) strokePlane = IslandOps.FitPlane(island, Brush());
         Capture();
         StrokeTick();
@@ -863,6 +868,10 @@ internal sealed class IslandEditorView
         if (!stroking) DrawProfile();
     }
 
+    // The height-sculpting tools: the ones that move vertices, so "objects follow the ground" and the
+    // auto-unwalkable-slope option both apply to exactly this set (and not, say, texture or game-code painting).
+    private static bool ChangesHeight(Tool t) => t is Tool.Raise or Tool.Lower or Tool.Smooth or Tool.Flatten or Tool.LevelPlane or Tool.Terrace or Tool.Relief;
+
     private void StrokeTick()
     {
         if (island is null || renderer is null) return;
@@ -894,6 +903,7 @@ internal sealed class IslandEditorView
             case Tool.FixDiagonals: n = IslandGround.OptimiseDiagonals(island, region); break;
         }
         if (follow is not null && n > 0) follow.Apply();
+        if (n > 0 && ChangesHeight(tool) && steepUnwalkableBox.IsChecked == true) IslandGround.SetSteepCollision(island, region, Number(steepAngleBox, 45));
         if (n > 0) { RedrawAround(pointer.Gx, pointer.Gz, radius.Value + 1); Edited?.Invoke(); }
         if (view is MapView.Shadows or MapView.Height && n > 0) RedrawAround(pointer.Gx, pointer.Gz, radius.Value + 3);
         if (follow is not null && n > 0) RebuildOverlay();
@@ -954,8 +964,17 @@ internal sealed class IslandEditorView
         RunOnce("ramp", () =>
         {
             var f = followBox.IsChecked == true ? new IslandOps.DecorFollow(island) : null;
-            var n = IslandOps.Ramp(island, from, (pointer.Gx, pointer.Gz, h.Value), Math.Max(1, radius.Value * hardness.Value + 0.5), Math.Max(1, radius.Value * (1 - hardness.Value)));
+            var halfWidth = Math.Max(1, radius.Value * hardness.Value + 0.5);
+            var feather = Math.Max(1, radius.Value * (1 - hardness.Value));
+            var n = IslandOps.Ramp(island, from, (pointer.Gx, pointer.Gz, h.Value), halfWidth, feather);
             f?.Apply();
+            if (n > 0 && steepUnwalkableBox.IsChecked == true)
+            {
+                var reach = halfWidth + feather;
+                var region = new RectRegion((int)Math.Floor(Math.Min(from.Gx, pointer.Gx) - reach), (int)Math.Floor(Math.Min(from.Gz, pointer.Gz) - reach),
+                    (int)Math.Ceiling(Math.Max(from.Gx, pointer.Gx) + reach), (int)Math.Ceiling(Math.Max(from.Gz, pointer.Gz) + reach));
+                IslandGround.SetSteepCollision(island, region, Number(steepAngleBox, 45));
+            }
             return n;
         });
         RedrawAll();
@@ -1142,6 +1161,6 @@ internal sealed class IslandEditorView
         var cell = IslandGround.Pick(island, Math.Min((int)Math.Floor(pointer.Gx), IslandFile.GridSize - 1), Math.Min((int)Math.Floor(pointer.Gz), IslandFile.GridSize - 1), 0);
         var light = island.LightAt(gx, gz);
         info.Text = $"vertex {gx}, {gz}   cube {cube.Id} ({cx},{cz})\nworld X {gx * 512}  Z {gz * 512}\nheight {h}  (ground {ground:F0})\nlight {light}  water depth {IslandLightOps.WaterDepthAt(island, gx, gz)}\n"
-            + (cell is null ? "" : $"code {cell.Polygon.CodeJeu} {IslandPolygon.CodeJeuNames[cell.Polygon.CodeJeu]}  tex {cell.Polygon.TextureIndex}  diag {(cell.Polygon.Diagonal ? "1-3" : "0-2")}");
+            + (cell is null ? "" : $"code {cell.Polygon.CodeJeu} {IslandPolygon.CodeJeuNames[cell.Polygon.CodeJeu]}  tex {cell.Polygon.TextureIndex}  diag {(cell.Polygon.Diagonal ? "1-3" : "0-2")}  {(cell.Polygon.Col ? "BLOCKED (unwalkable)" : "walkable")}");
     }
 }
