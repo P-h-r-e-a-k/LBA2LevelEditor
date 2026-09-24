@@ -1,3 +1,4 @@
+using LBAAssembler.LbaScript;
 using LBAAssembler.Scenes;
 using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
@@ -496,12 +497,15 @@ internal sealed partial class Lba1Runtime
             o.OldPosY = o.PosY;
             o.OldPosZ = o.PosZ;
 
-            if (o.OffsetTrack != -1) DoTrack(i);
+            // A breakpoint pausing one actor part-way through this same frame's loop must not let
+            // still-unprocessed actors keep running their own scripts underneath it -- ResumePausedScript
+            // (Continue/Step) re-enters DoTrack/DoLife directly for the paused actor alone, bypassing this.
+            if (o.OffsetTrack != -1 && ScriptBreakpoints.Current is null) DoTrack(i);
             DoAnim(i);
 
             if ((o.Flags & CheckZone) != 0) CheckZoneSce(o, i);
 
-            if (o.OffsetLife != -1) DoLife(i);
+            if (o.OffsetLife != -1 && ScriptBreakpoints.Current is null) DoLife(i);
 
             if (theEnd) return false;
 

@@ -99,9 +99,22 @@
             <TextBlock x:Name="TitleLabel" Text="Actor 0" FontSize="19" Margin="0,4,0,0"/>
         </StackPanel>
 
-        <Border Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5" Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1" Padding="12,10">
-            <TextBlock x:Name="StatsLabel" Text="" FontFamily="Consolas" FontSize="11" Foreground="#234A72" TextWrapping="Wrap"/>
-        </Border>
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5">
+            <Border Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1" Padding="12,10">
+                <TextBlock x:Name="StatsLabel" Text="" FontFamily="Consolas" FontSize="11" Foreground="#234A72" TextWrapping="Wrap"/>
+            </Border>
+            <!-- Shown only while a script breakpoint has paused a live LBA1 Play session (any actor;
+                 several script windows can all show this at once and all act on it). -->
+            <Border x:Name="DebugBar" Background="#FDECC8" BorderBrush="#D9A93B" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" Visibility="Collapsed">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="StepButton" Content="Step" Style="{StaticResource ToolButton}" Click="Step_Click"/>
+                        <Button x:Name="ContinueButton" Content="Continue" Style="{StaticResource ToolButton}" Click="Continue_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="DebugBarText" FontFamily="Consolas" FontSize="12" Foreground="#5A4310" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+        </StackPanel>
 
         <DockPanel Grid.Row="4" Grid.Column="2">
             <TextBlock Text="Script" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
@@ -120,12 +133,16 @@
         <TextBlock Grid.Row="4" Grid.Column="4" Text="Keywords" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
 
         <!-- Read-only disassembly of the same actor's scripts (life, then track), always visible to the left of the C editor. -->
-        <TextBlock Grid.Row="4" Grid.Column="0" Text="Disassembly" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+        <DockPanel Grid.Row="4" Grid.Column="0">
+            <TextBlock Text="Disassembly" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
+            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="#8FB0D6" FontSize="10" VerticalAlignment="Center"/>
+        </DockPanel>
         <TextBox x:Name="DisassemblyTextBox" Grid.Row="6" Grid.Column="0" Grid.RowSpan="3"
                  IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
                  FontFamily="Consolas" FontSize="12" Foreground="#4E6B8A" Background="#FFFFFF"
                  BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
-                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                 PreviewKeyDown="DisassemblyTextBox_PreviewKeyDown"/>
         <GridSplitter Grid.Row="4" Grid.Column="1" Grid.RowSpan="5" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
                       Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"/>
 

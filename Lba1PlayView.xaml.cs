@@ -10,6 +10,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using LBAAssembler.Lba1;
 using LBAAssembler.Lba1.Runtime;
+using LBAAssembler.LbaScript;
 
 namespace LBAAssembler;
 
@@ -75,6 +76,11 @@ public partial class Lba1PlayView : UserControl
         // below input priority, so key presses are never starved by drawing
         timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(20) };
         timer.Tick += (_, _) => Step();
+
+        // Script breakpoints (ActorScriptWindow): Continue/Step call this through the shared store
+        // rather than holding a reference to us; `runtime` is read fresh each time, so it always acts
+        // on whichever scene is currently loaded.
+        ScriptBreakpoints.ResumeRequested = singleStep => runtime.ResumePausedScript(singleStep);
     }
 
     // Starts the scene and the clock (call once the view is in the window).
@@ -152,6 +158,7 @@ public partial class Lba1PlayView : UserControl
 
     private void StartScene(int scene)
     {
+        ScriptBreakpoints.ClearPause();     // a fresh runtime has no position matching any pause the old one hit
         runtime = NewRuntime();
         runtime.ChangeCube(scene);
         loggedEvents = 0;
@@ -507,6 +514,12 @@ public partial class Lba1PlayView : UserControl
         if (++musicClock % 100 == 0) music.Tick();
         if (film is not null) { StepFilm(); lastTick = now; return; }
         if (lastTickReset) { lastTickReset = false; owedMilliseconds = 0; }
+        if (ScriptBreakpoints.Current is { } bp)
+        {
+            owedMilliseconds = 0;
+            StatusText.Text = $"Paused at a breakpoint: actor {bp.Actor} {bp.Kind.ToString().ToLowerInvariant()} script, offset {bp.Offset} (see its script window)";
+            return;
+        }
         if (paused || inventoryOpen) { owedMilliseconds = 0; return; }
 
         var frames = 0;
@@ -922,6 +935,8 @@ public partial class Lba1PlayView : UserControl
         timer.Stop();
         music.Dispose();
         foreach (var voice in voices) voice.Dispose();
+        ScriptBreakpoints.ResumeRequested = null;
+        ScriptBreakpoints.ClearPause();
     }
 }
 

@@ -187,6 +187,39 @@ public sealed class SceneScripts
         }
     }
 
+    // Bytecode offset <-> C-source line (0-based, matching OriginalText's own line numbering) for the
+    // ORIGINAL (saved) script -- used to set a breakpoint by pressing F9 on a line in the C pane, and
+    // to show which line a paused/breakpointed offset belongs to. Only meaningful while the script is
+    // unedited: once edited, the offsets it will actually compile to are unknown until it's saved, so
+    // callers should check IsEdited first. Also approximate for a script with stored comments: the
+    // woven text CommentWeaver inserts them into can shift line numbers this doesn't see -- the
+    // Disassembly pane (never woven) stays exact regardless.
+    public int? OriginalOffsetForLine(int actor, ScriptKind kind, int line)
+    {
+        var d = OriginalDecompiled(actor, kind);
+        for (var i = 0; i < d.Code.Count; i++)
+            if (d.CodeLine[i] == line && d.Code[i].Offset >= 0) return d.Code[i].Offset;
+        return null;
+    }
+
+    public int? OriginalLineForOffset(int actor, ScriptKind kind, int offset)
+    {
+        var d = OriginalDecompiled(actor, kind);
+        for (var i = 0; i < d.Code.Count; i++)
+            if (d.Code[i].Offset == offset) return d.CodeLine[i] >= 0 ? d.CodeLine[i] : null;
+        return null;
+    }
+
+    private DecompiledScript OriginalDecompiled(int actor, ScriptKind kind)
+    {
+        using var scope = Scope();
+        var e = EntryOf(actor, kind);
+        var header = Header(actor, kind);
+        return kind == ScriptKind.Life
+            ? LifeText.DecompileMapped(e.Original, actor, symbols, header)
+            : TrackText.DecompileMapped(e.Original, header);
+    }
+
     // Forgets the cached decompilations so they are printed again (after a
     // ScriptStyle change). Edited text is the user's own and is left alone.
     public void InvalidateTextCache()

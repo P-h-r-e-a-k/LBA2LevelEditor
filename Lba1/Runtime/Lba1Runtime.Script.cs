@@ -1,3 +1,4 @@
+using LBAAssembler.LbaScript;
 using static LBAAssembler.Lba1.Runtime.Lba1Const;
 
 namespace LBAAssembler.Lba1.Runtime;
@@ -186,6 +187,7 @@ internal sealed partial class Lba1Runtime
         {
             if (pc < 0 || pc >= prg.Length) { o.OffsetLife = -1; return; }
             var macroAt = pc;
+            if (ScriptBreakpoints.Hit(NumCube, numObj, ScriptKind.Life, macroAt)) { o.OffsetLife = macroAt; break; }
             switch (Next())
             {
                 case Lm.End:
@@ -619,6 +621,7 @@ internal sealed partial class Lba1Runtime
         {
             if (o.OffsetTrack < 0 || o.OffsetTrack >= o.Track.Length) { o.OffsetTrack = -1; return; }
             var memoOffsetTrack = o.OffsetTrack;
+            if (ScriptBreakpoints.Hit(NumCube, numObj, ScriptKind.Track, memoOffsetTrack)) { o.OffsetTrack = memoOffsetTrack; break; }
             var track = o.Track;
             var p = o.OffsetTrack + 1;      // first operand
             var macro = track[o.OffsetTrack];
@@ -893,5 +896,15 @@ internal sealed partial class Lba1Runtime
                     break;
             }
         }
+    }
+
+    // Bound to ScriptBreakpoints.ResumeRequested: by the time this runs, Resume() has already armed
+    // the one-shot skip/re-pause flags Hit() checks, so this just re-enters the paused script's own
+    // interpreter directly (outside the normal per-frame tick) and lets that logic play out -- either
+    // one instruction then re-pausing (Step), or running until the next yield/breakpoint (Continue).
+    public void ResumePausedScript(bool _)
+    {
+        if (ScriptBreakpoints.Current is not { } c || c.Scene != NumCube) return;
+        if (c.Kind == ScriptKind.Life) DoLife(c.Actor); else DoTrack(c.Actor);
     }
 }

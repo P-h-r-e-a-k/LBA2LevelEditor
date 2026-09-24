@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -59,11 +60,24 @@ public partial class ActorScriptWindow : Window
     private bool switchingView;
     private int actorIndex;
 
+    private static readonly Regex OffsetLineRegex = new(@"^\s*(\d+):", RegexOptions.Multiline);
+
     private string nativeScript = "(no script)";
     private SceneScripts? sceneScripts;
     private ActorSource source;
     private ScriptView view = ScriptView.Life;
     private int lastErrorLine;
+
+    // Breakpoints/pause: the (scene, in-scene actor) key ScriptBreakpoints uses, resolved independently
+    // of sceneScripts (which needs a loaded session and is null for e.g. an actor added this session).
+    // -1 means this actor has no known scene position, so breakpoints can't be set here at all.
+    private int debugScene = -1;
+    private int debugActor = -1;
+    // Whether nativeScript is in the "{offset,5}: " format (LBA1's shared Disassembly.cs) -- LBA2's
+    // native disassembly (RENDERER_ACTORS.CPP) has no offsets in its text, so it can't be decorated
+    // with breakpoint markers or clicked to set one; only the C pane (same compiler for both games)
+    // can set LBA2 breakpoints.
+    private bool disassemblyHasOffsets;
 
     // describeActor: the stats line and disassembly for games without the native renderer (LBA1);
     // afterSave: called once the session has written SCENE.HQR (the caller reloads what it shows).
@@ -79,6 +93,8 @@ public partial class ActorScriptWindow : Window
 
         checkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
         checkTimer.Tick += (_, _) => { checkTimer.Stop(); RunCheck(); };
+
+        ScriptBreakpoints.Changed += OnBreakpointsChanged;
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -86,6 +102,7 @@ public partial class ActorScriptWindow : Window
         // Edits belong to the session, not the window: keep them.
         CommitEditor();
         checkTimer.Stop();
+        ScriptBreakpoints.Changed -= OnBreakpointsChanged;
         base.OnClosing(e);
     }
 
@@ -122,7 +139,11 @@ public partial class ActorScriptWindow : Window
         }
 
         sceneScripts = null;
-        if (resolveActor?.Invoke(actorIndex) is { } src && session?.GetScene(src.Scene) is { } scene && src.Slot < scene.ActorCount)
+        debugScene = -1;
+        debugActor = -1;
+        var resolved = resolveActor?.Invoke(actorIndex);
+        if (resolved is { } anySrc) { debugScene = anySrc.Scene; debugActor = anySrc.Slot; }
+        if (resolved is { } src && session?.GetScene(src.Scene) is { } scene && src.Slot < scene.ActorCount)
         {
             sceneScripts = scene;
             source = src;
@@ -135,9 +156,11 @@ public partial class ActorScriptWindow : Window
         RevertButton.IsEnabled = hasScene;
         SaveButton.IsEnabled = hasScene;
 
-        DisassemblyTextBox.Text = nativeScript;
+        disassemblyHasOffsets = OffsetLineRegex.IsMatch(nativeScript);
+        DisassemblyTextBox.Text = DecorateDisassembly(nativeScript);
         DisassemblyTextBox.ScrollToHome();
         SelectView(view);
+        RefreshDebugBar();
 
         if (!IsVisible) Show();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -179,7 +202,7 @@ public partial class ActorScriptWindow : Window
         {
             text = sceneScripts!.GetText(source.Slot, CurrentKind);
             ScriptTextBox.IsReadOnly = false;
-            HintLabel.Text = "C source — comments are kept in SCENE.HQR.comments.json; edits stay in memory until you Save";
+            HintLabel.Text = "C source — comments are kept in SCENE.HQR.comments.json; edits stay in memory until you Save · F9 sets a breakpoint (unedited script only)";
         }
         else
         {
@@ -198,6 +221,118 @@ public partial class ActorScriptWindow : Window
         RefreshKeywordList();
         RefreshSuggestionPool();
         RunCheck();
+    }
+
+    // ---- breakpoints ----------------------------------------------------------
+
+    // Prefixes every instruction line with a 2-character marker (breakpoint set / currently paused
+    // there / neither) using the same offset the line already prints -- safe because the Disassembly
+    // pane is read-only text this window generates itself. A no-op for LBA2 (see disassemblyHasOffsets).
+    private string DecorateDisassembly(string raw)
+    {
+        if (!disassemblyHasOffsets || debugScene < 0) return raw;
+        var lines = raw.Replace("\r\n", "\n").Split('\n');
+        var kind = ScriptKind.Life;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            if (line.StartsWith("TRACK SCRIPT")) kind = ScriptKind.Track;
+            else if (line.StartsWith("LIFE SCRIPT")) kind = ScriptKind.Life;
+            var m = OffsetLineRegex.Match(line);
+            if (!m.Success) { lines[i] = "  " + line; continue; }
+            var offset = int.Parse(m.Groups[1].Value);
+            var paused = ScriptBreakpoints.Current is { } c && c.Scene == debugScene && c.Actor == debugActor && c.Kind == kind && c.Offset == offset;
+            var set = ScriptBreakpoints.IsSet(debugScene, debugActor, kind, offset);
+            lines[i] = (paused ? "▶ " : set ? "● " : "  ") + line;
+        }
+        return string.Join("\n", lines);
+    }
+
+    private int FindDisassemblyLineForOffset(ScriptKind kind, int offset)
+    {
+        var lines = DisassemblyTextBox.Text.Replace("\r\n", "\n").Split('\n');
+        var k = ScriptKind.Life;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var body = lines[i].Length >= 2 ? lines[i][2..] : lines[i];
+            if (body.StartsWith("TRACK SCRIPT")) k = ScriptKind.Track;
+            else if (body.StartsWith("LIFE SCRIPT")) k = ScriptKind.Life;
+            var m = OffsetLineRegex.Match(body);
+            if (m.Success && k == kind && int.Parse(m.Groups[1].Value) == offset) return i;
+        }
+        return -1;
+    }
+
+    private void RefreshDebugBar()
+    {
+        if (ScriptBreakpoints.Current is not { } c)
+        {
+            DebugBar.Visibility = Visibility.Collapsed;
+            return;
+        }
+        DebugBar.Visibility = Visibility.Visible;
+        var here = c.Scene == debugScene && c.Actor == debugActor;
+        DebugBarText.Text = $"Paused: scene {c.Scene}, actor {c.Actor} {c.Kind.ToString().ToLowerInvariant()} script, offset {c.Offset}" + (here ? "  (this window)" : "");
+    }
+
+    private void OnBreakpointsChanged()
+    {
+        RefreshDebugBar();
+        DisassemblyTextBox.Text = DecorateDisassembly(nativeScript);
+        if (ScriptBreakpoints.Current is { } c && c.Scene == debugScene && c.Actor == debugActor &&
+            FindDisassemblyLineForOffset(c.Kind, c.Offset) is >= 0 and var line)
+        {
+            DisassemblyTextBox.ScrollToLine(line);
+            DisassemblyTextBox.Select(DisassemblyTextBox.GetCharacterIndexFromLineIndex(line), DisassemblyTextBox.GetLineLength(line));
+        }
+    }
+
+    private void Step_Click(object sender, RoutedEventArgs e) => ScriptBreakpoints.Resume(singleStep: true);
+    private void Continue_Click(object sender, RoutedEventArgs e) => ScriptBreakpoints.Resume(singleStep: false);
+
+    private void DisassemblyTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.F9 || !disassemblyHasOffsets || debugScene < 0) return;
+        e.Handled = true;
+        var caretLine = DisassemblyTextBox.GetLineIndexFromCharacterIndex(DisassemblyTextBox.CaretIndex);
+        var kind = ScriptKind.Life;
+        for (var i = 0; i <= caretLine; i++)
+        {
+            var text = DisassemblyTextBox.Text.Substring(DisassemblyTextBox.GetCharacterIndexFromLineIndex(i), DisassemblyTextBox.GetLineLength(i));
+            if (text.Contains("TRACK SCRIPT")) kind = ScriptKind.Track;
+            else if (text.Contains("LIFE SCRIPT")) kind = ScriptKind.Life;
+        }
+        var lineText = DisassemblyTextBox.Text.Substring(DisassemblyTextBox.GetCharacterIndexFromLineIndex(caretLine), DisassemblyTextBox.GetLineLength(caretLine));
+        var body = lineText.Length >= 2 ? lineText[2..] : lineText;
+        var m = OffsetLineRegex.Match(body);
+        if (!m.Success) return;
+        ScriptBreakpoints.Toggle(debugScene, debugActor, kind, int.Parse(m.Groups[1].Value));
+    }
+
+    // Breakpoint by C-source line: uses the same compiled bytecode's line/offset map for both games
+    // (SceneScripts wraps the same decompiler regardless), but only while the script matches what's
+    // actually stored -- an edited-but-unsaved script's eventual offsets aren't known yet.
+    private void ToggleCPaneBreakpoint()
+    {
+        if (!IsCView || debugScene < 0) return;
+        if (sceneScripts!.IsEdited(source.Slot, CurrentKind))
+        {
+            StatusText.Text = "Revert or save this script before setting a breakpoint by line here (line numbers may have shifted).";
+            StatusText.Foreground = WarnBrush;
+            return;
+        }
+        var line = ScriptTextBox.GetLineIndexFromCharacterIndex(ScriptTextBox.CaretIndex);
+        var offset = sceneScripts.OriginalOffsetForLine(source.Slot, CurrentKind, line);
+        if (offset is null)
+        {
+            StatusText.Text = $"Line {line + 1} has no instruction to break on.";
+            StatusText.Foreground = WarnBrush;
+            return;
+        }
+        var nowSet = !ScriptBreakpoints.IsSet(debugScene, debugActor, CurrentKind, offset.Value);
+        ScriptBreakpoints.Toggle(debugScene, debugActor, CurrentKind, offset.Value);
+        StatusText.Text = nowSet ? $"● breakpoint set at line {line + 1} (offset {offset.Value})" : $"breakpoint cleared at line {line + 1}";
+        StatusText.Foreground = OkBrush;
     }
 
     // Stores the editor's text into the session for the actor/script being shown.
@@ -354,6 +489,11 @@ public partial class ActorScriptWindow : Window
         else if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control && IsCView)
         {
             Save_Click(sender, e);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.F9)
+        {
+            ToggleCPaneBreakpoint();
             e.Handled = true;
         }
     }
