@@ -18,6 +18,7 @@ extern S32 GfxDitherShading;
 #include "CONFIG_FILE.H"
 #include "CONTROL.H"
 #include "RES_SWITCH.H"
+#include "SCRIPT_BREAKPOINT.H"
 #include "CONSOLE/CONSOLE.H"
 #include "EXIT_SCREEN.H"
 #include "PERFTRACE.H"
@@ -1752,7 +1753,11 @@ restartloop:
             ptrobj->OldPosY = ptrobj->Obj.Y;
             ptrobj->OldPosZ = ptrobj->Obj.Z;
 
-            if (ptrobj->OffsetTrack != -1) {
+            // A breakpoint pausing one actor part-way through this same frame's loop must not
+            // let still-unprocessed actors keep running their own scripts underneath it -- the
+            // "continue"/"step" console commands re-enter DoTrack/DoLife directly for the paused
+            // actor alone, bypassing this gate (see SCRIPT_BREAKPOINT.H).
+            if (ptrobj->OffsetTrack != -1 && !ScriptBreakpoint_IsPaused()) {
                 DoTrack(i);
             }
 
@@ -1796,7 +1801,7 @@ restartloop:
                     ActionNormal = FALSE;
             }
 
-            if (ptrobj->OffsetLife != -1) {
+            if (ptrobj->OffsetLife != -1 && !ScriptBreakpoint_IsPaused()) {
                 DoLife(i);
             }
 

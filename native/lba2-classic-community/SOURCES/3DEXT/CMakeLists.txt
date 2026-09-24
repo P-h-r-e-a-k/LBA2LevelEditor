@@ -16,6 +16,16 @@ set_target_properties(lba2_renderer PROPERTIES OUTPUT_NAME "lba2_renderer")
 target_link_libraries(lba2_renderer PUBLIC lba2_renderer_engine)
 target_include_directories(lba2_renderer PUBLIC ../../LIB386/H ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/SOURCES)
 target_compile_definitions(lba2_renderer PUBLIC ONE_GAME_DIRECTORY LBA_GAME CDROM)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # Same rationale as SOURCES/CMakeLists.txt's identical link option for ${LBA2_EXECUTABLE_NAME}: GCC's LTO
+    # codegen mis-infers T_PLASMA::data_start's size (ANIMTEX.CPP's plasma case) and turns the compile-time
+    # -Wno-stringop-overflow suppression (already applied to that one source file, shared by both targets)
+    # into a link-time error instead, since with LTO the diagnostic fires during the link's own codegen. That
+    # target's link_options already covers it; this one -- a separate target in a different CMakeLists.txt --
+    # did not, so a clean build of lba2_renderer alone failed here (`ld returned 5`, no other diagnostic) even
+    # though lba2cc linked fine.
+    target_link_options(lba2_renderer PRIVATE "-Wno-stringop-overflow")
+endif()
 if(WIN32 AND LBA2_LINK_STATIC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # Same rationale as SOURCES/CMakeLists.txt's identical block for
     # ${LBA2_EXECUTABLE_NAME}: fold the GCC C++ runtime into the DLL so

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using LBAAssembler.Lba1;
+using LBAAssembler.LbaScript;
 
 namespace LBAAssembler;
 
@@ -11,8 +12,15 @@ namespace LBAAssembler;
 // is stopped (or, for LBA2, quits itself). The scene played is the one that is open: Lba2SceneToPlay / the LBA1 scene on screen.
 public partial class MainWindow
 {
+    // Fixed rather than dynamically chosen: only one LBA2 Play session runs at a time in this
+    // editor, and --listen is bound to 127.0.0.1 only (see CONTROL_SERVER.CPP), so there's no
+    // real collision risk worth the extra complexity of hunting a free port.
+    private const int Lba2BreakpointsPort = 27015;
+
     private EmbeddedGameHost? gameHost;
     private Lba1PlayView? lba1Play;
+    private Lba2ControlClient? lba2Control;
+    private int lba2ControlScene;
     private bool playing;
     private GameKind playingGame;
 
@@ -104,6 +112,7 @@ public partial class MainWindow
         gameHost = null;
         lba1Play?.Stop();
         lba1Play = null;
+        StopLba2Control();
         PlayOverlay.Visibility = Visibility.Collapsed;
         PlayButton.Visibility = Visibility.Visible;
         PlayRunningPanel.Visibility = Visibility.Collapsed;
@@ -180,6 +189,7 @@ public partial class MainWindow
         options.Spawn = spawn;
         options.ZoneMask = ZoneMask();
         options.Paths = pathsVisible;
+        options.ListenPort = Lba2BreakpointsPort;
 
         var label = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"scene {scene}";
         var host = new EmbeddedGameHost();
@@ -209,5 +219,83 @@ public partial class MainWindow
             return;
         }
         PlayStatus.Text = $"Playing {label}. It plays what is saved on disk. Click the game to give it the keyboard.";
+        lba2ControlScene = scene;
+        _ = StartLba2Control(scene);
+    }
+
+    // ---- LBA2 script breakpoints (the --listen control socket) ------------------------------------------------------------------------
+
+    // Connects once the game's window is already up and running; fire-and-forget from StartLba2Play
+    // so a slow or failed connection (the engine takes a moment to start listening; breakpoints are
+    // simply unavailable if it never does) doesn't hold up "Playing ..." showing. Breakpoints set for
+    // a different scene than the one now playing are not sent -- actor slot numbers are only
+    // meaningful within whichever scene the engine currently has loaded.
+    private async Task StartLba2Control(int scene)
+    {
+        var client = await Lba2ControlClient.ConnectAsync(Lba2BreakpointsPort, CancellationToken.None);
+        if (!playing || playingGame != GameKind.Lba2 || lba2ControlScene != scene) { client?.Dispose(); return; }
+        if (client is null) { DebugLog.Log("MainWindow: LBA2 control socket didn't come up; script breakpoints are unavailable this session."); return; }
+        lba2Control = client;
+        // A breakpoint hit during ordinary, unprompted play (not the result of Continue/Step,
+        // which read their own outcome from the command's response instead -- see ResumeLba2).
+        client.BreakpointHit += (actor, kind, offset) => Dispatcher.Invoke(() =>
+            ScriptBreakpoints.ReportExternalPause(lba2ControlScene, actor, (ScriptKind)kind, offset));
+        client.Disconnected += why => Dispatcher.Invoke(() =>
+        {
+            if (!ReferenceEquals(lba2Control, client)) return;
+            DebugLog.Log($"MainWindow: LBA2 control socket disconnected: {why}");
+            lba2Control = null;
+            if (ScriptBreakpoints.Current is { } c && c.Scene == lba2ControlScene) ScriptBreakpoints.ClearPause();
+        });
+        ScriptBreakpoints.ResumeRequested = singleStep => { if (lba2Control is { } c) _ = ResumeLba2(c, singleStep); };
+        ScriptBreakpoints.Changed += SyncLba2Breakpoints;
+        await SyncLba2BreakpointsAsync(client);
+    }
+
+    // "paused actor=.. kind=.. offset=.." | "running", the last line of continue/step's own
+    // response (see CONSOLE_CMD.CPP's cmd_continue_or_step) -- read from there rather than the
+    // async "! [breakpoint] paused ..." event, which races this same response down a separately
+    // flushed channel.
+    private static readonly System.Text.RegularExpressions.Regex PausedResponseLine =
+        new(@"paused actor=(-?\d+) kind=(\d+) offset=(-?\d+)");
+
+    private async Task ResumeLba2(Lba2ControlClient client, bool singleStep)
+    {
+        string response;
+        try { response = await client.SendAsync(singleStep ? "step" : "continue"); }
+        catch (IOException) { return; }
+        if (lba2Control != client) return;      // a new session started while this was in flight
+        var m = PausedResponseLine.Match(response);
+        if (m.Success)
+            ScriptBreakpoints.ReportExternalPause(lba2ControlScene, int.Parse(m.Groups[1].Value), (ScriptKind)int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
+        else if (ScriptBreakpoints.Current is { } c && c.Scene == lba2ControlScene)
+            ScriptBreakpoints.ClearPause();
+    }
+
+    private void StopLba2Control()
+    {
+        ScriptBreakpoints.Changed -= SyncLba2Breakpoints;
+        ScriptBreakpoints.ResumeRequested = null;
+        lba2Control?.Dispose();
+        lba2Control = null;
+        if (ScriptBreakpoints.Current is { } c && c.Scene == lba2ControlScene) ScriptBreakpoints.ClearPause();
+    }
+
+    private void SyncLba2Breakpoints()
+    {
+        if (lba2Control is { } client) _ = SyncLba2BreakpointsAsync(client);
+    }
+
+    // Full resync rather than an incremental diff: breakpoint toggles are rare, manual UI actions,
+    // so the simplicity is worth more than the (negligible) extra socket traffic.
+    private async Task SyncLba2BreakpointsAsync(Lba2ControlClient client)
+    {
+        try
+        {
+            await client.SendAsync("breakpoint clear");
+            foreach (var bp in ScriptBreakpoints.ForScene(lba2ControlScene))
+                await client.SendAsync($"breakpoint add {bp.Actor} {(bp.Kind == ScriptKind.Track ? "track" : "life")} {bp.Offset}");
+        }
+        catch (IOException) { }
     }
 }

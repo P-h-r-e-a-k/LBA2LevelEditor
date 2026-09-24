@@ -80,6 +80,7 @@ internal sealed class Lba2PlayOptions
     public (int X, int Y, int Z)? Spawn;                // where the hero starts (in the scene's own coordinates); null = where the scene puts him
     public AudioLevels? Audio;                          // the sound balance (default: the settings' LBA2 balance)
     public string? LoadSave;                            // a save (in the user folder's save\) that the game loads instead of starting a new game
+    public int? ListenPort;                             // --listen <port>: the script-breakpoints control socket (Lba2ControlClient), bound to 127.0.0.1 only
 
     public Lba2PlayOptions WithScene(int scene)
     {
@@ -105,6 +106,7 @@ internal sealed class Lba2PlayOptions
         if (Spawn is { } spawn) { args.Add("--exec-at"); args.Add("40"); args.Add($"teleport {spawn.X} {spawn.Y} {spawn.Z}"); }
         if (!Sound) args.Add("--no-audio");
         if (KeepFocus) args.Add("--ignore-focus");
+        if (ListenPort is { } port) { args.Add("--listen"); args.Add(port.ToString()); }
         var extra = Commands.Replace("\r", "").Replace("\n", ";").Trim(' ', ';');
         if (extra.Length > 0) { args.Add("--exec-at"); args.Add("180"); args.Add(extra); }
         // The engine's command harness disarms itself after the first tick unless it was given a tick budget (its default budget is

@@ -6,6 +6,7 @@
 #include <SYSTEM/KEYBOARD_KEYS.H>
 #include <SYSTEM/LOG.H> // lifetrace
 #include "AMBIANCE.H"
+#include "SCRIPT_BREAKPOINT.H"
 
 U8 *PtrPrg;
 U8 TypeAnswer;
@@ -788,6 +789,10 @@ void DoLife(U8 numobj) {
 
     while (flag != -1) {
         ptrmacro = PtrPrg;
+        if (ScriptBreakpoint_Hit((S32)numobj, 0, (S32)(ptrmacro - ptrobj->PtrLife))) {
+            ptrobj->OffsetLife = (S32)(ptrmacro - ptrobj->PtrLife);
+            break;
+        }
         switch (*PtrPrg++) {
             //---------------------------------------------------------------------------
         case LM_END:

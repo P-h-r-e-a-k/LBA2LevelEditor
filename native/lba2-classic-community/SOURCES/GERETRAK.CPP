@@ -3,6 +3,7 @@
 #include <SYSTEM/KEYBOARD_KEYS.H>
 #include <stdint.h>
 #include "AMBIANCE.H"
+#include "SCRIPT_BREAKPOINT.H"
 
 /*══════════════════════════════════════════════════════════════════════════*
 	  █▀▀▀▀ █▀▀▀▀ █▀▀▀█ █▀▀▀▀       ▀▀█▀▀ █▀▀▀█ █▀▀▀█ █▀▀▀▀ █  ▄▀
@@ -153,6 +154,11 @@ void DoTrack(U8 numobj) {
     flag = TRUE;
     while (flag) {
         memooffsettrack = ptrobj->OffsetTrack;
+
+        if (ScriptBreakpoint_Hit((S32)numobj, 1, (S32)memooffsettrack)) {
+            ptrobj->OffsetTrack = memooffsettrack;
+            break;
+        }
 
         ptrtrack = ptrobj->PtrTrack;
         ptrtrack += ptrobj->OffsetTrack; /* offset macro en cours */

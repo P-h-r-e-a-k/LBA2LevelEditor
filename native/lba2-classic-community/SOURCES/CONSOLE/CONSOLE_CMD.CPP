@@ -24,6 +24,9 @@ extern S32 GfxDitherShading;
 #include "../INPUT.H"
 #include "../CONTROL.H" // Control_Input* harness timeline, Control_KeyHold
 #include "../RECORD.H"  // session recorder: the `rec` verbs
+#include "../SCRIPT_BREAKPOINT.H" // breakpoint/continue/step: the editor's embedded Play debugger
+#include "../GERELIFE.H"          // DoLife: continue/step re-enter it directly for the paused actor
+#include "../GERETRAK.H"          // DoTrack: same, for a paused track script
 // K_* scancodes for the `key` command's name table.
 #include <SYSTEM/KEYBOARD_KEYS.H>
 #include "../JOYSTICK.H"
@@ -1896,6 +1899,70 @@ static void cmd_objtrace(int argc, const char *argv[]) {
         Console_Print("objtrace: off");
 }
 
+/* breakpoint add|remove <objN> <life|track> <offset> | breakpoint clear: the level editor's
+   script-window breakpoints, driven over the --listen control socket. A hit pauses the whole
+   simulation (PERSO.CPP's per-actor loop stops calling DoTrack/DoLife while paused) and logs
+   "[breakpoint] paused ..." -- a `stream on` client sees that line pushed live. See `continue`
+   and `step` below to resume. */
+static void cmd_breakpoint(int argc, const char *argv[]) {
+    if (argc >= 2 && !strcasecmp(argv[1], "clear")) {
+        ScriptBreakpoint_Clear();
+        Console_Print("breakpoint: cleared");
+        return;
+    }
+    if (argc >= 5 && (!strcasecmp(argv[1], "add") || !strcasecmp(argv[1], "remove"))) {
+        S32 actor = atoi(argv[2]);
+        S32 kind = !strcasecmp(argv[3], "track") ? 1 : 0;
+        S32 offset = atoi(argv[4]);
+        if (!strcasecmp(argv[1], "add")) {
+            ScriptBreakpoint_Add(actor, kind, offset);
+            Console_Print("breakpoint: added actor=%d kind=%d offset=%d", (int)actor, (int)kind, (int)offset);
+        } else {
+            ScriptBreakpoint_Remove(actor, kind, offset);
+            Console_Print("breakpoint: removed actor=%d kind=%d offset=%d", (int)actor, (int)kind, (int)offset);
+        }
+        return;
+    }
+    Console_Print("usage: breakpoint add|remove <objN> <life|track> <offset> | breakpoint clear");
+}
+
+/* continue | step: resume a script paused at a breakpoint. `step` re-pauses after exactly one
+   more instruction; `continue` runs freely until the next breakpoint (or its natural yield). A
+   no-op with a message when nothing is paused. */
+static void cmd_continue_or_step(S32 singleStep) {
+    if (!ScriptBreakpoint_IsPaused()) {
+        Console_Print("not paused");
+        return;
+    }
+    S32 actor = ScriptBreakpoint_PausedActor();
+    S32 kind = ScriptBreakpoint_PausedKind();
+    ScriptBreakpoint_Resume(singleStep);
+    if (kind == 0)
+        DoLife((U8)actor);
+    else
+        DoTrack((U8)actor);
+    ScriptBreakpoint_SettleAfterResume();
+    Console_Print(singleStep ? "step" : "continue");
+    /* The resulting state, in the command's OWN response rather than left to the "! [breakpoint]
+       paused ..." push event: that event and this response race down two independently-flushed
+       channels (ControlServer_Poll flushes queued events before running the next pending command,
+       so an event this same call queues is not guaranteed to reach the driver before or after this
+       response -- see docs/knowledge/formats/control-socket-protocol.md). A driver that only acts
+       on this line never has to resolve that race. */
+    if (ScriptBreakpoint_IsPaused())
+        Console_Print("paused actor=%d kind=%d offset=%d", (int)ScriptBreakpoint_PausedActor(), (int)ScriptBreakpoint_PausedKind(), (int)ScriptBreakpoint_PausedOffset());
+    else
+        Console_Print("running");
+}
+static void cmd_continue(int argc, const char *argv[]) {
+    (void)argc; (void)argv;
+    cmd_continue_or_step(0);
+}
+static void cmd_step(int argc, const char *argv[]) {
+    (void)argc; (void)argv;
+    cmd_continue_or_step(1);
+}
+
 /* useitem <n> [frames] [delay] | useitem trace <0|1>: inject a one-frame inventory item-use of
    var-game item n (as MenuInventory would), so an NPC's give-item check (LF_USE_INVENTORY) can be
    driven headlessly. `frames` injects over N frames, `delay` waits N frames first (land past a load
@@ -2504,6 +2571,15 @@ void Console_RegisterAll(void) {
                               "Logs the object's X/Y/Z, animation and track offset every simulated "
                               "frame. Pairs with lifetrace: that says what the script chose, this "
                               "says where the object ended up.");
+    Console_RegisterCommandEx("breakpoint", cmd_breakpoint, "Set/clear a script breakpoint",
+                              "breakpoint add|remove <objN> <life|track> <offset> | breakpoint clear",
+                              "A hit pauses the whole simulation and logs \"[breakpoint] paused "
+                              "actor=.. kind=.. offset=..\" (pushed live to a `stream on` client). "
+                              "See `continue` and `step`.");
+    Console_RegisterCommandEx("continue", cmd_continue, "Resume a script paused at a breakpoint",
+                              "continue", "Runs freely until the next breakpoint or the script's own next yield.");
+    Console_RegisterCommandEx("step", cmd_step, "Advance a paused script by one instruction",
+                              "step", "Executes exactly the next instruction, then re-pauses.");
     Console_RegisterCommandEx("useitem", cmd_useitem, "Inject an inventory item-use (headless)",
                               "useitem <n> [frames] [delay] | useitem trace <0|1>",
                               "Injects InventoryAction=n (drives LF_USE_INVENTORY without menu input); "

@@ -45,6 +45,11 @@ public static class ScriptBreakpoints
     public static IEnumerable<ScriptBreakpoint> For(int scene, int actor, ScriptKind kind) =>
         points.Where(p => p.Scene == scene && p.Actor == actor && p.Kind == kind);
 
+    // Every breakpoint set for one scene, any actor/kind -- what a native LBA2 Play session (whose
+    // own breakpoint set lives entirely in the engine process, over the --listen control socket)
+    // needs to sync on connect and whenever the set changes.
+    public static IEnumerable<ScriptBreakpoint> ForScene(int scene) => points.Where(p => p.Scene == scene);
+
     public static void Toggle(int scene, int actor, ScriptKind kind, int offset)
     {
         var bp = new ScriptBreakpoint(scene, actor, kind, offset);
@@ -117,4 +122,11 @@ public static class ScriptBreakpoints
         Changed?.Invoke();
         return true;
     }
+
+    // Reported by a native LBA2 Play session (over the --listen control socket) when its own,
+    // entirely-native breakpoint state paused -- unlike Hit() above (LBA1's own interpreter loop
+    // checking itself against this class's local state), this just reflects something that
+    // already happened elsewhere; it doesn't touch skipArmed/forcePauseNext, which are purely
+    // internal to Hit()'s own state machine and meaningless for a pause LBA2 owns natively.
+    public static void ReportExternalPause(int scene, int actor, ScriptKind kind, int offset) => Pause(scene, actor, kind, offset);
 }
