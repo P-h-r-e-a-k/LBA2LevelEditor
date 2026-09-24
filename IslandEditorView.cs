@@ -103,6 +103,20 @@ internal sealed class IslandEditorView
     private bool draggingDecor;
     private (int X, int Y, int W, int H)? tile;
     private readonly DispatcherTimer strokeTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
+    // Coalesces the overlay rebuild during a zoom/pan gesture: overlay is a child of `world` (see its
+    // constructor wiring), so it already moves and scales for free under world's own RenderTransform --
+    // RebuildOverlay only needs to run again to keep grid/marker stroke widths crisp (thin = 1/zoom), not to
+    // reposition anything. Rebuilding on every wheel notch or mouse-move pixel (both fire dozens of times a
+    // second) was walking every island cube's decor list and reallocating a Rectangle+Ellipse per decor each
+    // time, which is what made zooming/panning feel stuttery. One rebuild ~80ms after the gesture settles
+    // looks identical and costs a tiny fraction as much.
+    private readonly DispatcherTimer overlayRebuildTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
+
+    private void ScheduleOverlayRebuild()
+    {
+        overlayRebuildTimer.Stop();
+        overlayRebuildTimer.Start();
+    }
 
     // controls
     private readonly ComboBox viewBox = new();
@@ -182,6 +196,7 @@ internal sealed class IslandEditorView
         this.gameDirectory = gameDirectory;
         BuildLayout();
         strokeTimer.Tick += (_, _) => { if (stroking) StrokeTick(); };
+        overlayRebuildTimer.Tick += (_, _) => { overlayRebuildTimer.Stop(); RebuildOverlay(); };
     }
 
     // The game folder can change under File > Settings.
@@ -608,7 +623,11 @@ internal sealed class IslandEditorView
     private void ApplyTransform()
     {
         world.RenderTransform = new MatrixTransform(zoom, 0, 0, zoom, pan.X, pan.Y);
-        RebuildOverlay();
+        // overlay is a child of world (see BuildLayout), so it already tracks this transform for free --
+        // only stroke widths (thin = 1/zoom in RebuildOverlay) actually go stale here, and only on a zoom
+        // change, not a pure pan. Scheduling instead of rebuilding inline is what keeps a wheel/drag gesture
+        // smooth; see ScheduleOverlayRebuild's own comment.
+        ScheduleOverlayRebuild();
     }
 
     private void FitView()
@@ -621,7 +640,11 @@ internal sealed class IslandEditorView
 
     private void ZoomAt(Point at, double factor)
     {
-        var next = Math.Clamp(zoom * factor, 0.1, 40);
+        // Only a UX guard rail, not a correctness limit: nothing downstream (stroke widths already go
+        // through Math.Max(1, ...), pixel math is all doubles) breaks at either end. Kept finite rather than
+        // fully unbounded so a runaway scroll can't zoom to a size that's merely a wall of degenerate
+        // 1px boxes with no visible content -- FitView is the recovery either way.
+        var next = Math.Clamp(zoom * factor, 0.02, 100);
         factor = next / zoom;
         pan = new Point(at.X - (at.X - pan.X) * factor, at.Y - (at.Y - pan.Y) * factor);
         zoom = next;

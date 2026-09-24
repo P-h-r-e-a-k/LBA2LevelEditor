@@ -18,6 +18,7 @@ internal sealed class RendererLibraryApi : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetCameraFn(int alpha, int beta, int gamma, int distance);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSkyFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawSeaFn(int enabled);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void SetDrawActorsFn(int enabled);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate IntPtr FramebufferFn(out int width, out int height, out int pitch);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorCountFn();
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate int GetActorFn(int index, out int x, out int y, out int z, out int waypointCount);
@@ -65,6 +66,7 @@ internal sealed class RendererLibraryApi : IDisposable
     private SetCameraFn? setCamera;
     private SetDrawSkyFn? setDrawSky;
     private SetDrawSeaFn? setDrawSea;
+    private SetDrawActorsFn? setDrawActors;
     private FramebufferFn? framebuffer;
     private GetActorCountFn? getActorCount;
     private GetActorFn? getActor;
@@ -141,6 +143,7 @@ internal sealed class RendererLibraryApi : IDisposable
         renderFrameWide = Get<RenderFrameWideFn>("lba2_renderer_render_frame_wide");
         setDrawSky = Get<SetDrawSkyFn>("lba2_renderer_set_draw_sky");
         setDrawSea = Get<SetDrawSeaFn>("lba2_renderer_set_draw_sea");
+        setDrawActors = Get<SetDrawActorsFn>("lba2_renderer_set_draw_actors");
         getActorCount = Get<GetActorCountFn>("lba2_renderer_get_actor_count");
         getActor = Get<GetActorFn>("lba2_renderer_get_actor");
         getActorWaypoint = Get<GetActorWaypointFn>("lba2_renderer_get_actor_waypoint");
@@ -274,6 +277,7 @@ internal sealed class RendererLibraryApi : IDisposable
     public void SetCamera(int alpha, int beta, int gamma, int distance) => setCamera?.Invoke(alpha, beta, gamma, distance);
     public void SetDrawSky(bool enabled) => setDrawSky?.Invoke(enabled ? 1 : 0);
     public void SetDrawSea(bool enabled) => setDrawSea?.Invoke(enabled ? 1 : 0);
+    public void SetDrawActors(bool enabled) => setDrawActors?.Invoke(enabled ? 1 : 0);
     public IntPtr GetFramebuffer(out int width, out int height, out int pitch)
     {
         if (framebuffer is null) { width = height = pitch = 0; return IntPtr.Zero; }

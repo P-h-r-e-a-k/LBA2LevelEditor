@@ -39,9 +39,17 @@ public partial class MainWindow
             return false;
         }
         var hero = model.Hero;
-        if (interiorSceneActive)
+        // Which branch to take is the target scene's own CubeMode (0 = interior, 1 = exterior), not whatever
+        // view the editor already happens to be showing -- picking a scene from the Scene box doesn't itself
+        // navigate the 3D view there, so `interiorSceneActive`/`interiorSceneNumber` reflect whatever the user
+        // was last looking at, not `scene`. Reading it off `model` (already loaded above) and, for an interior
+        // scene not already open, actually opening it (ShowInteriorScene -- the same call the Scene box's own
+        // selection uses) instead of silently refusing is the fix for "the option to choose where Twinsen
+        // starts never appears" when Play is pressed for an interior scene that isn't the one on screen.
+        if (model.CubeMode == 0)
         {
-            if (interiorSceneNumber != scene) return false;
+            if (interiorSceneNumber != scene) ShowInteriorScene(scene);
+            if (interiorSceneNumber != scene) return false; // ShowInteriorScene itself failed; it already reported why (DocumentSummary.Text)
             placeWorld = (hero.X, hero.Y, hero.Z);
             placeBaseY = hero.Y;
             placementGround = null;

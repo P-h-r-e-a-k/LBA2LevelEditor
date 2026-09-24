@@ -283,6 +283,8 @@
                                             <CheckBox x:Name="ZoneMasterCheck" Content="Show scene zones" IsChecked="True" Foreground="#10243E" Click="ZoneMaster_Click"/>
                                             <CheckBox x:Name="PathsCheck" Content="Show actor paths" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0" Click="Paths_Click"/>
                                             <CheckBox x:Name="HighlightCheck" Content="Highlight selected actor / zone" IsChecked="True" Foreground="#10243E" Margin="0,10,0,0" Click="Highlight_Click"/>
+                                            <CheckBox x:Name="HideDummyActorsCheck" Content="Hide dummy (bodyless) actor markers" Foreground="#10243E" Margin="0,10,0,0" Click="HideDummyActors_Click"/>
+                                            <CheckBox x:Name="HideAllActorsCheck" Content="Hide all actors" Foreground="#10243E" Margin="0,10,0,0" Click="HideAllActors_Click"/>
                                             <Separator Margin="0,14,0,14"/>
                                             <TextBlock Text="Zone types" Style="{StaticResource Eyebrow}" Margin="0,0,0,10"/>
                                             <StackPanel x:Name="ZoneTypeList"/>

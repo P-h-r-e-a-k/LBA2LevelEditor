@@ -449,6 +449,7 @@ static void ObjectDisplayForcedBlack(T_OBJ_3D *obj)
 }
 
 void AffichageActorsZBuf(void) {
+    if (!RendererDrawActors) return;
     for (S32 n = 1; n < NbObjets; n++) {
         T_OBJET *ptrobj = &ListObjet[n];
 

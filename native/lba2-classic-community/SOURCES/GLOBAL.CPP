@@ -44,6 +44,11 @@ U8 RendererDrawSky = TRUE;
 // the main 3D view's ordinary viewing angles don't have this problem, so it
 // stays on there.
 U8 RendererDrawSea = TRUE;
+// Same idea as RendererDrawSky/RendererDrawSea: renderer-only toggle (LBA2 Level Workshop's "Hide all
+// actors" checkbox), defaults to TRUE so the full game is unaffected. Gates AffichageActorsZBuf()
+// (EXTFUNC.CPP), the dedicated actor-draw pass -- terrain and decor objects are drawn by separate code
+// and are unaffected.
+U8 RendererDrawActors = TRUE;
 U8 SavingEnable = TRUE;
 U8 FlagPlayAcf = FALSE;
 U8 RainEnable = FALSE;

@@ -33,6 +33,7 @@ extern unsigned int InitPartFlow(void);
 extern S32 Island;
 extern U8 RendererDrawSky;
 extern U8 RendererDrawSea;
+extern U8 RendererDrawActors;
 extern int RendererScanIslandActors(int islandIndex);
 extern int RendererGetActorCount(void);
 extern int RendererGetActor(int index, int *x, int *y, int *z, int *waypointCount);
@@ -475,6 +476,11 @@ void lba2_renderer_set_draw_sky(int enabled)
 void lba2_renderer_set_draw_sea(int enabled)
 {
     RendererDrawSea = enabled ? 1 : 0;
+}
+
+void lba2_renderer_set_draw_actors(int enabled)
+{
+    RendererDrawActors = enabled ? 1 : 0;
 }
 
 void lba2_renderer_set_view_distance(int startFog, int clipFar)

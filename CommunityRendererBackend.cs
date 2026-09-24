@@ -146,7 +146,7 @@ internal sealed class CommunityRendererBackend
     // drawSky asserts the sky flag for this frame, and the sea flag is always turned back on: the
     // minimap render (RenderIslandTopDown) leaves sea off, and setting either flag from outside
     // this lock could land in the middle of a minimap render and put sea back over its land.
-    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true)
+    public BitmapSource? RenderIslandDirect(string islandName, byte[] paletteBytes, int worldX, int worldY, int worldZ, int alpha = 240, int beta = -256, int gamma = 0, int distance = 30000, Action? afterRenderBeforeUnlock = null, int wideRadiusCubes = 0, bool drawSky = true, bool drawActors = true)
     {
         if (RendererLibrary is null || !RendererLibrary.IsRendererReady) { directFailure = "renderer DLL unavailable"; return null; }
         lock (directRenderLock)
@@ -154,6 +154,7 @@ internal sealed class CommunityRendererBackend
             if (interiorLoaded) { directFailure = "an interior scene is loaded"; return null; }
             RendererLibrary.SetDrawSky(drawSky);
             RendererLibrary.SetDrawSea(true);
+            RendererLibrary.SetDrawActors(drawActors);
             var baseName = islandName.ToLowerInvariant();
             if (!directSession)
             {

@@ -56,6 +56,10 @@ LBA2_RENDERER_API void lba2_renderer_set_draw_sky(int enabled);
    default) for the main 3D view's ordinary viewing angles which don't hit
    this. Does not affect the full game. */
 LBA2_RENDERER_API void lba2_renderer_set_draw_sea(int enabled);
+/* Toggles AffichageActorsZBuf() (EXTFUNC.CPP), the dedicated actor-draw pass -- off hides every actor's
+   real body from the rendered frame (terrain and decor objects are drawn by separate code and are
+   unaffected). Does not affect the full game. */
+LBA2_RENDERER_API void lba2_renderer_set_draw_actors(int enabled);
 /* Overrides the distance-fog start and far-clip distances (world units) used
    by the exterior renderer. LOADISLE.CPP's InitExternalView() sets these to
    values tuned for the original 320x200 game (StartZFog 12000, ClipZFar

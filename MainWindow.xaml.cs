@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using AvalonDock.Layout;
 using LBAAssembler.Lba1;
 using LBAAssembler.LbaScript;
@@ -60,6 +61,17 @@ public partial class MainWindow : Window
     private bool nativeRenderInFlight;
     private bool nativeRenderDirty;
     private bool desiredSkyEnabled = true;
+    // Coalesces RenderSoftwareTerrain during a zoom/orbit drag: it's a full synchronous CPU rasterisation of
+    // the island on the UI thread (SoftwareTerrainRenderer.Render), and wheel/mouse-move events fire dozens
+    // of times a second -- calling it inline on every one was the software-view counterpart of the stutter
+    // bug RunNativeRenderLoop's own comment already documents and fixes for the native view. One render
+    // ~30ms after the gesture settles is imperceptibly different and costs a fraction as much.
+    private readonly DispatcherTimer softwareRenderTimer = new() { Interval = TimeSpan.FromMilliseconds(30) };
+    private void ScheduleSoftwareTerrainRender()
+    {
+        softwareRenderTimer.Stop();
+        softwareRenderTimer.Start();
+    }
     private int minimapRequest;
     private byte[] palette = Array.Empty<byte>();
     private byte[] shadeTable = Array.Empty<byte>();
@@ -93,6 +105,7 @@ public partial class MainWindow : Window
         nativeRenderer = new CommunityRendererBackend(gameRoot);
         InitializeComponent();
         WindowPlacement.Attach(this, "MainWindow");
+        softwareRenderTimer.Tick += (_, _) => { softwareRenderTimer.Stop(); RenderSoftwareTerrain(); };
         Scenes.SceneHistory.PersistPath = Path.Combine(AppContext.BaseDirectory, "undo_history.dat");
         Scenes.SceneHistory.ConfirmClearWhenFull = (used, limit) => MessageBox.Show(this,
             $"The undo cache is full ({used / (1024.0 * 1024.0):0.0} MB of a {limit / (1024.0 * 1024.0):0.0} MB limit).\n\nClear it to make room for this change? Choosing No just drops the oldest steps instead.",
@@ -1296,6 +1309,28 @@ public partial class MainWindow : Window
         RefreshActorOverlayForSelection();
     }
 
+    // The dummy/placeholder marker drawn for an actor with no real body (see AddDummyMarker's callers below).
+    private bool hideDummyActors;
+
+    private void HideDummyActors_Click(object sender, RoutedEventArgs e)
+    {
+        hideDummyActors = HideDummyActorsCheck.IsChecked == true;
+        RefreshActorOverlayForSelection();
+    }
+
+    // Every actor, real body and dummy marker alike. On the LBA2 native view a real body is drawn into the
+    // framebuffer pixels by the native renderer itself (AffichageActorsZBuf, gated there by the
+    // RendererDrawActors flag -- see RenderNativeCamera/RunNativeRenderLoop's own drawActors argument), not
+    // by this C# overlay, so hiding it needs an actual re-render, the same way SkyCheckBox_Changed does for
+    // the sky.
+    private bool hideAllActors;
+
+    private void HideAllActors_Click(object sender, RoutedEventArgs e)
+    {
+        hideAllActors = HideAllActorsCheck.IsChecked == true;
+        if (nativeViewActive) RenderNativeCamera(); else RefreshActorOverlayForSelection();
+    }
+
     private void AddSelectionRing(double centerX, double centerY, double width, double height)
     {
         var ring = new System.Windows.Shapes.Ellipse
@@ -1754,10 +1789,11 @@ public partial class MainWindow : Window
 
         foreach (var (index, x, y, halfWidth, halfHeight, isMarker) in interiorActors)
         {
+            if (hideAllActors) continue;
             var sx = (x - interiorCenter.X) * interiorZoom + vw / 2;
             var sy = (y - interiorCenter.Y) * interiorZoom + vh / 2;
             if (sx < -40 || sx > vw + 40 || sy < -40 || sy > vh + 40) continue;
-            if (isMarker) AddDummyMarker(sx, sy, halfHeight * 2 * interiorZoom);
+            if (isMarker) { if (!hideDummyActors) AddDummyMarker(sx, sy, halfHeight * 2 * interiorZoom); }
             else if (lba1ActorMarkers.TryGetValue(index, out var body)) AddBodyMarker(body.Marker.Image, sx, sy, halfHeight * interiorZoom);
             var hit = new System.Windows.Shapes.Ellipse
             {
@@ -1938,6 +1974,11 @@ public partial class MainWindow : Window
 
         foreach (var (index, sx, sy, hitHalfWidth, hitHalfHeight) in lastNativeActorScreens)
         {
+            // The real body pixels (when not a dummy) are baked into the framebuffer by the native renderer
+            // itself, gated separately by the RendererDrawActors flag (see RenderNativeCamera's drawActors
+            // argument) -- skipping the marker/hit-target here on top of that is what removes the rest
+            // (click target, selection ring, dummy glyph) for "hide all actors".
+            if (hideAllActors) continue;
             var screenX = sx * scaleX;
             var screenY = sy * scaleY;
             if (screenX < -20 || screenX > width + 20 || screenY < -20 || screenY > height + 20) continue;
@@ -1950,7 +1991,7 @@ public partial class MainWindow : Window
             // to click reliably before this.
             var hitWidth = Math.Max(hitHalfWidth * 2 * scaleX, 20);
             var hitHeight = Math.Max(hitHalfHeight * 2 * scaleY, 20);
-            if (lastNativeInvisibleActors?.Contains(index) == true) AddDummyMarker(screenX, screenY, hitHeight);
+            if (lastNativeInvisibleActors?.Contains(index) == true) { if (!hideDummyActors) AddDummyMarker(screenX, screenY, hitHeight); }
             if (highlightSelection && selectedActorIndex == index) AddSelectionRing(screenX, screenY, hitWidth, hitHeight);
             var hit = new System.Windows.Shapes.Ellipse
             {
@@ -2033,6 +2074,66 @@ public partial class MainWindow : Window
             else OpenActorAttributesWindow(index);
         }
         if (editMode == EditMode.Script && ScriptTab.IsSelected) SyncScriptListSelection(index);
+
+        // Drag to reposition: only the LBA2 native exterior view for now (a screen point maps to a world
+        // point there via a simple ray-plane intersection, NativeCameraModel.RayToPlane -- the same one
+        // BeginPan3D/MovePan3D already use to drag the camera target). Interior scenes and LBA1's isometric
+        // overworld render through a fixed, baked camera projection with no such inverse today, so a drag
+        // there would need its own screen->world solution; left out of this pass rather than guessed at.
+        // A plain click still behaves exactly as above (ClickCount/the attributes window aren't affected by
+        // this, since a click that never crosses ActorDragThresholdPx never becomes a "drag" below).
+        if (nativeViewActive && !interiorSceneActive && editMode != EditMode.Script
+            && nativeRenderer.RendererLibrary is { } dragLibrary
+            && dragLibrary.GetActor(index, out var dax, out var day, out var daz, out _)
+            && dragLibrary.GetActorAttributes(index, out var dbeta, out var dbody, out var danim, out var dlife, out var darmor, out var dhit, out var dmove)
+            && dragLibrary.GetActorFlags(index, out var dflags))
+        {
+            draggingActorIndex = index;
+            actorDragStartScreen = e.GetPosition(TerrainViewport);
+            actorDragMoved = false;
+            actorDragPlaneY = day;
+            actorDragOriginal = new Lba2ActorPersistence.Snapshot(dax, day, daz, dbeta, dbody, danim, dlife, darmor, dhit, dmove, dflags);
+            TerrainViewport.CaptureMouse();
+        }
+    }
+
+    // ---- dragging an actor to reposition it (LBA2 native exterior view only -- see ActorMarker_MouseLeftButtonDown) ----
+    private int? draggingActorIndex;
+    private Point actorDragStartScreen;
+    private bool actorDragMoved;
+    private double actorDragPlaneY;
+    private Lba2ActorPersistence.Snapshot? actorDragOriginal;
+    private const double ActorDragThresholdPx = 4; // below this a click-release is still just a click/select/open, not a drag
+
+    private void UpdateActorDrag(int index, Point screen)
+    {
+        var model = cameraModel;
+        if (model is null) return;
+        var w = TerrainViewport.ActualWidth; var h = TerrainViewport.ActualHeight;
+        if (w < 1 || h < 1) return;
+        // Held at the height the actor already had (actorDragPlaneY), not re-picked against the ground: matches
+        // BeginPan3D/MovePan3D's own camera-target drag, and means a drag never silently changes an actor's height
+        // -- only Y in the Attributes window's own field, or a future ground-following mode, should do that.
+        if (!model.RayToPlane(screen.X * model.FrameWidth / w, screen.Y * model.FrameHeight / h, actorDragPlaneY, out var wx, out var wz)) return;
+        nativeRenderer.RendererLibrary?.SetActorPosition(index, (int)wx, (int)actorDragPlaneY, (int)wz);
+        RenderNativeCamera(); // already coalesces bursts of calls into one in-flight render -- see its own comment
+    }
+
+    private void CommitActorDrag(int index)
+    {
+        var library = nativeRenderer.RendererLibrary;
+        if (library is null || actorDragOriginal is not { } original) return;
+        if (Lba2ActorPersistence.Locate(library, index) is not { } located)
+        {
+            FileLabel.Text = "Actor moved for this session, but couldn't be saved to the game files (its scene isn't the one currently loaded).";
+            return;
+        }
+        if (!library.GetActor(index, out var x, out var y, out var z, out _)) return;
+        var updated = original with { X = x, Y = y, Z = z };
+        var error = Lba2ActorPersistence.Save(gameRoot, located.Scene, located.IndexInScene, original, updated, out var bodyAnimNote);
+        FileLabel.Text = error is not null
+            ? $"Actor moved for this session, but not saved to the game files: {error}"
+            : bodyAnimNote is null ? "Actor moved and saved to the game's files." : $"Actor moved and saved, except: {bodyAnimNote}";
     }
 
     // One independent, non-modal window per actor per kind (script/
@@ -2434,6 +2535,13 @@ public partial class MainWindow : Window
     // jump the displayed percentage; zooming in (smaller distance) reads as
     // >100%, matching how "zoom" reads on a camera or a document viewer.
     private const double DefaultCameraDistance = 30000;
+    // Loosened from the original 3000-50000 (native) / 12000-120000 (software): neither end is load-bearing --
+    // AffGrilleExtWide's wideRadius stays fixed at 2 regardless of distance (see RunNativeRenderLoop's own
+    // comment), so cost doesn't change with zoom, and the software path is plain double math with no
+    // divide-by-zero or index risk at either extreme. Kept finite, not fully unbounded, only so a runaway
+    // scroll can't reach a distance so large or small the view is just a blank/degenerate frame.
+    private const int NativeMinDistance = 1000, NativeMaxDistance = 80000;
+    private const double SoftwareMinDistance = 3000, SoftwareMaxDistance = 300000;
     private void UpdateZoomLabel()
     {
         if (interiorSceneActive) { ZoomLabel.Text = $"{Math.Round(interiorZoom * 100)}%"; return; }
@@ -2470,12 +2578,12 @@ public partial class MainWindow : Window
         var distance = DefaultCameraDistance / (percent / 100.0);
         if (nativeViewActive)
         {
-            nativeDistance = (int)Math.Clamp(distance, 3000, 50000);
+            nativeDistance = (int)Math.Clamp(distance, NativeMinDistance, NativeMaxDistance);
             RenderNativeCamera();
         }
         else
         {
-            cameraDistance = Math.Clamp(distance, 12000, 120000);
+            cameraDistance = Math.Clamp(distance, SoftwareMinDistance, SoftwareMaxDistance);
             RenderSoftwareTerrain();
         }
         UpdateZoomLabel();
@@ -2503,8 +2611,8 @@ public partial class MainWindow : Window
         else if (interiorSceneActive) FitInteriorView();
         else Reset_Click(sender, e);
     }
-    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1.25); return; } if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(3000, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(12000, cameraDistance - 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
-    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1 / 1.25); return; } if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = Math.Min(50000, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(120000, cameraDistance + 4000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1.25); return; } if (interiorSceneActive) { ZoomInterior(1.25); return; } if (nativeViewActive) { nativeDistance = Math.Max(NativeMinDistance, nativeDistance - 4000); RenderNativeCamera(); } else { cameraDistance = Math.Max(SoftwareMinDistance, cameraDistance - 4000); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) { if (terrainShown) { terrainEditor?.ZoomBy(1 / 1.25); return; } if (interiorSceneActive) { ZoomInterior(1 / 1.25); return; } if (nativeViewActive) { nativeDistance = Math.Min(NativeMaxDistance, nativeDistance + 4000); RenderNativeCamera(); } else { cameraDistance = Math.Min(SoftwareMaxDistance, cameraDistance + 4000); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
     // Gated on RotateViewCheckBox so the left mouse button can be freed up
     // for other uses (actor placement/selection, etc.) without it always
     // spinning the camera underneath whatever else is being clicked.
@@ -2548,6 +2656,14 @@ public partial class MainWindow : Window
     private bool interiorPanning;
     private void TerrainViewport_MouseMove(object sender, MouseEventArgs e)
     {
+        if (draggingActorIndex is int dragIndex)
+        {
+            var screen = e.GetPosition(TerrainViewport);
+            if (!actorDragMoved && (Math.Abs(screen.X - actorDragStartScreen.X) > ActorDragThresholdPx || Math.Abs(screen.Y - actorDragStartScreen.Y) > ActorDragThresholdPx))
+                actorDragMoved = true;
+            if (actorDragMoved) UpdateActorDrag(dragIndex, screen);
+            return;
+        }
         if (interiorPanning)
         {
             var p = e.GetPosition(ViewportHost);
@@ -2580,17 +2696,26 @@ public partial class MainWindow : Window
         else
         {
             cameraYaw += dx * .35;
-            RenderSoftwareTerrain();
+            ScheduleSoftwareTerrainRender();
         }
     }
     private void TerrainViewport_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (draggingActorIndex is int dragIndex)
+        {
+            if (actorDragMoved) CommitActorDrag(dragIndex);
+            draggingActorIndex = null;
+            actorDragMoved = false;
+            actorDragOriginal = null;
+            Mouse.Capture(null);
+            return;
+        }
         if (paintingTerrain && e.ChangedButton == MouseButton.Left) { terrainEditor?.PointerUp(); paintingTerrain = false; DrawTerrainOverlay(); }
         if (panning3D && e.ChangedButton == MouseButton.Middle) panning3D = false;
         orbiting = false; interiorPanning = false;
         if (!paintingTerrain && !panning3D) Mouse.Capture(null);
     }
-    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.Delta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost)); return; } if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), 3000, 50000); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, 12000, 120000); RenderSoftwareTerrain(); } UpdateZoomLabel(); }
+    private void TerrainViewport_MouseWheel(object sender, MouseWheelEventArgs e) { if (interiorSceneActive) { ZoomInterior(e.Delta > 0 ? 1.15 : 1 / 1.15, e.GetPosition(ViewportHost)); return; } if (nativeViewActive) { nativeDistance = Math.Clamp(nativeDistance - (e.Delta > 0 ? 1200 : -1200), NativeMinDistance, NativeMaxDistance); RenderNativeCamera(); } else { cameraDistance = Math.Clamp(cameraDistance - e.Delta * 40, SoftwareMinDistance, SoftwareMaxDistance); ScheduleSoftwareTerrainRender(); } UpdateZoomLabel(); }
     private void RenderNativeCamera()
     {
         if (!nativeViewActive) return;
@@ -2671,6 +2796,7 @@ public partial class MainWindow : Window
             var bitmap = nativeRenderer.RenderIslandDirect(islandName, palette, camX, camY, camZ, nativeAlpha, nativeBeta, nativeGamma, camDistance,
                 wideRadiusCubes: wideRadius,
                 drawSky: desiredSkyEnabled,
+                drawActors: !hideAllActors,
                 afterRenderBeforeUnlock: () =>
                 {
                     if (library is null) return;
