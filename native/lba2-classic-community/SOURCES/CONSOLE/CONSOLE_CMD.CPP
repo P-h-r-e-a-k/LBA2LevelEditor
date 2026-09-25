@@ -35,6 +35,8 @@ extern S32 GfxDitherShading;
 #include "../OBJECT.H" // SetAnim (teleport stops the hero's carried animation)
 #include "../RES_CATALOG.H"
 #include "../RES_SWITCH.H"
+#include "CONSOLE_CMD.H" // Console_ApplyPendingResSwitch: res_do_switch's own deferred-apply companion
+#include <SYSTEM/WINDOW.H> // Window_IsRendererTextureLocked: res_do_switch's own safety gate
 #include "../PERFTRACE.H"
 #include "../PERSO.H" /* WriteConfigValue (persist one setting) */
 #include <SYSTEM/CDTRACKS.H>
@@ -1476,15 +1478,68 @@ static bool res_parse_wxh(const char *s, U32 *outW, U32 *outH) {
     return true;
 }
 
+/* A resolution switch pending because res_do_switch was asked for one while it
+   wasn't yet safe to actually run (see res_do_switch's own comment below).
+   Console_ApplyPendingResSwitch (this file) replays the exact same call once
+   it is. Last-write-wins if a second request arrives before the first has
+   been applied -- run_one_pending (CONTROL_SERVER.CPP) only ever executes one
+   console command per presented frame, so in practice this can only happen
+   from the interactive console, and the newer request superseding an
+   unapplied older one is the sensible behaviour anyway. */
+static bool s_resSwitchPending = false;
+static U32 s_resSwitchPendingW = 0, s_resSwitchPendingH = 0;
+
 /* Shared "fire the orchestrator, then arm the keep/revert dialog" path. Pulls
    the safety gate, captures the previous (W, H), closes the console so the
-   modal isn't occluded by it, then schedules the dialog on the next tick. */
+   modal isn't occluded by it, then schedules the dialog on the next tick.
+
+   The allowed-reason gate runs BEFORE the lock check below, so a genuinely
+   disallowed request (mid-cinematic/dialogue/holomap) is rejected immediately
+   with its real reason either way -- deferring is purely about which point in
+   a frame this runs at, never about whether the switch is a legal one.
+
+   Deferred instead of run immediately when the renderer's streaming texture is
+   currently locked (Window_IsRendererTextureLocked): this can be reached from
+   inside PresentFrame's own lock window two ways -- the control socket
+   (ControlPrePresent polls it every frame specifically so a driver reaches
+   modals too, PERSO.CPP) and the interactive console's own overlay
+   (Console_PrePresent, registered right after it) -- and Res_Switch ultimately
+   destroys and recreates that same texture (ResizeWindowSurface, WINDOW.CPP).
+   Doing that while PresentFrame() still has it locked is a real, reproduced
+   crash: PresentFrame's own later SDL_UnlockTexture call then runs against the
+   new texture, which was never the one actually locked (confirmed via two
+   matching crash dumps, both an Access Violation inside d3d11's texture
+   Unmap). Queuing the request and replaying this exact function one frame
+   later -- from Console_ApplyPendingResSwitch, called before any lock is ever
+   taken -- fixes that without changing anything about the outcome: the same
+   revert-countdown arming, the same "Resolution: WxH" text a driver watching
+   the socket sees either way, just up to one frame later than an unlocked
+   caller (the menu, or the console when it isn't mid-frame) gets. Printing
+   that line now rather than waiting for the real apply is what keeps it
+   identical either way -- Console_ApplyPendingResSwitch's replay re-checks
+   the allowed-reason gate again regardless, so a request that somehow stops
+   being legal in that one-frame gap still gets refused, just one console
+   message later than this one already promised success; not worth the extra
+   complexity of holding this response open across a frame boundary for a
+   game-state change unlikely to land within a single frame. */
 static void res_do_switch(U32 newW, U32 newH) {
     const char *why = Res_SwitchAllowedReason();
     if (why) {
         Console_Print("%s", why);
         return;
     }
+
+    if (Window_IsRendererTextureLocked()) {
+        s_resSwitchPending = true;
+        s_resSwitchPendingW = newW;
+        s_resSwitchPendingH = newH;
+        Console_Print("Resolution: %ux%u", newW, newH);
+        if (newW < UI_CANVAS_W || newH < UI_CANVAS_H)
+            Console_Print("  note: below %ux%u the UI is clipped; world render is unaffected.",
+                          (unsigned)UI_CANVAS_W, (unsigned)UI_CANVAS_H);
+        return;
+    }
+
     /* Revert has to put back what the player had chosen. ModeDesiredX/Y is
        whatever the current scene renders at, which in an interior is smaller
        than the choice. */
@@ -1507,6 +1562,13 @@ static void res_do_switch(U32 newW, U32 newH) {
     if (newW < UI_CANVAS_W || newH < UI_CANVAS_H)
         Console_Print("  note: below %ux%u the UI is clipped; world render is unaffected.",
                       (unsigned)UI_CANVAS_W, (unsigned)UI_CANVAS_H);
+}
+
+void Console_ApplyPendingResSwitch(void) {
+    if (!s_resSwitchPending)
+        return;
+    s_resSwitchPending = false;
+    res_do_switch(s_resSwitchPendingW, s_resSwitchPendingH);
 }
 
 static void cmd_perftrace_print_sink(const char *line) {

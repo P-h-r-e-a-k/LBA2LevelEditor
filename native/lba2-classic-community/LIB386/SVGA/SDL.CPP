@@ -34,6 +34,7 @@ static PrePresentFn s_prePresent = NULL;
 static PrePresentFn s_overlayPrePresent = NULL;
 static PresentTimingFn s_presentBegin = NULL;
 static PresentTimingFn s_presentEnd = NULL;
+static PresentTimingFn s_preFrame = NULL;
 static U32 paletteLUT[PAL_MAX_COLORS];
 #if defined(__ANDROID__)
 /* Persistent staging buffer for the Android present path (see
@@ -149,6 +150,8 @@ void UnlockVideoSurface() {
     }
 
     if (screenLockCount == 0 && frameDirty) {
+        if (s_preFrame)
+            s_preFrame();
         if (s_presentBegin)
             s_presentBegin();
         PresentFrame();
@@ -243,6 +246,10 @@ void SetPrePresentCallback(PrePresentFn fn) {
 
 void SetOverlayPrePresentCallback(PrePresentFn fn) {
     s_overlayPrePresent = fn;
+}
+
+void SetPreFrameCallback(PresentTimingFn fn) {
+    s_preFrame = fn;
 }
 
 void SetPresentTimingCallbacks(PresentTimingFn begin, PresentTimingFn end) {

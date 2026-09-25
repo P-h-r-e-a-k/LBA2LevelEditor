@@ -51,6 +51,13 @@ bool Window_GetPrimaryDisplayDimensions(U32 *outW, U32 *outH);
 void PresentRendererFrame(const void *pixels, U32 pitch);
 bool LockRendererTexture(void **pixels, int *pitch);
 void UnlockAndPresentRendererTexture();
+
+/** Whether the renderer's streaming texture is currently locked (between a
+ *  LockRendererTexture call and its matching UnlockAndPresentRendererTexture).
+ *  See the definition's own comment (WINDOW.CPP) for why this exists: a
+ *  resolution switch destroys and recreates this texture, which is only safe
+ *  to do while it is NOT locked. */
+bool Window_IsRendererTextureLocked(void);
 void WindowToSurfaceCoords(S32 windowX, S32 windowY, S32 *surfaceX, S32 *surfaceY);
 void SetWindowFullscreen(bool fullscreen);
 bool GetWindowFullscreen();

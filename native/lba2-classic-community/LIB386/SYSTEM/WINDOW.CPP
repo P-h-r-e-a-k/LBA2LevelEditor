@@ -28,6 +28,10 @@ SDL_Texture *sdlTexture = NULL;
 U32 windowSurfaceResX = 0;
 U32 windowSurfaceResY = 0;
 bool windowFullscreenEnabled = false;
+/* True between a successful LockRendererTexture and its matching
+   UnlockAndPresentRendererTexture. See Window_IsRendererTextureLocked's own
+   comment (below) for why this exists. */
+static bool s_rendererTextureLocked = false;
 
 static void ApplyGameWindowHideSystemCursor(void) {
     SDL_HideCursor();
@@ -332,7 +336,9 @@ bool LockRendererTexture(void **pixels, int *pitch) {
     assert(pixels != NULL);
     assert(pitch != NULL);
 
-    return SDL_LockTexture(sdlTexture, NULL, pixels, pitch);
+    bool locked = SDL_LockTexture(sdlTexture, NULL, pixels, pitch);
+    s_rendererTextureLocked = locked;
+    return locked;
 }
 
 void UnlockAndPresentRendererTexture() {
@@ -340,7 +346,23 @@ void UnlockAndPresentRendererTexture() {
     assert(sdlTexture != NULL);
 
     SDL_UnlockTexture(sdlTexture);
+    s_rendererTextureLocked = false;
     PresentCurrentTexture();
+}
+
+/* Whether the renderer's streaming texture is currently locked. Exists so code
+   that can run mid-frame -- the control socket and the interactive console's
+   own overlay both execute a queued command from inside PresentFrame's lock
+   window (SOURCES/PERSO.CPP's ControlPrePresent/Console_PrePresent, both
+   registered pre-present callbacks called between AcquirePresentTarget's lock
+   and CommitPresentTarget's unlock) -- can tell whether it's safe to destroy
+   and recreate sdlTexture right now (ResizeWindowSurface does exactly that).
+   Doing so while locked is a real, reproduced crash: SDL_UnlockTexture then
+   runs against the new texture, which was never the one actually locked.
+   SOURCES/CONSOLE/CONSOLE_CMD.CPP's res_do_switch is what actually uses this,
+   to defer a resolution switch by up to one frame rather than run it here. */
+bool Window_IsRendererTextureLocked(void) {
+    return s_rendererTextureLocked;
 }
 
 /* Map a window pixel to a framebuffer pixel via SDL's logical presentation (set

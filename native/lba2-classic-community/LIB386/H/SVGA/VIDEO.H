@@ -58,6 +58,14 @@ void SetOverlayPrePresentCallback(PrePresentFn fn);
 typedef void (*PresentTimingFn)(void);
 void SetPresentTimingCallbacks(PresentTimingFn begin, PresentTimingFn end);
 
+/** Optional hook called once per actual present, strictly before PresentFrame()
+ *  takes any texture lock -- before SetPresentTimingCallbacks' own `begin`, let
+ *  alone PrePresentFn (which runs deep inside PresentFrame, after the lock is
+ *  already held). The right place for anything that must run outside that lock
+ *  window: SOURCES/CONSOLE/CONSOLE_CMD.CPP's deferred resolution-switch handling
+ *  (Console_ApplyPendingResSwitch) is the motivating, and so far only, use. */
+void SetPreFrameCallback(PresentTimingFn fn);
+
 // -----------------------------------------------------------------------------
 #define Palette(Pal) SetVideoPalette(Pal, 0, 256)
 #define PalOne(col, r, g, b) SetVideoPaletteCol(col, r, g, b)

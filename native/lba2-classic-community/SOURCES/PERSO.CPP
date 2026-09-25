@@ -20,6 +20,7 @@ extern S32 GfxDitherShading;
 #include "RES_SWITCH.H"
 #include "SCRIPT_BREAKPOINT.H"
 #include "CONSOLE/CONSOLE.H"
+#include "CONSOLE/CONSOLE_CMD.H" // Console_ApplyPendingResSwitch: registered as the pre-frame callback below
 #include "EXIT_SCREEN.H"
 #include "PERFTRACE.H"
 #include "TOUCH_INPUT.H"
@@ -2507,6 +2508,11 @@ int main(int argc, char *argv[]) {
     /* Console hooks: keyboard toggle/input interception + final-frame overlay compositing. */
     SetEventFilter(Console_FeedEvent);
     SetPrePresentCallback(ControlPrePresent);
+    /* Applies a resolution switch res_do_switch had to defer because it was asked
+       for while PresentFrame() still had the renderer texture locked -- see
+       CONSOLE_CMD.CPP's own comment. Runs before ControlPrePresent even has a
+       chance to lock anything this frame. */
+    SetPreFrameCallback(Console_ApplyPendingResSwitch);
 
     /* Touch virtual gamepad (Android / mobile). Init before Perftrace so
        timing callbacks nest correctly. No-op on non-Android builds.
