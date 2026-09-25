@@ -22,6 +22,7 @@
 #include <3D/PROJREC.H> /* Projrec_BeginCapture / Projrec_EndCapture */
 #include <AIL/SAMPLE.H> /* Sample_DriverPlaysSound: whether audio actually came up */
 #include <FILEIO/SAVEPNG.H>
+#include <SVGA/CLIP.H>     /* SetClipWindow: clears a loaded CinemaMode's letterbox, see Control_Begin */
 #include <SVGA/SCREEN.H>   /* Screen, ModeDesiredX/Y */
 #include <SVGA/VIDEO.H>    /* Palette() */
 #include <SYSTEM/STRING.H> /* EqualsIgnoringCaseAndEncoding for --language */
@@ -807,6 +808,22 @@ int Control_Begin(void) {
            at its top), otherwise the saved hero position is not restored. */
         InitGame(-1);
         ChangeCube();
+        /* ChangeCube's own restore can load a CinemaMode the save was mid-transition through:
+           confirmed live via the editor's embedded Play feature (Lba2Engine.cs's PrepareSceneSave
+           snapshots a `savebug` a fixed number of ticks after entering the target scene, which is
+           not guaranteed to be after any camera-transition letterbox that entry itself triggered
+           has finished closing) -- the loaded session then sat with CinemaMode permanently stuck
+           on, silently gating I_RETURN (recentre-on-hero) and presumably other CinemaMode-gated
+           input, for the rest of the run. This --load path is CLI/automation-only (the in-game
+           Load Game menu is a different call site this comment above is only mirroring, not
+           reusing) -- every caller (the editor's embedded Play, --replay, --record) wants a
+           session that starts fully interactive, not paused mid-cinematic, so force that rather
+           than trying to resume an animation whose own timer references (TimerCinema and friends,
+           OBJECT.CPP file-statics, not part of the save format) don't survive a process restart
+           meaningfully anyway. SetClipWindow bypasses FixeCinemaMode's own gradual retract
+           entirely, so this can't leave the bars stuck mid-slide either. */
+        CinemaMode = FALSE;
+        SetClipWindow(0, 0, (S32)ModeDesiredX - 1, (S32)ModeDesiredY - 1);
         /* Close the timer bracket the load opened. LoadGame ends on an unmatched
            SaveTimer, and on a load ChangeCube takes neither half of its own bracket:
            the SaveTimer is gated on FlagChgCube, which is 0 on a fresh boot, and the
