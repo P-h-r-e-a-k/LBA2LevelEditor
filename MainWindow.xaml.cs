@@ -3147,21 +3147,53 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
-        // TryPan below assumes the outdoor island's own coordinate space
+        // TryPan/tilt below assumes the outdoor island's own coordinate space
         // (IsWorldPositionOnIsland, SyncPanScrollBars writing targetX/Z) --
         // arrow-key panning isn't wired up for interior scenes (only the
         // scrollbars are, via RenderInteriorPan), and letting this run
         // anyway would silently overwrite the pan scrollbars' interior-mode
         // range/value with stale outdoor coordinates.
         if (interiorSceneActive || terrainShown) return;
+        // WASD is an alias for the arrow keys -- unlike arrows, W/A/S/D are ordinary typed characters, so
+        // this only fires outside a text box (an editable ComboBox's own entry field is a TextBoxBase too),
+        // or every "d" typed while renaming something would also nudge the camera. Checking
+        // Keyboard.IsKeyDown for all four directions on every KeyDown, rather than switching on just e.Key,
+        // is what makes holding two at once (e.g. Up+Left) register as one diagonal move/tilt instead of
+        // only ever reacting to whichever key was pressed most recently.
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase) return;
+        var left = Keyboard.IsKeyDown(Key.Left) || Keyboard.IsKeyDown(Key.A);
+        var right = Keyboard.IsKeyDown(Key.Right) || Keyboard.IsKeyDown(Key.D);
+        var up = Keyboard.IsKeyDown(Key.Up) || Keyboard.IsKeyDown(Key.W);
+        var down = Keyboard.IsKeyDown(Key.Down) || Keyboard.IsKeyDown(Key.S);
+        if (e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.A or Key.D or Key.W or Key.S) || (!left && !right && !up && !down)) return;
+        var horizontal = (right ? 1 : 0) - (left ? 1 : 0);
+        var vertical = (down ? 1 : 0) - (up ? 1 : 0);
+
+        // Ctrl held: tilt the camera instead of panning -- the same nativeAlpha/nativeBeta (native view) or
+        // cameraYaw (software view) that dragging the mouse with "Rotate/tilt with mouse" checked already
+        // drives (TerrainViewport_MouseMove), just nudged a fixed step per keypress instead of by drag
+        // distance. The software view's camera pitch is a fixed 38 degrees (SoftwareTerrainRenderer.Render's
+        // own hardcoded argument) -- it has no pitch to tilt, so Ctrl+Up/Down does nothing there, only
+        // Ctrl+Left/Right (yaw) does.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            if (nativeViewActive)
+            {
+                nativeBeta += horizontal * 64;
+                nativeAlpha += vertical * 64;
+                RenderNativeCamera();
+            }
+            else if (horizontal != 0)
+            {
+                cameraYaw += horizontal * 10;
+                ScheduleSoftwareTerrainRender();
+            }
+            e.Handled = true;
+            return;
+        }
+
         var step = (nativeViewActive ? nativeDistance : cameraDistance) * .04;
-        double dx = 0, dz = 0;
-        if (e.Key == Key.Left) dx = -step;
-        else if (e.Key == Key.Right) dx = step;
-        else if (e.Key == Key.Up) dz = -step;
-        else if (e.Key == Key.Down) dz = step;
-        else return;
-        TryPan(dx, dz);
+        TryPan(horizontal * step, vertical * step);
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
         e.Handled = true;
     }
