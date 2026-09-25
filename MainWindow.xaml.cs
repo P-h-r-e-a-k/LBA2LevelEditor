@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -3057,7 +3058,38 @@ public partial class MainWindow : Window
     }
     private void ViewportHost_SizeChanged(object sender, SizeChangedEventArgs e) { if (interiorSceneActive) ApplyInteriorView(); }
     private void TerrainViewport_SizeChanged(object sender, SizeChangedEventArgs e) { if (interiorSceneActive) return; if (nativeViewActive) DrawNativeActorOverlay(); else RenderSoftwareTerrain(); }
-    private void Window_Loaded(object sender, RoutedEventArgs e) { }
+    // Startup does enough synchronous work before the window ever appears (native renderer init, an
+    // island load, a first native render) that Windows' foreground-lock grace period can already have
+    // elapsed by the time Show() actually runs -- past that window, a newly started process no longer
+    // gets automatic focus, so it opens behind whatever already had it, with only a taskbar flash to
+    // show for it. Confirmed live: a plain Activate() / Topmost pulse alone does NOT fix this -- Topmost
+    // only reorders the Z-order, it doesn't grant the "foreground rights" the lock is withholding, so
+    // toggling it back off just drops the window back where it already was. AttachThreadInput is the
+    // actual, standard workaround: it borrows the current foreground thread's input state for the
+    // duration of the call, which SetForegroundWindow accepts as authorization from any process.
+    private void Window_Loaded(object sender, RoutedEventArgs e) => ForceForeground(this);
+
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+
+    private static void ForceForeground(Window window)
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+        var foreground = GetForegroundWindow();
+        if (foreground == handle) return;
+        var foregroundThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
+        var thisThread = GetCurrentThreadId();
+        if (foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true))
+        {
+            SetForegroundWindow(handle);
+            AttachThreadInput(thisThread, foregroundThread, false);
+        }
+        else SetForegroundWindow(handle);
+        window.Activate();
+    }
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         StopPlay();
