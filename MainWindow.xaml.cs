@@ -2492,6 +2492,10 @@ public partial class MainWindow : Window
         minimapPopup.ImageClicked += NavigateMinimapTo;
         minimapPopup.Closed += (_, _) => minimapPopup = null;
         RefreshMinimapPopup();
+        // MinimapContent.UpdateLayout() (inside RefreshMinimapPopup) just ran, so ActualWidth/Height are
+        // current -- the same box that snapshot's own image came from, so sizing the window to this aspect
+        // ratio is sizing it to the image's own.
+        minimapPopup.SizeToAspect(MinimapContent.ActualWidth, MinimapContent.ActualHeight);
         minimapPopup.Show();
     }
 
@@ -3069,7 +3073,16 @@ public partial class MainWindow : Window
     // toggling it back off just drops the window back where it already was. AttachThreadInput is the
     // actual, standard workaround: it borrows the current foreground thread's input state for the
     // duration of the call, which SetForegroundWindow accepts as authorization from any process.
-    private void Window_Loaded(object sender, RoutedEventArgs e) => ForceForeground(this);
+    //
+    // One attempt at Loaded turned out not to be reliable enough on its own (still reported happening) --
+    // AttachThreadInput can fail transiently (the foreground thread's own state isn't always attachable
+    // the instant this runs), and Loaded itself fires before the first real paint, so something later in
+    // startup (the first native render, layout finishing) could plausibly still be mid-flight. Retrying a
+    // few times a little apart, and again once from ContentRendered (which fires later -- after the first
+    // frame is actually on screen, not just laid out), covers both without the complexity of trying to
+    // find one exact root cause for what's fundamentally a racy OS mechanism.
+    private void Window_Loaded(object sender, RoutedEventArgs e) => ForceForegroundRetrying(this);
+    private void Window_ContentRendered(object? sender, EventArgs e) => ForceForegroundRetrying(this);
 
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
@@ -3077,11 +3090,20 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
 
-    private static void ForceForeground(Window window)
+    private static void ForceForegroundRetrying(Window window, int attempt = 0)
+    {
+        if (ForceForeground(window) || attempt >= 4) return;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        timer.Tick += (_, _) => { timer.Stop(); ForceForegroundRetrying(window, attempt + 1); };
+        timer.Start();
+    }
+
+    // Returns whether the window is (now) the foreground window.
+    private static bool ForceForeground(Window window)
     {
         var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
         var foreground = GetForegroundWindow();
-        if (foreground == handle) return;
+        if (foreground == handle) return true;
         var foregroundThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
         var thisThread = GetCurrentThreadId();
         if (foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true))
@@ -3091,6 +3113,7 @@ public partial class MainWindow : Window
         }
         else SetForegroundWindow(handle);
         window.Activate();
+        return GetForegroundWindow() == handle;
     }
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

@@ -23,7 +23,15 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="7"/>
         </Style>
-        <Style x:Key="DropdownBox" TargetType="Control" BasedOn="{StaticResource FieldBox}">
+        <!-- TargetType="ComboBox" (not Control) so it actually inherits Theme.xaml's implicit ComboBox
+             Template: see MainWindow.xaml's own DropdownBox comment for why a Control-typed style with no
+             Template left these rendering with WPF's unthemed default ComboBox chrome. -->
+        <Style x:Key="DropdownBox" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeWindowBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="7"/>
         </Style>
         <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>

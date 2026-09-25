@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:LBAAssembler"
         Title="LBA Assembler" Height="760" Width="1280" MinHeight="620" MinWidth="980"
-        Background="{DynamicResource ThemeFieldBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Segoe UI" Loaded="Window_Loaded" Closing="Window_Closing">
+        Background="{DynamicResource ThemeFieldBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Segoe UI" Loaded="Window_Loaded" ContentRendered="Window_ContentRendered" Closing="Window_Closing">
     <Window.Resources>
         <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
@@ -35,7 +35,19 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8"/>
         </Style>
-        <Style x:Key="DropdownBox" TargetType="Control" BasedOn="{StaticResource FieldBox}">
+        <!-- ComboBox-specific (not Control-typed like FieldBox): BasedOn Theme.xaml's own implicit ComboBox
+             style so it inherits that style's real ControlTemplate. FieldBox/DropdownBox used to share one
+             TargetType="Control" style with no Template of its own, which is fine for the TextBoxes that use
+             FieldBox directly (a plain edit control's default chrome is just a themed enough border), but left
+             every ComboBox using DropdownBox (Game/Island/Scene) rendering with WPF's own unthemed default
+             ComboBox chrome instead: barely visible against Light's own pale palette, glaringly wrong (flat
+             system grey with a near-black edge) against Dark or any other theme. -->
+        <Style x:Key="DropdownBox" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeWindowBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8"/>
         </Style>
         <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Foreground" Value="{DynamicResource ThemeTextMuted2Brush}"/>

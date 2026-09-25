@@ -27,6 +27,42 @@ public partial class MinimapPopupWindow : Window
 
     public void SetImage(ImageSource? source) => PopupImage.Source = source;
 
+    // Sizes the window so its own content area matches the given aspect ratio (MainWindow's own
+    // MinimapContent.ActualWidth/Height, i.e. the same box RefreshMinimapPopup snapshots into the image
+    // this window shows) -- called once, right before the window is first shown. Without this the window
+    // always opened at its fixed XAML default (520x520, square), and Stretch="Uniform" -- correct in itself
+    // -- then letterboxed the image with black bars on whichever axis the content's own shape didn't happen
+    // to match a square, which is most islands (few are square). Still just a starting point: ResizeMode=
+    // "CanResize" lets the user resize away from this afterward exactly as before.
+    public void SizeToAspect(double contentWidth, double contentHeight)
+    {
+        if (contentWidth <= 0 || contentHeight <= 0) return;
+        const double MaxDimension = 720, MinDimension = 320;
+        var scale = MaxDimension / Math.Max(contentWidth, contentHeight);
+        var targetWidth = contentWidth * scale;
+        var targetHeight = contentHeight * scale;
+        if (Math.Max(targetWidth, targetHeight) < MinDimension)
+        {
+            var upscale = MinDimension / Math.Max(targetWidth, targetHeight);
+            targetWidth *= upscale; targetHeight *= upscale;
+        }
+        // PopupContent is what should actually match the aspect ratio; SizeToContent lets WPF work out
+        // exactly how much window chrome (title bar, the Border's own Margin) that needs around it, rather
+        // than this guessing at title-bar height itself.
+        PopupContent.Width = targetWidth;
+        PopupContent.Height = targetHeight;
+        SizeToContent = SizeToContent.WidthAndHeight;
+        // One-shot: once this pass has actually resized the window (Loaded priority runs after the layout
+        // pass SizeToContent needs), let PopupContent go back to filling whatever size the window is, so
+        // ResizeMode="CanResize" isn't fighting an explicit fixed content size on every later resize.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            SizeToContent = SizeToContent.Manual;
+            PopupContent.Width = double.NaN;
+            PopupContent.Height = double.NaN;
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
     private void PopupContent_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (PopupImage.Source is not BitmapSource bitmap) return;
