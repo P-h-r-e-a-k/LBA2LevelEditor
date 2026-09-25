@@ -198,7 +198,6 @@ public partial class MainWindow
         gameHost = host;
         playingGame = GameKind.Lba2;
         host.GameExited += OnGameExited;
-        host.WantsResize += (w, h) => _ = OnGameWantsResize(host, w, h);
         ShowPlayOverlay(host, $"Starting {label} ...");
         await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);
         if (!ReferenceEquals(gameHost, host)) return;
@@ -224,33 +223,6 @@ public partial class MainWindow
         PlayStatus.Text = $"Playing {label}. It plays what is saved on disk. Click the game to give it the keyboard.";
         lba2ControlScene = scene;
         _ = StartLba2Control(scene);
-    }
-
-    // EmbeddedGameHost's own WantsResize: the host area changed enough (debounced) to be worth a live engine
-    // resolution switch. `resolution WxH` is a normal console verb (CONSOLE_CMD.CPP's cmd_resolution) that
-    // re-runs Init3DView on success (Res_SwitchEx, RES_SWITCH.CPP) -- it is not launch-time-only. Two things
-    // can make it a no-op rather than a failure: no control connection yet (lba2Control null -- the socket
-    // connects a moment after the window is already up, see StartLba2Control), or the engine refusing because
-    // it's mid-cinematic/dialogue/inventory/holomap (Res_SwitchAllowedReason) -- both are left alone rather
-    // than retried, since the next resize (or CheckSizeNow, once the socket does connect) will try again.
-    private async Task OnGameWantsResize(EmbeddedGameHost host, int w, int h)
-    {
-        if (!ReferenceEquals(gameHost, host) || lba2Control is not { } client) return;
-        try
-        {
-            // res_do_switch's own success line is "Resolution: WxH" (CONSOLE_CMD.CPP); anything else means
-            // Res_SwitchAllowedReason rejected it or Res_Switch itself failed -- either way, nothing to confirm.
-            var response = await client.SendAsync($"resolution {w}x{h}");
-            if (!ReferenceEquals(gameHost, host) || lba2Control != client) return;
-            if (!response.Contains($"Resolution: {w}x{h}", StringComparison.Ordinal)) return;
-            // A real switch always arms a "keep this resolution? reverts in 15s" modal (Res_BeginRevertCountdown).
-            // `key enter` reaches modal loops (it drives the same input layer MyGetInput reads, unlike `input`),
-            // with a small delay so the press lands after the dialog's own entry-latch clears rather than
-            // being drained by it -- the dialog opens on the next tick, not synchronously within this response.
-            await client.SendAsync("key enter 90 3");
-            if (ReferenceEquals(gameHost, host) && lba2Control == client) host.ConfirmResize(w, h);
-        }
-        catch (IOException) { }
     }
 
     // A scene's own Music/CubeJingle byte can be 255 (SceneModel.Music == -1, the sign-extended read of that
@@ -302,10 +274,6 @@ public partial class MainWindow
         if (!playing || playingGame != GameKind.Lba2 || lba2ControlScene != scene) { client?.Dispose(); return; }
         if (client is null) { DebugLog.Log("MainWindow: LBA2 control socket didn't come up; script breakpoints are unavailable this session."); return; }
         lba2Control = client;
-        // The socket only just came up, so this is the earliest a live resize could have taken effect -- check
-        // now for drift between FitSize()'s original sample and the host's real area today (the launch this
-        // connects for takes "a few seconds", during which the host area can genuinely have changed).
-        gameHost?.CheckSizeNow();
         // A breakpoint hit during ordinary, unprompted play (not the result of Continue/Step,
         // which read their own outcome from the command's response instead -- see ResumeLba2).
         client.BreakpointHit += (actor, kind, offset) => Dispatcher.Invoke(() =>

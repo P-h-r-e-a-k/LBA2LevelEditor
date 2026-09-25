@@ -19,13 +19,6 @@ namespace LBAAssembler;
 // Forcing a 4:3 box here was this host's own artificial constraint, not something the engine needed -- it just produced large
 // black bars whenever the available space wasn't 4:3, which is what FitSize() now avoids by requesting the actual available
 // size (clamped to what the engine's own --resolution validation accepts) instead.
-//
-// Also no longer launch-time-only: the engine does have a live `resolution WxH` console command (RES_SWITCH.CPP), reachable
-// over the same --listen control socket MainWindow.Play.cs already uses for script breakpoints, and it does properly re-run
-// Init3DView (RES_SWITCH.CPP's own Res_SwitchEx) rather than leaving the scene stuck in a corner -- see WantsResize/ConfirmResize
-// below for the C# side, and MainWindow.Play.cs for the console round trip (including auto-confirming the "keep this
-// resolution?" dialog every real switch arms). This host still never sends that command itself -- it only knows Win32, not the
-// control protocol -- it just asks its owner to, via WantsResize, and adopts the result via ConfirmResize.
 internal sealed class EmbeddedGameHost : HwndHost
 {
     private const int WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_CLIPCHILDREN = 0x02000000, WS_CLIPSIBLINGS = 0x04000000;
@@ -93,27 +86,11 @@ internal sealed class EmbeddedGameHost : HwndHost
     private IntPtr game;
     private Process? process;
     private readonly DispatcherTimer focusTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
-    private readonly DispatcherTimer resizeDebounce = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(400) };
 
     public event Action? GameExited;
 
-    // Fired (debounced, and only once the new size differs enough from the currently-launched one to be a
-    // real resize rather than layout jitter) when the host area has changed and a live engine resolution
-    // switch is worth attempting. MainWindow.Play.cs owns the control-socket connection (EmbeddedGameHost
-    // doesn't know about Lba2ControlClient), so it does the actual "resolution WxH" round trip and calls
-    // ConfirmResize on success; on failure (no control connection yet, or the engine refused -- mid-
-    // cinematic/dialogue/holomap, per Res_SwitchAllowedReason) it simply does nothing, leaving Fit() to
-    // keep centring at the last size that was actually confirmed.
-    public event Action<int, int>? WantsResize;
-    private int pendingResizeW, pendingResizeH;
-
     public bool Running => process is { HasExited: false } && game != IntPtr.Zero;
     public int ProcessId => process?.Id ?? 0;
-
-    public EmbeddedGameHost()
-    {
-        resizeDebounce.Tick += ResizeDebounceTick;
-    }
 
     // The size in device pixels the game should be launched at: this control's own actual size, clamped to
     // what the engine's own --resolution validation accepts (Res_ValidateDimensions: width 320-1920 and a
@@ -122,54 +99,15 @@ internal sealed class EmbeddedGameHost : HwndHost
     // the size it actually believes it's rendering at, not recompute a different "best fit now" later.
     public (int Width, int Height) FitSize()
     {
-        var (w, h) = ClampToEngineLimits(ActualWidth, ActualHeight, VisualTreeHelper.GetDpi(this));
-        launchWidth = w; launchHeight = h;
-        return (w, h);
-    }
-
-    private static (int W, int H) ClampToEngineLimits(double actualWidth, double actualHeight, DpiScale dpi)
-    {
-        var w = Math.Clamp((int)(actualWidth * dpi.DpiScaleX), 320, 1920);
-        var h = Math.Clamp((int)(actualHeight * dpi.DpiScaleY), 200, 1024);
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var w = Math.Clamp((int)(ActualWidth * dpi.DpiScaleX), 320, 1920);
+        var h = Math.Clamp((int)(ActualHeight * dpi.DpiScaleY), 200, 1024);
         w -= w % 8;
+        launchWidth = w; launchHeight = h;
         return (w, h);
     }
 
     private int launchWidth, launchHeight;
-
-    // Checks right now whether the host's current area still matches what the engine was actually launched
-    // at, without waiting for a layout event -- called once the control socket first connects (StartLba2Control),
-    // since that's the earliest moment a live resize can take effect, and drift can already have accumulated
-    // by then (FitSize() is sampled once, before Lba2Play.Launch even starts the process, and that launch
-    // takes "a few seconds" during which the host area can genuinely change, e.g. a docked panel settling or
-    // the user maximising the window).
-    public void CheckSizeNow() => ConsiderLiveResize();
-
-    private void ConsiderLiveResize()
-    {
-        if (game == IntPtr.Zero || WantsResize is null) return;
-        var (w, h) = ClampToEngineLimits(ActualWidth, ActualHeight, VisualTreeHelper.GetDpi(this));
-        if (Math.Abs(w - launchWidth) < 16 && Math.Abs(h - launchHeight) < 16) return;   // layout noise, not a real resize
-        pendingResizeW = w; pendingResizeH = h;
-        resizeDebounce.Stop();
-        resizeDebounce.Start();
-    }
-
-    private void ResizeDebounceTick(object? sender, EventArgs e)
-    {
-        resizeDebounce.Stop();
-        if (game == IntPtr.Zero || (pendingResizeW == launchWidth && pendingResizeH == launchHeight)) return;
-        WantsResize?.Invoke(pendingResizeW, pendingResizeH);
-    }
-
-    // Called by the owner once a live "resolution" switch it asked for (via WantsResize) actually succeeded:
-    // adopts the new size as the launched one, so Fit() centres against it instead of the old one, and
-    // resizes the child window to match immediately rather than waiting for the next unrelated layout pass.
-    public void ConfirmResize(int w, int h)
-    {
-        launchWidth = w; launchHeight = h;
-        Fit();
-    }
 
     protected override HandleRef BuildWindowCore(HandleRef parent)
     {
@@ -244,16 +182,19 @@ internal sealed class EmbeddedGameHost : HwndHost
         return best;
     }
 
-    // Centres the game at the resolution it was actually launched with (FitSize's own cached result, kept up
-    // to date by ConfirmResize whenever a live engine resolution switch succeeds), not a freshly recomputed
-    // "best fit now": Win32-resizing the child window to a size the engine doesn't itself know about would
-    // only move the black bars from this host's own paint into SDL's own internal logical-presentation
-    // letterboxing instead, with no actual FOV gain -- the two would disagree about what "the current size"
-    // even is. Actually changing what the engine renders at is WantsResize/ConfirmResize's job (see their own
-    // comments); this just keeps the Win32 window matching whatever that size currently is. Any gap between
-    // the two while a live resize is still in flight (debounced, then an async control-socket round trip) is
-    // covered by SDL's own scale-to-fit -- the same SDL_LOGICAL_PRESENTATION_LETTERBOX mechanism this host
-    // relied on entirely before live resize existed.
+    // Centres the game at the resolution it was actually launched with (FitSize's own cached result), not a
+    // freshly recomputed "best fit now": the engine's own internal rendering resolution is fixed for the
+    // life of the process (--resolution is a launch-time argument only, there is no live equivalent this
+    // host can safely drive -- the engine's own console `resolution` command exists but is documented as
+    // leaving the scene rendered into the corner unless something also re-runs Init3DView, which nothing
+    // reachable from here does). Recomputing a different size and just Win32-resizing the child window
+    // would only move the black bars from this host's own paint into SDL's own internal logical-
+    // presentation letterboxing instead, with no actual FOV gain -- the two would disagree about what
+    // "the current size" even is. If the control is later resized smaller than the launch size, SDL scales
+    // its own framebuffer down to fit (the same SDL_LOGICAL_PRESENTATION_LETTERBOX mechanism that already
+    // exists for exactly this); if resized larger, this simply centres the game in the extra space, the
+    // same as before FitSize() stopped forcing 4:3, just against the real launch size instead of a fresh
+    // 4:3 guess.
     private void Fit()
     {
         if (game == IntPtr.Zero || host == IntPtr.Zero || !GetClientRect(host, out var rect)) return;
@@ -268,7 +209,6 @@ internal sealed class EmbeddedGameHost : HwndHost
     {
         base.OnWindowPositionChanged(rcBoundingBox);
         Fit();
-        ConsiderLiveResize();
     }
 
     // Clicking on the game gives it the keyboard (a click on a foreign child window doesn't move the focus by itself).
@@ -286,7 +226,6 @@ internal sealed class EmbeddedGameHost : HwndHost
     private void Release()
     {
         focusTimer.Stop();
-        resizeDebounce.Stop();
         game = IntPtr.Zero;
     }
 
