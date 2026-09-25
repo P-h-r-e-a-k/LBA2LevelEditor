@@ -10,7 +10,6 @@ using Microsoft.Win32;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
-using AvalonDock.Layout;
 using LBAAssembler.Lba1;
 using LBAAssembler.LbaScript;
 
@@ -111,6 +110,7 @@ public partial class MainWindow : Window
         scriptSession = new ScriptSession(() => gameRoot);
         nativeRenderer = new CommunityRendererBackend(gameRoot);
         InitializeComponent();
+        BuildDockLayout();
         WindowPlacement.Attach(this, "MainWindow");
         softwareRenderTimer.Tick += (_, _) => { softwareRenderTimer.Stop(); RenderSoftwareTerrain(); };
         Scenes.SceneHistory.PersistPath = Path.Combine(AppContext.BaseDirectory, "undo_history.dat");
@@ -1369,20 +1369,12 @@ public partial class MainWindow : Window
         SyncPlayOverlay();
     }
 
-    // ---- dockable side panels (AvalonDock) --------------------------------------------------------------------------------------------
+    // ---- dockable side panels (DockGroup -- see MainWindow.Docking.cs) ----------------------------------------------------------------
 
-    // Hide()/Show() (via IsVisible) rather than a plain Visibility setter: unlike a TabItem, a
-    // LayoutAnchorable is a real node in the docking layout tree, and Hide() is what removes it
-    // cleanly (remembering its position for the matching Show() later) without disturbing whatever
-    // else is docked around it.
-    private static void SetPanelVisible(LayoutAnchorable panel, bool visible) => panel.IsVisible = visible;
+    private static void SetPanelVisible(DockItem panel, bool visible) => panel.SetVisible(visible);
 
-    // Brings a panel back if the user (or a mode switch) had it hidden, then makes it the shown tab in its pane.
-    private static void ActivatePanel(LayoutAnchorable panel)
-    {
-        if (!panel.IsVisible) panel.IsVisible = true;
-        panel.IsActive = true;
-    }
+    // Brings a panel back if the user (or a mode switch) had it hidden or floated, then makes it the shown tab in its pane.
+    private static void ActivatePanel(DockItem panel) => panel.Activate();
 
     private void ShowPanel_Click(object sender, RoutedEventArgs e)
     {
@@ -1396,17 +1388,12 @@ public partial class MainWindow : Window
     }
 
     // Undoes closed/floated-out-of-reach panels by making every one of them visible again (docked
-    // back wherever AvalonDock last had it). Doesn't restore a manually dragged arrangement -- this
-    // package has no layout (de)serializer to snapshot/replay one.
+    // back wherever they started). Doesn't restore a manually resized split -- there's no layout
+    // (de)serializer here, same as when this ran on AvalonDock.
     private void ResetPanelLayout_Click(object sender, RoutedEventArgs e)
     {
         foreach (var panel in new[] { LocationAnchorable, ModeAnchorable, ZonesTab, ZoneDetailsTab, BuildTab, PlayTab, ScriptTab, MinimapAnchorable })
-            panel.IsVisible = true;
-    }
-
-    private void ZoneDetailsTab_IsSelectedChanged(object? sender, System.EventArgs e)
-    {
-        if (ZoneDetailsTab.IsSelected) RefreshZoneList();
+            panel.SetVisible(true);
     }
 
     // Draws `zones` (corners run through `map` into overlay coordinates; the view is
