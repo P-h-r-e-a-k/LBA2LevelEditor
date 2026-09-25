@@ -167,13 +167,15 @@ public partial class MainWindow
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 5) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(126) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                var label = new TextBlock { Text = field.Label, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontSize = 11, ToolTip = field.Hint };
+                var label = new TextBlock { Text = field.Label, VerticalAlignment = VerticalAlignment.Center, FontSize = 11, ToolTip = field.Hint };
+                label.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
                 var box = new TextBox
                 {
                     Text = field.Get(zone).ToString(), Padding = new Thickness(4, 3, 4, 3), ToolTip = field.Hint,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0)),
                 };
+                box.SetResourceReference(TextBox.ForegroundProperty, "ThemeTextBrush");
+                box.SetResourceReference(TextBox.BackgroundProperty, "ThemeWindowBrush");
+                box.SetResourceReference(TextBox.BorderBrushProperty, "ThemeBorderBrush");
                 System.Windows.Automation.AutomationProperties.SetName(box, field.Label);
                 box.TextChanged += ZoneBounds_TextChanged;
                 Grid.SetColumn(box, 1);

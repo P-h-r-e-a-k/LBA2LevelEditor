@@ -56,8 +56,13 @@ internal sealed class NumberBox : Grid
         box.PreviewMouseWheel += (_, e) => { Value = currentValue + (e.Delta > 0 ? 1 : -1); e.Handled = true; };
     }
 
-    public void Theme(Brush field, Brush text, Brush border)
+    // Resource key names, not resolved Brush values, so this keeps tracking the active theme -- a Brush
+    // captured once at construction time would freeze at whatever theme was active then, the same
+    // {StaticResource} vs {DynamicResource} distinction Theme.xaml's own styles rely on.
+    public void Theme(string fieldKey, string textKey, string borderKey)
     {
-        box.Background = field; box.Foreground = text; box.BorderBrush = border;
+        box.SetResourceReference(TextBox.BackgroundProperty, fieldKey);
+        box.SetResourceReference(TextBox.ForegroundProperty, textKey);
+        box.SetResourceReference(TextBox.BorderBrushProperty, borderKey);
     }
 }

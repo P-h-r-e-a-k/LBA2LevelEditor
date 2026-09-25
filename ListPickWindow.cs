@@ -19,8 +19,8 @@ internal sealed class ListPickWindow : Window
         Title = title;
         Width = 460; Height = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
-        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+        SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
+        SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         ShowInTaskbar = false;
 
         var panel = new DockPanel { Margin = new Thickness(12) };
@@ -33,7 +33,8 @@ internal sealed class ListPickWindow : Window
 
         if (note is not null)
         {
-            var text = new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8), Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)) };
+            var text = new TextBlock { Text = note, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+            text.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
             DockPanel.SetDock(text, Dock.Top);
             panel.Children.Add(text);
         }
@@ -43,8 +44,8 @@ internal sealed class ListPickWindow : Window
         panel.Children.Add(filter);
 
         list.FontFamily = new FontFamily("Consolas");
-        list.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
-        list.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+        list.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+        list.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         panel.Children.Add(list);
         Content = panel;
 

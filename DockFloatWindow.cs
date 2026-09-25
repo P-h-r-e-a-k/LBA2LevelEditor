@@ -20,9 +20,11 @@ internal sealed class DockFloatWindow : Window
         this.owner = owner;
         Title = $"{item.Title} – LBA Assembler";
         Width = 420; Height = 480; MinWidth = 240; MinHeight = 160;
-        Background = (Brush)FindResource("ThemeWindowBrush");
+        SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
         var root = new DockPanel { LastChildFill = true };
-        var bar = new Border { Background = (Brush)FindResource("ThemeHeaderBrush"), BorderBrush = (Brush)FindResource("ThemeBorderBrush"), BorderThickness = new Thickness(0, 0, 0, 1) };
+        var bar = new Border { BorderThickness = new Thickness(0, 0, 0, 1) };
+        bar.SetResourceReference(Border.BackgroundProperty, "ThemeHeaderBrush");
+        bar.SetResourceReference(Border.BorderBrushProperty, "ThemeBorderBrush");
         var dockBack = new Button { Content = "⇱ Dock", Margin = new Thickness(6), Padding = new Thickness(8, 3, 8, 3), HorizontalAlignment = HorizontalAlignment.Left };
         dockBack.Click += (_, _) => Close();
         bar.Child = dockBack;

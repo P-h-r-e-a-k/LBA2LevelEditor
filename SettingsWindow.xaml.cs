@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using LBAAssembler.Scenes;
 using Microsoft.Win32;
 
@@ -11,6 +12,12 @@ public partial class SettingsWindow : Window
     public bool Lba1DirectoryChanged { get; private set; }
     public bool ScriptNamesChanged { get; private set; }
 
+    // What was active when this dialog opened, so Cancel can put it back -- the theme combo applies live
+    // (ThemeCombo_SelectionChanged) so the user can actually see what they're picking, unlike every other
+    // field here which waits for Save.
+    private readonly AppTheme themeOnOpen = ThemeManager.Current;
+    private bool loadingThemeCombo;
+
     public SettingsWindow()
     {
         InitializeComponent();
@@ -20,6 +27,22 @@ public partial class SettingsWindow : Window
         UndoStepsBox.Text = EditorSettings.Current.UndoMaxSteps.ToString();
         UndoMegabytesBox.Text = EditorSettings.Current.UndoMaxMegabytes.ToString();
         RefreshUndoHistorySize();
+
+        loadingThemeCombo = true;
+        foreach (var theme in Enum.GetValues<AppTheme>()) ThemeCombo.Items.Add(new ComboBoxItem { Content = ThemeManager.DisplayName(theme), Tag = theme });
+        ThemeCombo.SelectedItem = ThemeCombo.Items.Cast<ComboBoxItem>().First(i => (AppTheme)i.Tag! == themeOnOpen);
+        loadingThemeCombo = false;
+
+        // Catches the window being closed via the titlebar X too, not just Cancel -- DialogResult is still
+        // null in that case (only Save_Click/Cancel_Click set it), so "wasn't explicitly saved" is the same
+        // check either way.
+        Closing += (_, _) => { if (DialogResult != true && ThemeManager.Current != themeOnOpen) ThemeManager.Apply(themeOnOpen); };
+    }
+
+    private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (loadingThemeCombo || ThemeCombo.SelectedItem is not ComboBoxItem { Tag: AppTheme theme }) return;
+        ThemeManager.Apply(theme);
     }
 
     private void RefreshUndoHistorySize()
@@ -94,6 +117,7 @@ public partial class SettingsWindow : Window
         settings.LowercaseScriptNames = LowercaseNamesCheck.IsChecked == true;
         settings.UndoMaxSteps = undoSteps;
         settings.UndoMaxMegabytes = undoMegabytes;
+        settings.Theme = ThemeManager.Save(ThemeManager.Current);   // already applied live by ThemeCombo_SelectionChanged; just persist it
         settings.Save();
         DialogResult = true;
     }

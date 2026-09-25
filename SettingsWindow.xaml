@@ -2,32 +2,32 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Settings" Height="600" Width="620" MinHeight="600" MinWidth="560"
-        Background="#FFFFFF" Foreground="#10243E" FontFamily="Segoe UI"
+        Background="{DynamicResource ThemeFieldBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Segoe UI"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <Window.Resources>
         <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Foreground" Value="#10243E"/>
-            <Setter Property="Background" Value="#D6E6F7"/>
-            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeRaisedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="13,9"/>
             <Setter Property="Margin" Value="8,0,0,0"/>
         </Style>
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource QuietButton}">
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="Background" Value="#1B6EC2"/>
-            <Setter Property="BorderBrush" Value="#1B6EC2"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeAccentTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeAccentBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style x:Key="Eyebrow" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#4E6B8A"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextMutedBrush}"/>
             <Setter Property="FontFamily" Value="Consolas"/>
             <Setter Property="FontSize" Value="10"/>
         </Style>
         <Style x:Key="FieldBox" TargetType="Control">
-            <Setter Property="Foreground" Value="#10243E"/>
-            <Setter Property="Background" Value="#E8F0FA"/>
-            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeWindowBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8"/>
         </Style>
@@ -56,8 +56,8 @@
             <TextBox x:Name="GameDirectoryBox" Style="{StaticResource FieldBox}" VerticalContentAlignment="Center"/>
         </DockPanel>
 
-        <TextBlock Grid.Row="4" Text="Folder containing the .ILE islands, RESS.HQR, SCENE.HQR, etc. Leave blank if you only have LBA1." TextWrapping="Wrap" FontSize="11" Foreground="#7C93AC"/>
-        <TextBlock x:Name="ValidationText" Grid.Row="0" Text="" FontSize="11" Foreground="#E08A6A" HorizontalAlignment="Right"/>
+        <TextBlock Grid.Row="4" Text="Folder containing the .ILE islands, RESS.HQR, SCENE.HQR, etc. Leave blank if you only have LBA1." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}"/>
+        <TextBlock x:Name="ValidationText" Grid.Row="0" Text="" FontSize="11" Foreground="{DynamicResource ThemeErrorBrush}" HorizontalAlignment="Right"/>
 
         <TextBlock Grid.Row="6" Text="LBA1 game folder  (optional)" Style="{StaticResource Eyebrow}"/>
 
@@ -66,11 +66,16 @@
             <TextBox x:Name="Lba1DirectoryBox" Style="{StaticResource FieldBox}" VerticalContentAlignment="Center"/>
         </DockPanel>
 
-        <TextBlock Grid.Row="10" Text="Folder containing SCENE.HQR, LBA_GRI.HQR, LBA_BLL.HQR, LBA_BRK.HQR, RESS.HQR. Leave blank if you only have LBA2." TextWrapping="Wrap" FontSize="11" Foreground="#7C93AC"/>
-        <TextBlock x:Name="Lba1ValidationText" Grid.Row="6" Text="" FontSize="11" Foreground="#E08A6A" HorizontalAlignment="Right"/>
+        <TextBlock Grid.Row="10" Text="Folder containing SCENE.HQR, LBA_GRI.HQR, LBA_BLL.HQR, LBA_BRK.HQR, RESS.HQR. Leave blank if you only have LBA2." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}"/>
+        <TextBlock x:Name="Lba1ValidationText" Grid.Row="6" Text="" FontSize="11" Foreground="{DynamicResource ThemeErrorBrush}" HorizontalAlignment="Right"/>
 
         <StackPanel Grid.Row="11" VerticalAlignment="Top" Margin="0,22,0,0">
-            <CheckBox x:Name="LowercaseNamesCheck" Foreground="#10243E"
+            <TextBlock Text="Appearance" Style="{StaticResource Eyebrow}" Margin="0,0,0,8"/>
+            <ComboBox x:Name="ThemeCombo" Width="220" HorizontalAlignment="Left" SelectionChanged="ThemeCombo_SelectionChanged"
+                      ToolTip="Applies immediately so you can see it; Cancel reverts to what was active before this dialog opened"/>
+            <TextBlock Text="Dark and the two high-contrast themes are easier on the eyes in low light or for contrast/low-vision needs; the colour-blind-safe theme changes how zone types and status colours are distinguished, not just chrome." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}" Margin="0,6,0,0"/>
+
+            <CheckBox x:Name="LowercaseNamesCheck" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,20,0,0"
                       Content="Lowercase function names in script text (set_track(…) instead of SET_TRACK(…))"/>
 
             <TextBlock Text="Undo history" Style="{StaticResource Eyebrow}" Margin="0,20,0,8"/>
@@ -81,20 +86,20 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="Steps to remember" FontSize="11" Foreground="#7C93AC" Margin="0,0,0,4"/>
+                    <TextBlock Text="Steps to remember" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}" Margin="0,0,0,4"/>
                     <TextBox x:Name="UndoStepsBox" Style="{StaticResource FieldBox}"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2">
-                    <TextBlock Text="Storage limit (MB)" FontSize="11" Foreground="#7C93AC" Margin="0,0,0,4"/>
+                    <TextBlock Text="Storage limit (MB)" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}" Margin="0,0,0,4"/>
                     <TextBox x:Name="UndoMegabytesBox" Style="{StaticResource FieldBox}"/>
                 </StackPanel>
             </Grid>
-            <TextBlock Text="Undo steps are kept on disk (undo_history.dat, next to the exe) so they carry over between sessions. The oldest step is dropped once either limit is reached." TextWrapping="Wrap" FontSize="11" Foreground="#7C93AC" Margin="0,8,0,0"/>
+            <TextBlock Text="Undo steps are kept on disk (undo_history.dat, next to the exe) so they carry over between sessions. The oldest step is dropped once either limit is reached." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}" Margin="0,8,0,0"/>
             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                 <Button Content="Clear undo history now" Click="ClearUndoHistory_Click" Style="{StaticResource QuietButton}" Margin="0"/>
-                <TextBlock x:Name="UndoHistorySizeText" Text="" FontSize="11" Foreground="#7C93AC" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                <TextBlock x:Name="UndoHistorySizeText" Text="" FontSize="11" Foreground="{DynamicResource ThemeDisabledBrush}" VerticalAlignment="Center" Margin="10,0,0,0"/>
             </StackPanel>
-            <TextBlock x:Name="UndoValidationText" Text="" FontSize="11" Foreground="#E08A6A" Margin="0,6,0,0"/>
+            <TextBlock x:Name="UndoValidationText" Text="" FontSize="11" Foreground="{DynamicResource ThemeErrorBrush}" Margin="0,6,0,0"/>
         </StackPanel>
 
         <StackPanel Grid.Row="12" Orientation="Horizontal" HorizontalAlignment="Right">

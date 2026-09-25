@@ -2,9 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Minimap" Height="520" Width="520" MinHeight="240" MinWidth="240"
-        Background="#E8F0FA" Foreground="#10243E" FontFamily="Segoe UI"
+        Background="{DynamicResource ThemeWindowBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Segoe UI"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
-    <Border Margin="12" Background="Black" BorderBrush="#A9C3E0" BorderThickness="1">
+    <Border Margin="12" Background="Black" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1">
         <Grid x:Name="PopupContent" Cursor="Hand" MouseLeftButtonDown="PopupContent_MouseLeftButtonDown">
             <Image x:Name="PopupImage" Stretch="Uniform" SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
         </Grid>

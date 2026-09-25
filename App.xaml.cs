@@ -23,6 +23,10 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // Applied before the first window is ever constructed (App.xaml has no StartupUri any more, on
+        // purpose -- that would construct MainWindow as part of base.OnStartup itself, before this line
+        // ever ran, so every {DynamicResource ThemeXxx} in it would resolve to nothing for one frame).
+        ThemeManager.Apply(ThemeManager.Parse(EditorSettings.Current.Theme));
         // Point the native engine's own log at the same file (it stays silent without this).
         Environment.SetEnvironmentVariable("LBA2_EDITOR_DEBUG_LOG", DebugLog.LogFile);
         DebugLog.Log($"App: startup (version {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version})");
@@ -38,6 +42,7 @@ public partial class App : Application
         {
             DebugLog.Log($"App: UnobservedTaskException: {args.Exception}");
         };
+        new MainWindow().Show();
     }
 }
 

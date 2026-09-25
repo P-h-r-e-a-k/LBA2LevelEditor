@@ -947,7 +947,7 @@ internal sealed class Lba1PlayHostWindow : Window
     {
         Title = "LBA1 - play scene";
         Width = 1180; Height = 780; MinWidth = 760; MinHeight = 480;
-        Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+        this.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
         var view = new Lba1PlayView(game, images, directory);
         Content = view;
         Loaded += (_, _) => view.Start(scene);

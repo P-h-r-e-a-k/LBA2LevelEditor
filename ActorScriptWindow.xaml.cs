@@ -33,18 +33,9 @@ public partial class ActorScriptWindow : Window
 
     private enum ScriptView { Life, Track }
 
-    private static readonly SolidColorBrush OkBrush = Frozen(0x8F, 0xC9, 0x8F);
-    private static readonly SolidColorBrush ErrorBrush = Frozen(0xE0, 0x7A, 0x6A);
-    private static readonly SolidColorBrush WarnBrush = Frozen(0xE0, 0xB0, 0x5A);
-    private static readonly SolidColorBrush NeutralBrush = Frozen(0x89, 0x95, 0x8B);
-
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
-
+    // Status severity colours come from the theme (Success/Warning/Error/Disabled) via SetResourceReference at
+    // each assignment site below, not a precomputed Brush -- a frozen static Brush field would snapshot
+    // whichever theme was active the first time it was touched and never follow a later theme switch.
     private readonly RendererLibraryApi? library;
     private readonly ScriptSession? session;
     private readonly Func<int, ActorSource?>? resolveActor;
@@ -318,7 +309,7 @@ public partial class ActorScriptWindow : Window
         if (sceneScripts!.IsEdited(source.Slot, CurrentKind))
         {
             StatusText.Text = "Revert or save this script before setting a breakpoint by line here (line numbers may have shifted).";
-            StatusText.Foreground = WarnBrush;
+            StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeWarningBrush");
             return;
         }
         var line = ScriptTextBox.GetLineIndexFromCharacterIndex(ScriptTextBox.CaretIndex);
@@ -326,13 +317,13 @@ public partial class ActorScriptWindow : Window
         if (offset is null)
         {
             StatusText.Text = $"Line {line + 1} has no instruction to break on.";
-            StatusText.Foreground = WarnBrush;
+            StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeWarningBrush");
             return;
         }
         var nowSet = !ScriptBreakpoints.IsSet(debugScene, debugActor, CurrentKind, offset.Value);
         ScriptBreakpoints.Toggle(debugScene, debugActor, CurrentKind, offset.Value);
         StatusText.Text = nowSet ? $"● breakpoint set at line {line + 1} (offset {offset.Value})" : $"breakpoint cleared at line {line + 1}";
-        StatusText.Foreground = OkBrush;
+        StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeSuccessBrush");
     }
 
     // Stores the editor's text into the session for the actor/script being shown.
@@ -350,7 +341,7 @@ public partial class ActorScriptWindow : Window
         if (!IsCView)
         {
             StatusText.Text = session is { HasUnsavedEdits: true } ? UnsavedNote() : "";
-            StatusText.Foreground = NeutralBrush;
+            StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeDisabledBrush");
             return;
         }
 
@@ -362,7 +353,7 @@ public partial class ActorScriptWindow : Window
         {
             lastErrorLine = error.Line;
             StatusText.Text = $"✗ line {error.Line}, col {error.Column}: {error.Message}   (click to jump)";
-            StatusText.Foreground = ErrorBrush;
+            StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeErrorBrush");
         }
         else
         {
@@ -376,13 +367,13 @@ public partial class ActorScriptWindow : Window
                 // Compiles, but the text isn't in the canonical style (e.g. a literal on the right of a comparison).
                 lastErrorLine = warnings[0].Line;
                 StatusText.Text = $"⚠ line {warnings[0].Line}: {warnings[0].Message}" + (warnings.Count > 1 ? $" (+{warnings.Count - 1} more)" : "") + $" · compiles, {summary}";
-                StatusText.Foreground = WarnBrush;
+                StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeWarningBrush");
                 StatusText.ToolTip = string.Join("\n", warnings.Select(w => $"line {w.Line}, col {w.Column}: {w.Message}"));
             }
             else
             {
                 StatusText.Text = $"✓ compiles · {summary}";
-                StatusText.Foreground = OkBrush;
+                StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeSuccessBrush");
             }
         }
 
@@ -445,13 +436,13 @@ public partial class ActorScriptWindow : Window
         }
 
         StatusText.Text = "✓ " + result.Message;
-        StatusText.Foreground = OkBrush;
+        StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeSuccessBrush");
         afterSave?.Invoke();
         // The session dropped the saved scenes so they reload from disk: point this window at the fresh copy.
         var keep = StatusText.Text;
         ShowActor(actorIndex);
         StatusText.Text = keep;
-        StatusText.Foreground = OkBrush;
+        StatusText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeSuccessBrush");
     }
 
     // ---- editor events ----------------------------------------------------------

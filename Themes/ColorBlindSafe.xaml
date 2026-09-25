@@ -1,0 +1,65 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- For colour vision deficiency (red-green forms especially): chrome is identical to Light.xaml, since
+         neutral greys/blues aren't the problem CVD causes, hue confusion between similarly-lit saturated
+         colours is. What actually changes is Accent/Success/Warning/Error (this app's own colour-coded
+         meaning) plus ZoneStyle's 10 zone-type colours (ThemeManager.cs applies those in code, since
+         they're drawn on a canvas rather than styled WPF chrome) and the debug-flag banner, all rebuilt
+         from the Okabe-Ito palette (Okabe & Ito, "Color Universal Design", 2008), a peer-reviewed 8-hue
+         set chosen specifically to stay distinguishable under protanopia/deuteranopia/tritanopia. Notably,
+         Success and Warning/Error are NOT red-vs-green (the single most common confusion): Success uses
+         Okabe-Ito's bluish green, Warning/Error use orange/vermillion, so "good vs bad" reads through a
+         blue-green-vs-orange-red hue-FAMILY split that survives red-green colour blindness, not a
+         red-vs-green pairing that doesn't. -->
+    <Color x:Key="ThemeField">#FFFFFF</Color>
+    <Color x:Key="ThemeWindow">#E8F0FA</Color>
+    <Color x:Key="ThemeSurface">#F3F8FF</Color>
+    <Color x:Key="ThemeRaised">#D6E6F7</Color>
+    <Color x:Key="ThemeHover">#C3DBF5</Color>
+    <Color x:Key="ThemeSelected">#0072B2</Color>
+    <Color x:Key="ThemeBorder">#A9C3E0</Color>
+    <Color x:Key="ThemeButtonBorder">#9FBEE0</Color>
+    <Color x:Key="ThemeBorderStrong">#8FB0D6</Color>
+    <Color x:Key="ThemeText">#10243E</Color>
+    <Color x:Key="ThemeTextMuted">#4E6B8A</Color>
+    <Color x:Key="ThemeTextMuted2">#234A72</Color>
+    <Color x:Key="ThemeDisabled">#7C93AC</Color>
+    <Color x:Key="ThemeAccent">#0072B2</Color>
+    <!-- See Light.xaml's own comment on this key. This Accent is dark enough for white text. -->
+    <Color x:Key="ThemeAccentText">#FFFFFF</Color>
+    <Color x:Key="ThemeMenu">#DCEAFA</Color>
+    <Color x:Key="ThemeRowEven">#EAF3FD</Color>
+    <Color x:Key="ThemeHeader">#D2E3F6</Color>
+    <Color x:Key="ThemeSuccess">#009E73</Color>
+    <Color x:Key="ThemeWarning">#E69F00</Color>
+    <Color x:Key="ThemeError">#D55E00</Color>
+
+    <SolidColorBrush x:Key="ThemeFieldBrush" Color="{StaticResource ThemeField}"/>
+    <SolidColorBrush x:Key="ThemeWindowBrush" Color="{StaticResource ThemeWindow}"/>
+    <SolidColorBrush x:Key="ThemeSurfaceBrush" Color="{StaticResource ThemeSurface}"/>
+    <SolidColorBrush x:Key="ThemeRaisedBrush" Color="{StaticResource ThemeRaised}"/>
+    <SolidColorBrush x:Key="ThemeHoverBrush" Color="{StaticResource ThemeHover}"/>
+    <SolidColorBrush x:Key="ThemeSelectedBrush" Color="{StaticResource ThemeSelected}"/>
+    <SolidColorBrush x:Key="ThemeBorderBrush" Color="{StaticResource ThemeBorder}"/>
+    <SolidColorBrush x:Key="ThemeButtonBorderBrush" Color="{StaticResource ThemeButtonBorder}"/>
+    <SolidColorBrush x:Key="ThemeBorderStrongBrush" Color="{StaticResource ThemeBorderStrong}"/>
+    <SolidColorBrush x:Key="ThemeTextBrush" Color="{StaticResource ThemeText}"/>
+    <SolidColorBrush x:Key="ThemeTextMutedBrush" Color="{StaticResource ThemeTextMuted}"/>
+    <SolidColorBrush x:Key="ThemeTextMuted2Brush" Color="{StaticResource ThemeTextMuted2}"/>
+    <SolidColorBrush x:Key="ThemeDisabledBrush" Color="{StaticResource ThemeDisabled}"/>
+    <SolidColorBrush x:Key="ThemeAccentBrush" Color="{StaticResource ThemeAccent}"/>
+    <SolidColorBrush x:Key="ThemeAccentTextBrush" Color="{StaticResource ThemeAccentText}"/>
+    <SolidColorBrush x:Key="ThemeMenuBrush" Color="{StaticResource ThemeMenu}"/>
+    <SolidColorBrush x:Key="ThemeRowEvenBrush" Color="{StaticResource ThemeRowEven}"/>
+    <SolidColorBrush x:Key="ThemeHeaderBrush" Color="{StaticResource ThemeHeader}"/>
+    <SolidColorBrush x:Key="ThemeSuccessBrush" Color="{StaticResource ThemeSuccess}"/>
+    <SolidColorBrush x:Key="ThemeWarningBrush" Color="{StaticResource ThemeWarning}"/>
+    <SolidColorBrush x:Key="ThemeErrorBrush" Color="{StaticResource ThemeError}"/>
+
+    <Color x:Key="ThemeFlagBg">#FDECC8</Color>
+    <Color x:Key="ThemeFlagBorder">#E69F00</Color>
+    <Color x:Key="ThemeFlagText">#5A4310</Color>
+    <SolidColorBrush x:Key="ThemeFlagBgBrush" Color="{StaticResource ThemeFlagBg}"/>
+    <SolidColorBrush x:Key="ThemeFlagBorderBrush" Color="{StaticResource ThemeFlagBorder}"/>
+    <SolidColorBrush x:Key="ThemeFlagTextBrush" Color="{StaticResource ThemeFlagText}"/>
+</ResourceDictionary>

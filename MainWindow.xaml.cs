@@ -1276,7 +1276,9 @@ public partial class MainWindow : Window
                 Width = 10, Height = 10, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
                 Fill = new SolidColorBrush(ZoneStyle.ColorOf(type)),
             });
-            row.Children.Add(new TextBlock { Text = ZoneStyle.NameOf(type), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) });
+            var typeLabel = new TextBlock { Text = ZoneStyle.NameOf(type) };
+            typeLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+            row.Children.Add(typeLabel);
             var check = new CheckBox { Content = row, Tag = type, IsChecked = zoneTypeVisible[type], Margin = new Thickness(0, 0, 0, 8) };
             check.Click += ZoneType_Click;
             ZoneTypeList.Children.Add(check);
@@ -3190,18 +3192,16 @@ public partial class MainWindow : Window
 
     // FileLabel used to be one unchanging colour for every message, so a failure read identically to a
     // success or a routine status line. These are the same warning/good colours Theme.xaml's own header
-    // comment documents as part of the palette (never exposed as named resources, used inline like every
-    // other colour in this file) -- Warning covers both "went wrong" and "didn't happen the way you'd
-    // expect," since the palette itself only draws that one line, not a separate error/warning split.
+    // Warning covers both "went wrong" and "didn't happen the way you'd expect," since the status line
+    // only ever draws that one severity, not a separate error/warning split.
     private enum StatusKind { Info, Success, Warning }
-    private static readonly Brush StatusInfoBrush = new SolidColorBrush(Color.FromRgb(0x7C, 0x93, 0xAC));
-    private static readonly Brush StatusSuccessBrush = new SolidColorBrush(Color.FromRgb(0x14, 0x66, 0x4A));
-    private static readonly Brush StatusWarningBrush = new SolidColorBrush(Color.FromRgb(0xA3, 0x2C, 0x22));
 
     private void SetStatus(string message, StatusKind kind = StatusKind.Info)
     {
         FileLabel.Text = message;
-        FileLabel.Foreground = kind switch { StatusKind.Success => StatusSuccessBrush, StatusKind.Warning => StatusWarningBrush, _ => StatusInfoBrush };
+        // A resource-key reference, not a resolved Brush, so this keeps tracking the active theme even
+        // though FileLabel itself is only ever set here rather than bound once in XAML.
+        FileLabel.SetResourceReference(TextBlock.ForegroundProperty, kind switch { StatusKind.Success => "ThemeSuccessBrush", StatusKind.Warning => "ThemeWarningBrush", _ => "ThemeDisabledBrush" });
     }
 
     // File > Save writes pending terrain edits -- the only kind of change this button covers; zone, actor,

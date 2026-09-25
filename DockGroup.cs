@@ -79,7 +79,8 @@ internal sealed class DockGroup : Grid
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(bodyRow);
 
-        var header = new DockPanel { LastChildFill = true, Background = (Brush)FindResource("ThemeHeaderBrush"), Height = 26 };
+        var header = new DockPanel { LastChildFill = true, Height = 26 };
+        header.SetResourceReference(Panel.BackgroundProperty, "ThemeHeaderBrush");
         Grid.SetRow(header, 0);
         DockPanel.SetDock(soloTitle, Dock.Left);
         tabStrip.Margin = new Thickness(2, 0, 0, 0);
@@ -98,12 +99,13 @@ internal sealed class DockGroup : Grid
         header.Children.Add(buttons);
         header.Children.Add(soloTitle);
         header.Children.Add(tabStrip);
-        headerBorder = new Border { Child = header, BorderBrush = (Brush)FindResource("ThemeBorderBrush"), BorderThickness = new Thickness(0, 0, 0, 1) };
+        headerBorder = new Border { Child = header, BorderThickness = new Thickness(0, 0, 0, 1) };
+        headerBorder.SetResourceReference(Border.BorderBrushProperty, "ThemeBorderBrush");
         Grid.SetRow(headerBorder, 0);
         Children.Add(headerBorder);
 
         Grid.SetRow(body, 1);
-        body.Background = (Brush)FindResource("ThemeWindowBrush");
+        body.SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
         Children.Add(body);
     }
 
@@ -191,7 +193,7 @@ internal sealed class DockGroup : Grid
     public void SetPinned(bool value)
     {
         pinned = value;
-        pinButton.Foreground = pinned ? (Brush)FindResource("ThemeAccentBrush") : (Brush)FindResource("ThemeTextMutedBrush");
+        pinButton.SetResourceReference(Control.ForegroundProperty, pinned ? "ThemeAccentBrush" : "ThemeTextMutedBrush");
         bodyRow.Height = pinned ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
         body.Visibility = pinned ? Visibility.Collapsed : Visibility.Visible;
         Height = pinned ? CollapsedStripSize : double.NaN;
@@ -205,7 +207,9 @@ internal sealed class DockGroup : Grid
         if (flyout is null)
         {
             flyout = new Popup { PlacementTarget = headerBorder, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
-            var border = new Border { Background = (Brush)FindResource("ThemeWindowBrush"), BorderBrush = (Brush)FindResource("ThemeBorderStrongBrush"), BorderThickness = new Thickness(1) };
+            var border = new Border { BorderThickness = new Thickness(1) };
+            border.SetResourceReference(Border.BackgroundProperty, "ThemeWindowBrush");
+            border.SetResourceReference(Border.BorderBrushProperty, "ThemeBorderStrongBrush");
             border.Child = flyoutHost;
             flyout.Child = border;
         }
@@ -259,7 +263,7 @@ internal sealed class DockGroup : Grid
         {
             soloTitle.Visibility = Visibility.Visible;
             soloTitle.Text = visible[0].Title;
-            soloTitle.Foreground = (Brush)FindResource("ThemeTextMutedBrush");
+            soloTitle.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
         }
         else
         {
@@ -282,20 +286,22 @@ internal sealed class DockGroup : Grid
             var close = new Button
             {
                 Content = "×", Width = 16, Height = 16, Padding = new Thickness(0), Margin = new Thickness(6, 0, 0, 0),
-                Background = Brushes.Transparent, BorderThickness = new Thickness(0), Foreground = (Brush)FindResource("ThemeTextMutedBrush"),
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
             };
+            close.SetResourceReference(Control.ForegroundProperty, "ThemeTextMutedBrush");
             close.Click += (_, e) => { e.Handled = true; SetVisible(item.Key, false); };
             row.Children.Add(close);
         }
         var tab = new Border
         {
             Child = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = item.IsEnabled ? Cursors.Hand : Cursors.Arrow,
-            Background = isActive ? (Brush)FindResource("ThemeWindowBrush") : (Brush)FindResource("ThemeRaisedBrush"),
-            BorderBrush = (Brush)FindResource("ThemeBorderBrush"), BorderThickness = new Thickness(1, 1, 1, 0),
+            BorderThickness = new Thickness(1, 1, 1, 0),
             // Matches IslandEditorView's own disabled-control opacity (0.45) rather than inventing a second convention.
             Opacity = item.IsEnabled ? 1.0 : 0.45,
         };
-        text.Foreground = isActive ? (Brush)FindResource("ThemeTextBrush") : (Brush)FindResource("ThemeTextMutedBrush");
+        tab.SetResourceReference(Border.BackgroundProperty, isActive ? "ThemeWindowBrush" : "ThemeRaisedBrush");
+        tab.SetResourceReference(Border.BorderBrushProperty, "ThemeBorderBrush");
+        text.SetResourceReference(TextBlock.ForegroundProperty, isActive ? "ThemeTextBrush" : "ThemeTextMutedBrush");
         if (item.IsEnabled) tab.MouseLeftButtonDown += (_, e) => { if (pinned) ShowFlyout(item); else SetActive(item); e.Handled = true; };
         else tab.ToolTip = $"{item.Title} isn't available in the current mode";
         return tab;

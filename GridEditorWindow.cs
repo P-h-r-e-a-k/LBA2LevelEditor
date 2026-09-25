@@ -22,16 +22,16 @@ internal sealed class GridEditorWindow : Window
     private readonly List<IGridBackend> backends = new();
     private readonly ComboBox backendBox = new() { Width = 90 };
     private readonly TextBox filter = new() { Padding = new Thickness(3), ToolTip = "Filter the grids" };
-    private readonly ListBox grids = new() { Width = 190, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)), FontFamily = new FontFamily("Consolas") };
-    private readonly ListBox blocks = new() { Width = 200, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
+    private readonly ListBox grids = new() { Width = 190, FontFamily = new FontFamily("Consolas") };
+    private readonly ListBox blocks = new() { Width = 200 };
     private readonly Image plan = new() { Width = 64 * Cell, Height = 64 * Cell, Cursor = Cursors.Cross };
-    private readonly Canvas planHost = new() { Width = 64 * Cell, Height = 64 * Cell, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) };
+    private readonly Canvas planHost = new() { Width = 64 * Cell, Height = 64 * Cell };
     private readonly System.Windows.Shapes.Rectangle cursor = new() { Stroke = Brushes.Yellow, StrokeThickness = 2, IsHitTestVisible = false };
     private readonly Image iso = new() { Stretch = Stretch.Uniform };
     private readonly Slider layer = new() { Minimum = 0, Maximum = 24, Value = 0, Width = 200, IsSnapToTickEnabled = true, TickFrequency = 1 };
-    private readonly TextBlock layerText = new() { Foreground = UiBrushes.Text, Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock cellInfo = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
-    private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock layerText = new() { Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock cellInfo = new() { TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly TextBlock status = new() { Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Button saveButton = new() { Content = "Save" }, undoButton = new() { Content = "Undo" }, redoButton = new() { Content = "Redo" };
     private readonly RadioButton paintTool = new() { Content = "Paint", IsChecked = true, GroupName = "gt" }, eraseTool = new() { Content = "Erase", GroupName = "gt" }, fillTool = new() { Content = "Fill rectangle", GroupName = "gt" };
     private readonly StackPanel libraryPanel = new();
@@ -56,8 +56,8 @@ internal sealed class GridEditorWindow : Window
         Title = "Interior grid editor";
         Width = 1500; Height = 900;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
-        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+        SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
+        SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         BuildLayout();
         try
         {
@@ -83,22 +83,35 @@ internal sealed class GridEditorWindow : Window
 
     private void BuildLayout()
     {
+        grids.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+        grids.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+        blocks.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+        blocks.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+        planHost.SetResourceReference(Panel.BackgroundProperty, "ThemeFieldBrush");
+        layerText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        cellInfo.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        status.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
         var root = new DockPanel();
         var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 6, 8, 6) };
         DockPanel.SetDock(top, Dock.Top);
-        top.Children.Add(new TextBlock { Text = "Game", Foreground = UiBrushes.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+        var gameLabel = new TextBlock { Text = "Game", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        gameLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        top.Children.Add(gameLabel);
         top.Children.Add(backendBox); backendBox.Margin = new Thickness(0, 0, 14, 0);
-        foreach (var t in new[] { paintTool, eraseTool, fillTool }) { t.Foreground = Foreground; t.Margin = new Thickness(0, 0, 10, 0); t.VerticalAlignment = VerticalAlignment.Center; top.Children.Add(t); }
+        foreach (var t in new[] { paintTool, eraseTool, fillTool }) { t.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); t.Margin = new Thickness(0, 0, 10, 0); t.VerticalAlignment = VerticalAlignment.Center; top.Children.Add(t); }
         paintTool.ToolTip = "Click / drag: places the selected block, its origin at the cell";
         eraseTool.ToolTip = "Click: removes the whole block under the pointer";
         fillTool.ToolTip = "Drag a rectangle: fills the layer with the block, stepping by its size";
-        top.Children.Add(new TextBlock { Text = "Layer", Foreground = UiBrushes.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 6, 0) });
+        var layerLabel = new TextBlock { Text = "Layer", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 6, 0) };
+        layerLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        top.Children.Add(layerLabel);
         top.Children.Add(layer); top.Children.Add(layerText);
         layer.ValueChanged += (_, _) => { layerText.Text = $"y = {(int)layer.Value}"; RedrawPlan(); };
         foreach (var (b, handler) in new (Button, RoutedEventHandler)[] { (undoButton, (_, _) => Undo()), (redoButton, (_, _) => Redo()), (saveButton, (_, _) => Save()) })
         { b.Padding = new Thickness(12, 3, 12, 3); b.Margin = new Thickness(14, 0, 0, 0); b.Click += handler; top.Children.Add(b); }
         root.Children.Add(top);
-        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
+        var bottom = new Border { Child = status };
+        bottom.SetResourceReference(Border.BackgroundProperty, "ThemeFieldBrush");
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(bottom);
 
@@ -113,7 +126,9 @@ internal sealed class GridEditorWindow : Window
         var right = new DockPanel { Margin = new Thickness(8), Width = 250 };
         blocks.SelectionChanged += (_, _) => { if (blocks.SelectedItem is BlockItem b) { block = b.Number; ShowLibrary(); } };
         var rightTop = new StackPanel();
-        rightTop.Children.Add(new TextBlock { Text = "Blocks of the library", FontSize = 10, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 0, 4) });
+        var blocksHeading = new TextBlock { Text = "Blocks of the library", FontSize = 10, Margin = new Thickness(0, 0, 0, 4) };
+        blocksHeading.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        rightTop.Children.Add(blocksHeading);
         DockPanel.SetDock(rightTop, Dock.Top);
         right.Children.Add(rightTop);
         DockPanel.SetDock(libraryPanel, Dock.Bottom);
@@ -132,9 +147,11 @@ internal sealed class GridEditorWindow : Window
         var centre = new Grid();
         centre.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         centre.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var planScroll = new ScrollViewer { Content = planHost, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Width = 64 * Cell + 24, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)) };
+        var planScroll = new ScrollViewer { Content = planHost, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Width = 64 * Cell + 24 };
+        planScroll.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
         Grid.SetColumn(planScroll, 0); centre.Children.Add(planScroll);
-        var isoHost = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = iso, Margin = new Thickness(8, 0, 0, 0) };
+        var isoHost = new Border { Child = iso, Margin = new Thickness(8, 0, 0, 0) };
+        isoHost.SetResourceReference(Border.BackgroundProperty, "ThemeFieldBrush");
         Grid.SetColumn(isoHost, 1); centre.Children.Add(isoHost);
         root.Children.Add(centre);
         Content = root;
@@ -272,7 +289,7 @@ internal sealed class GridEditorWindow : Window
         blocks.ItemTemplate = new DataTemplate();
         var stack = new FrameworkElementFactory(typeof(StackPanel)); stack.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
         var image = new FrameworkElementFactory(typeof(Image)); image.SetBinding(Image.SourceProperty, new System.Windows.Data.Binding("Thumb")); image.SetValue(FrameworkElement.WidthProperty, 44.0); image.SetValue(FrameworkElement.HeightProperty, 34.0); image.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 8, 0));
-        var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Text")); text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center); text.SetValue(TextBlock.ForegroundProperty, UiBrushes.Text);
+        var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Text")); text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center); text.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
         stack.AppendChild(image); stack.AppendChild(text);
         blocks.ItemTemplate.VisualTree = stack;
         if (blocks.Items.Count > 0) { block = Math.Clamp(block, 1, count); blocks.SelectedIndex = block - 1; }
@@ -304,13 +321,20 @@ internal sealed class GridEditorWindow : Window
     {
         libraryPanel.Children.Clear();
         if (GridPaint.Info(library, block) is not { } info) return;
-        libraryPanel.Children.Add(new TextBlock { Text = $"Block {block}: {info.Dx} x {info.Dy} x {info.Dz}", FontSize = 10, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 0, 4) });
+        var blockHeading = new TextBlock { Text = $"Block {block}: {info.Dx} x {info.Dy} x {info.Dz}", FontSize = 10, Margin = new Thickness(0, 0, 0, 4) };
+        blockHeading.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        libraryPanel.Children.Add(blockHeading);
         var entryBox = new TextBox { Text = "0", Width = 44, Padding = new Thickness(2) }; var brickBox = new TextBox { Padding = new Thickness(2), Width = 60 }; var shapeBox = new TextBox { Padding = new Thickness(2), Width = 44 };
         var entries = GridPaint.Entries(library, block).ToList();
         void Load() { if (int.TryParse(entryBox.Text, out var p) && entries.FirstOrDefault(e => e.Pos == p) is { } e) { brickBox.Text = e.Brick.ToString(); shapeBox.Text = e.Shape.ToString(); } }
         entryBox.TextChanged += (_, _) => Load();
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
-        foreach (var (label, box) in new[] { ("entry", entryBox), ("brick", brickBox), ("shape", shapeBox) }) { row.Children.Add(new TextBlock { Text = label, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center }); box.Margin = new Thickness(0, 0, 8, 0); row.Children.Add(box); }
+        foreach (var (label, box) in new[] { ("entry", entryBox), ("brick", brickBox), ("shape", shapeBox) })
+        {
+            var labelText = new TextBlock { Text = label, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
+            labelText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+            row.Children.Add(labelText); box.Margin = new Thickness(0, 0, 8, 0); row.Children.Add(box);
+        }
         libraryPanel.Children.Add(row);
         Load();
         var apply = new Button { Content = "Set entry", Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(0, 4, 6, 0), ToolTip = "Sets the brick and shape of one cell of the block (0 = a floor-like solid shape; the game uses the shape for collisions)" };
@@ -329,11 +353,18 @@ internal sealed class GridEditorWindow : Window
 
     private void NewBlock()
     {
-        var dialog = new Window { Title = "New block", Width = 300, Height = 200, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = Background, Foreground = Foreground, ResizeMode = ResizeMode.NoResize };
+        var dialog = new Window { Title = "New block", Width = 300, Height = 200, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize };
+        dialog.SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
+        dialog.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         var dx = new TextBox { Text = "1" }; var dy = new TextBox { Text = "1" }; var dz = new TextBox { Text = "1" }; var brick = new TextBox { Text = "0" };
         var panel = new StackPanel { Margin = new Thickness(12) };
         foreach (var (label, box) in new[] { ("size x", dx), ("size y", dy), ("size z", dz), ("brick (0-based)", brick) })
-        { var r = new DockPanel { Margin = new Thickness(0, 2, 0, 2) }; r.Children.Add(new TextBlock { Text = label, Width = 110, Foreground = Foreground }); r.Children.Add(box); panel.Children.Add(r); }
+        {
+            var r = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var labelText = new TextBlock { Text = label, Width = 110 };
+            labelText.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+            r.Children.Add(labelText); r.Children.Add(box); panel.Children.Add(r);
+        }
         var ok = new Button { Content = "Add", Padding = new Thickness(16, 3, 16, 3), IsDefault = true, Margin = new Thickness(0, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Right };
         ok.Click += (_, _) => dialog.DialogResult = true;
         panel.Children.Add(ok); dialog.Content = panel;

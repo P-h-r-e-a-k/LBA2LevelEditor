@@ -20,8 +20,9 @@ internal sealed class Lba2PlayHostWindow : Window
     {
         Title = "LBA2 - play scene";
         Width = 1180; Height = 780; MinWidth = 760; MinHeight = 480;
-        Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
-        status = new TextBlock { Margin = new Thickness(10, 6, 10, 6), FontFamily = new FontFamily("Consolas"), FontSize = 11, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)) };
+        SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+        status = new TextBlock { Margin = new Thickness(10, 6, 10, 6), FontFamily = new FontFamily("Consolas"), FontSize = 11 };
+        status.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
         var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(status, Dock.Bottom);
         root.Children.Add(status);

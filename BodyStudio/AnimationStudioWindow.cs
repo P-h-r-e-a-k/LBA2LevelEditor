@@ -17,10 +17,6 @@ namespace LbaBodyStudio;
 // was ported (Interface Audit finding) and what changed (control types + theme only, same behaviour).
 internal sealed class AnimationStudioWindow : Window
 {
-    private static SolidColorBrush B(DColor c) { var b = new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)); b.Freeze(); return b; }
-    private static readonly Brush PanelBg = B(Renderer.PanelBackground), FieldBg = B(Renderer.FieldBackground), ButtonBg = B(Renderer.ButtonBackground),
-        ButtonBorder = B(Renderer.ButtonBorder), Accent = B(Renderer.Accent), TextBrush = B(Renderer.Text), TextMuted = B(Renderer.TextMuted);
-
     private static ComboBox Combo(params string[] items) { var c = new ComboBox(); foreach (var i in items) c.Items.Add(i); c.SelectedIndex = 0; return c; }
     private static NumberBox Number(int min, int max, int value) => new(min, max, value);
 
@@ -46,7 +42,7 @@ internal sealed class AnimationStudioWindow : Window
         Title = "LBA Assembler — Animation Studio";
         Width = 1200; Height = 930; MinWidth = 900; MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Brushes.White;
+        SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
 
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -63,7 +59,8 @@ internal sealed class AnimationStudioWindow : Window
         Grid.SetRow(main, 0);
         root.Children.Add(main);
 
-        var left = new Grid { Background = PanelBg };
+        var left = new Grid();
+        left.SetResourceReference(Panel.BackgroundProperty, "ThemeWindowBrush");
         left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetColumn(left, 0);
@@ -75,9 +72,10 @@ internal sealed class AnimationStudioWindow : Window
         left.Children.Add(fields);
 
         void Add(UIElement c) { if (c is FrameworkElement f) f.Margin = new Thickness(0, 0, 0, 10); fieldsPanel.Children.Add(c); }
-        void Label(string text) => Add(new TextBlock { Text = text, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, Foreground = TextBrush });
-        void Note(string text) => Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 255, Foreground = TextMuted });
-        void Field(string text, UIElement c) { Add(new TextBlock { Text = text, Margin = new Thickness(0, 2, 0, 3), Foreground = TextBrush }); Add(c); }
+        TextBlock Themed(string text, double maxWidth = 0) { var t = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap }; if (maxWidth > 0) t.MaxWidth = maxWidth; t.SetResourceReference(TextBlock.ForegroundProperty, maxWidth > 0 ? "ThemeTextMutedBrush" : "ThemeTextBrush"); return t; }
+        void Label(string text) { var t = Themed(text); t.FontWeight = FontWeights.Bold; Add(t); }
+        void Note(string text) => Add(Themed(text, 255));
+        void Field(string text, UIElement c) { var t = Themed(text); t.Margin = new Thickness(0, 2, 0, 3); Add(t); Add(c); }
 
         Label("ANIMATION STUDIO");
         Note("Generates walk/run/idle/jump clips procedurally (AnimGenerator.cs) for any roster character -- the same 19-bone rig every custom body shares. Adjust the joint-angle knobs below and Regenerate to preview.");
@@ -93,14 +91,16 @@ internal sealed class AnimationStudioWindow : Window
         Grid.SetRow(buttons, 1);
         left.Children.Add(buttons);
 
-        var splitter = new GridSplitter { Width = 4, HorizontalAlignment = HorizontalAlignment.Stretch, Background = B(Renderer.Border) };
+        var splitter = new GridSplitter { Width = 4, HorizontalAlignment = HorizontalAlignment.Stretch };
+        splitter.SetResourceReference(Control.BackgroundProperty, "ThemeBorderBrush");
         Grid.SetColumn(splitter, 1);
         main.Children.Add(splitter);
 
         Grid.SetColumn(preview, 2);
         main.Children.Add(preview);
 
-        var statusBar = new Border { Background = PanelBg, Child = status };
+        var statusBar = new Border { Child = status };
+        statusBar.SetResourceReference(Border.BackgroundProperty, "ThemeWindowBrush");
         Grid.SetRow(statusBar, 1);
         root.Children.Add(statusBar);
 
@@ -118,19 +118,28 @@ internal sealed class AnimationStudioWindow : Window
         Closed += (_, _) => playTimer.Stop();
     }
 
+    // Run once, right after the whole tree is built (called from the constructor) -- every assignment
+    // below is SetResourceReference, a live binding, not a resolved Brush, so it keeps tracking the active
+    // theme forever after with no need to ever re-run this on a later theme switch.
     private void ApplyTheme()
     {
         foreach (var c in Descendants((DependencyObject)Content))
         {
             switch (c)
             {
-                case NumberBox nb: nb.Theme(FieldBg, TextBrush, ButtonBorder); break;
-                case Button b when b != export: b.Background = ButtonBg; b.Foreground = TextBrush; b.BorderBrush = ButtonBorder; break;
-                case CheckBox chk: chk.Foreground = TextBrush; break;
+                case NumberBox nb: nb.Theme("ThemeFieldBrush", "ThemeTextBrush", "ThemeButtonBorderBrush"); break;
+                case Button b when b != export:
+                    b.SetResourceReference(Control.BackgroundProperty, "ThemeRaisedBrush");
+                    b.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+                    b.SetResourceReference(Control.BorderBrushProperty, "ThemeButtonBorderBrush");
+                    break;
+                case CheckBox chk: chk.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); break;
             }
         }
-        export.Background = Accent; export.Foreground = Brushes.White; export.FontWeight = FontWeights.Bold;
-        status.Foreground = TextBrush;
+        export.SetResourceReference(Control.BackgroundProperty, "ThemeAccentBrush");
+        export.SetResourceReference(Control.ForegroundProperty, "ThemeAccentTextBrush");
+        export.FontWeight = FontWeights.Bold;
+        status.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

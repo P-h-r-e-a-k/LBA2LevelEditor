@@ -18,10 +18,10 @@ internal sealed class ObjectBrowserWindow : Window
     private sealed record Source(string Title, int Game, string Directory, string File, bool Static);
 
     private readonly ComboBox sourceBox = new() { Width = 200, Margin = new Thickness(0, 0, 10, 0) };
-    private readonly ListBox list = new() { Width = 130, FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
+    private readonly ListBox list = new() { Width = 130, FontFamily = new FontFamily("Consolas") };
     private readonly Image view = new() { Stretch = Stretch.Uniform };
-    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-    private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock info = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly TextBlock status = new() { Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly CheckBox wire = new() { Content = "Wireframe" };
 
     private Source? source;
@@ -40,8 +40,8 @@ internal sealed class ObjectBrowserWindow : Window
         Title = "Objects and bodies";
         Width = 1100; Height = 780;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
-        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+        SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
+        SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         BuildLayout();
         var sources = new List<Source>();
         if (Lba1Game.IsInstalled(lba1Directory ?? "") && File.Exists(System.IO.Path.Combine(lba1Directory!, "BODY.HQR"))) sources.Add(new("LBA1 bodies", 1, lba1Directory!, "BODY.HQR", false));
@@ -54,10 +54,16 @@ internal sealed class ObjectBrowserWindow : Window
 
     private void BuildLayout()
     {
+        list.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+        list.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+        info.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        status.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
         var root = new DockPanel();
         var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 6, 8, 6) };
         DockPanel.SetDock(top, Dock.Top);
-        top.Children.Add(new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Foreground = UiBrushes.Muted });
+        var libraryLabel = new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        libraryLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        top.Children.Add(libraryLabel);
         top.Children.Add(sourceBox);
         foreach (var (text, tip, handler) in new (string, string, RoutedEventHandler)[]
         {
@@ -70,10 +76,11 @@ internal sealed class ObjectBrowserWindow : Window
             var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 6, 0) };
             b.Click += handler; top.Children.Add(b);
         }
-        wire.Foreground = Foreground; wire.VerticalAlignment = VerticalAlignment.Center; wire.Checked += (_, _) => Draw(); wire.Unchecked += (_, _) => Draw();
+        wire.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); wire.VerticalAlignment = VerticalAlignment.Center; wire.Checked += (_, _) => Draw(); wire.Unchecked += (_, _) => Draw();
         top.Children.Add(wire);
         root.Children.Add(top);
-        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
+        var bottom = new Border { Child = status };
+        bottom.SetResourceReference(Border.BackgroundProperty, "ThemeFieldBrush");
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(bottom);
 
@@ -87,7 +94,8 @@ internal sealed class ObjectBrowserWindow : Window
         DockPanel.SetDock(right, Dock.Right);
         root.Children.Add(right);
 
-        var host = new Border { Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA)), Child = view };
+        var host = new Border { Child = view };
+        host.SetResourceReference(Border.BackgroundProperty, "ThemeWindowBrush");
         host.MouseLeftButtonDown += (_, e) => { drag = e.GetPosition(host); host.CaptureMouse(); };
         host.MouseMove += (_, e) => { if (drag is { } d && host.IsMouseCaptured) { var p = e.GetPosition(host); yaw += (float)(p.X - d.X) * 0.012f; drag = p; Draw(); } };
         host.MouseLeftButtonUp += (_, _) => { drag = null; host.ReleaseMouseCapture(); };

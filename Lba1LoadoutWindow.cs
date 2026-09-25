@@ -22,9 +22,8 @@ internal sealed class Lba1LoadoutWindow : Window
         Width = 560; Height = 640;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
-        var back = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
-        var fore = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
-        Background = back; Foreground = fore;
+        SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
+        SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
 
         var root = new DockPanel { Margin = new Thickness(14) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0) };
@@ -42,26 +41,32 @@ internal sealed class Lba1LoadoutWindow : Window
         root.Children.Add(buttons);
 
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = "Inventory", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), Margin = new Thickness(0, 0, 0, 4) });
+        var inventoryHeading = new TextBlock { Text = "Inventory", FontSize = 10, Margin = new Thickness(0, 0, 0, 4) };
+        inventoryHeading.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        panel.Children.Add(inventoryHeading);
         var wrap = new WrapPanel();
         for (var i = 0; i < Lba1Const.MaxInventory; i++)
         {
             if (i == 26) continue;    // the list of clover places is a note, not an item
             var name = itemName(i);
-            var box = new CheckBox { Content = name, Tag = i, Width = 168, Margin = new Thickness(0, 2, 8, 2), Foreground = fore, ToolTip = $"game flag {i}" };
+            var box = new CheckBox { Content = name, Tag = i, Width = 168, Margin = new Thickness(0, 2, 8, 2), ToolTip = $"game flag {i}" };
+            box.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
             items.Add(box);
             wrap.Children.Add(box);
         }
         panel.Children.Add(wrap);
 
-        panel.Children.Add(new TextBlock { Text = "State", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), Margin = new Thickness(0, 12, 0, 4) });
+        var stateHeading = new TextBlock { Text = "State", FontSize = 10, Margin = new Thickness(0, 12, 0, 4) };
+        stateHeading.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        panel.Children.Add(stateHeading);
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         void Row(string key, string label, string? hint = null)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, Foreground = fore };
+            var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            text.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
             var box = new TextBox { Margin = new Thickness(0, 2, 0, 2), Padding = new Thickness(3, 2, 3, 2), ToolTip = hint };
             Grid.SetRow(text, grid.RowDefinitions.Count - 1); Grid.SetRow(box, grid.RowDefinitions.Count - 1); Grid.SetColumn(box, 1);
             grid.Children.Add(text); grid.Children.Add(box);
@@ -76,7 +81,9 @@ internal sealed class Lba1LoadoutWindow : Window
         Row("leaves", "Clover leaves");
         Row("chapter", "Chapter", "what the story scripts test with CHAPTER");
         panel.Children.Add(grid);
-        panel.Children.Add(new TextBlock { Text = "Other game flags  (number=value, comma separated)", FontSize = 10, Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A)), Margin = new Thickness(0, 12, 0, 4) });
+        var flagsHeading = new TextBlock { Text = "Other game flags  (number=value, comma separated)", FontSize = 10, Margin = new Thickness(0, 12, 0, 4) };
+        flagsHeading.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        panel.Children.Add(flagsHeading);
         flags.Padding = new Thickness(3, 2, 3, 2);
         flags.ToolTip = "Scripts read these with VAR_GAME; 70 is the 'instructions' flag that blocks item use.";
         panel.Children.Add(flags);

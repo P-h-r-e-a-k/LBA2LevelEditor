@@ -2,26 +2,26 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Actor Script" Height="760" Width="1180" MinHeight="420" MinWidth="820"
-        Background="#FFFFFF" Foreground="#10243E" FontFamily="Segoe UI"
+        Background="{DynamicResource ThemeFieldBrush}" Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Segoe UI"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <Style x:Key="Eyebrow" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#4E6B8A"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextMutedBrush}"/>
             <Setter Property="FontFamily" Value="Consolas"/>
             <Setter Property="FontSize" Value="10"/>
         </Style>
         <Style x:Key="FieldBox" TargetType="Control">
-            <Setter Property="Foreground" Value="#10243E"/>
-            <Setter Property="Background" Value="#E8F0FA"/>
-            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeWindowBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="7"/>
         </Style>
         <!-- Flat segmented-control look for the Life / Track switch. -->
         <Style x:Key="ViewTab" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="#234A72"/>
-            <Setter Property="Background" Value="#E8F0FA"/>
-            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextMuted2Brush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeWindowBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Margin" Value="0,0,-1,0"/>
             <Setter Property="Template">
@@ -33,15 +33,15 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="#C3DBF5"/>
-                                <Setter Property="Foreground" Value="#10243E"/>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ThemeHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
                                 <Setter Property="Panel.ZIndex" Value="1"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="#8FB0D6"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ThemeBorderStrongBrush}"/>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#7C93AC"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource ThemeDisabledBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -49,9 +49,9 @@
             </Setter>
         </Style>
         <Style x:Key="ToolButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Foreground" Value="#10243E"/>
-            <Setter Property="Background" Value="#D6E6F7"/>
-            <Setter Property="BorderBrush" Value="#A9C3E0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ThemeTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ThemeRaisedBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderBrush}"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Margin" Value="8,0,0,0"/>
             <Setter Property="Template">
@@ -63,10 +63,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#4E6B8A"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource ThemeTextMutedBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="#8FB0D6"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ThemeBorderStrongBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -100,18 +100,18 @@
         </StackPanel>
 
         <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="5">
-            <Border Background="#E8F0FA" BorderBrush="#A9C3E0" BorderThickness="1" Padding="12,10">
-                <TextBlock x:Name="StatsLabel" Text="" FontFamily="Consolas" FontSize="11" Foreground="#234A72" TextWrapping="Wrap"/>
+            <Border Background="{DynamicResource ThemeWindowBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="12,10">
+                <TextBlock x:Name="StatsLabel" Text="" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource ThemeTextMuted2Brush}" TextWrapping="Wrap"/>
             </Border>
             <!-- Shown only while a script breakpoint has paused a live LBA1 Play session (any actor;
                  several script windows can all show this at once and all act on it). -->
-            <Border x:Name="DebugBar" Background="#FDECC8" BorderBrush="#D9A93B" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" Visibility="Collapsed">
+            <Border x:Name="DebugBar" Background="{DynamicResource ThemeFlagBgBrush}" BorderBrush="{DynamicResource ThemeFlagBorderBrush}" BorderThickness="1" Padding="12,8" Margin="0,8,0,0" Visibility="Collapsed">
                 <DockPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                         <Button x:Name="StepButton" Content="Step" Style="{StaticResource ToolButton}" Click="Step_Click"/>
                         <Button x:Name="ContinueButton" Content="Continue" Style="{StaticResource ToolButton}" Click="Continue_Click"/>
                     </StackPanel>
-                    <TextBlock x:Name="DebugBarText" FontFamily="Consolas" FontSize="12" Foreground="#5A4310" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="DebugBarText" FontFamily="Consolas" FontSize="12" Foreground="{DynamicResource ThemeFlagTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
             </Border>
         </StackPanel>
@@ -125,9 +125,9 @@
                              Style="{StaticResource ViewTab}" Checked="View_Checked"/>
             </StackPanel>
             <TextBlock DockPanel.Dock="Right" Text="Ctrl+Space for suggestions"
-                       Foreground="#8FB0D6" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                       Foreground="{DynamicResource ThemeBorderStrongBrush}" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             <TextBlock x:Name="HintLabel" Text="" TextTrimming="CharacterEllipsis"
-                       Foreground="#4E6B8A" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
+                       Foreground="{DynamicResource ThemeTextMutedBrush}" FontSize="11" VerticalAlignment="Center" Margin="12,0,12,0"/>
         </DockPanel>
 
         <TextBlock Grid.Row="4" Grid.Column="4" Text="Keywords" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
@@ -135,12 +135,12 @@
         <!-- Read-only disassembly of the same actor's scripts (life, then track), always visible to the left of the C editor. -->
         <DockPanel Grid.Row="4" Grid.Column="0">
             <TextBlock Text="Disassembly" Style="{StaticResource Eyebrow}" VerticalAlignment="Center"/>
-            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="#8FB0D6" FontSize="10" VerticalAlignment="Center"/>
+            <TextBlock Text="F9 breakpoint" DockPanel.Dock="Right" Foreground="{DynamicResource ThemeBorderStrongBrush}" FontSize="10" VerticalAlignment="Center"/>
         </DockPanel>
         <TextBox x:Name="DisassemblyTextBox" Grid.Row="6" Grid.Column="0" Grid.RowSpan="3"
                  IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                 FontFamily="Consolas" FontSize="12" Foreground="#4E6B8A" Background="#FFFFFF"
-                 BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                 FontFamily="Consolas" FontSize="12" Foreground="{DynamicResource ThemeTextMutedBrush}" Background="{DynamicResource ThemeFieldBrush}"
+                 BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="10"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                  PreviewKeyDown="DisassemblyTextBox_PreviewKeyDown"/>
         <GridSplitter Grid.Row="4" Grid.Column="1" Grid.RowSpan="5" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
@@ -149,8 +149,8 @@
         <Grid Grid.Row="6" Grid.Column="2">
             <TextBox x:Name="ScriptTextBox"
                      AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
-                     FontFamily="Consolas" FontSize="13" Foreground="#10243E" Background="#FFFFFF"
-                     BorderBrush="#A9C3E0" BorderThickness="1" Padding="10"
+                     FontFamily="Consolas" FontSize="13" Foreground="{DynamicResource ThemeTextBrush}" Background="{DynamicResource ThemeFieldBrush}"
+                     BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1" Padding="10"
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                      TextChanged="ScriptTextBox_TextChanged"
                      PreviewKeyDown="ScriptTextBox_PreviewKeyDown"
@@ -158,15 +158,15 @@
 
             <Popup x:Name="SuggestionPopup" PlacementTarget="{Binding ElementName=ScriptTextBox}"
                    Placement="RelativePoint" StaysOpen="False" AllowsTransparency="True" Focusable="False">
-                <Border Background="#D6E6F7" BorderBrush="#8FB0D6" BorderThickness="1" MaxHeight="280" MinWidth="360" MaxWidth="520">
+                <Border Background="{DynamicResource ThemeRaisedBrush}" BorderBrush="{DynamicResource ThemeBorderStrongBrush}" BorderThickness="1" MaxHeight="280" MinWidth="360" MaxWidth="520">
                     <ListBox x:Name="SuggestionList" Background="Transparent" BorderThickness="0"
-                             Foreground="#10243E" FontFamily="Consolas" FontSize="12"
+                             Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Consolas" FontSize="12"
                              PreviewMouseLeftButtonUp="SuggestionList_PreviewMouseLeftButtonUp">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="8,5">
-                                    <TextBlock Text="{Binding Signature}" FontWeight="Bold" Foreground="#1B6EC2"/>
-                                    <TextBlock Text="{Binding Description}" Foreground="#4E6B8A" FontSize="10" TextWrapping="Wrap" FontFamily="Segoe UI" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{Binding Signature}" FontWeight="Bold" Foreground="{DynamicResource ThemeAccentBrush}"/>
+                                    <TextBlock Text="{Binding Description}" Foreground="{DynamicResource ThemeTextMutedBrush}" FontSize="10" TextWrapping="Wrap" FontFamily="Segoe UI" Margin="0,2,0,0"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -181,7 +181,7 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="Consolas" FontSize="11" Foreground="#4E6B8A"
+            <TextBlock x:Name="StatusText" Grid.Column="0" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource ThemeTextMutedBrush}"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Cursor="Hand"
                        MouseLeftButtonDown="StatusText_MouseLeftButtonDown"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -203,16 +203,16 @@
             </Grid.RowDefinitions>
             <TextBox x:Name="KeywordFilterBox" Grid.Row="0" Style="{StaticResource FieldBox}"
                      TextChanged="KeywordFilterBox_TextChanged" KeyDown="KeywordFilterBox_KeyDown"/>
-            <TextBlock x:Name="KeywordFilterPlaceholder" Grid.Row="0" Text="Filter keywords…" Foreground="#8FB0D6"
+            <TextBlock x:Name="KeywordFilterPlaceholder" Grid.Row="0" Text="Filter keywords…" Foreground="{DynamicResource ThemeBorderStrongBrush}"
                        FontFamily="Consolas" FontSize="12" Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
-            <ListBox x:Name="KeywordList" Grid.Row="2" Background="#FFFFFF" BorderBrush="#A9C3E0" BorderThickness="1"
-                     Foreground="#10243E" FontFamily="Consolas" FontSize="12"
+            <ListBox x:Name="KeywordList" Grid.Row="2" Background="{DynamicResource ThemeFieldBrush}" BorderBrush="{DynamicResource ThemeBorderBrush}" BorderThickness="1"
+                     Foreground="{DynamicResource ThemeTextBrush}" FontFamily="Consolas" FontSize="12"
                      MouseDoubleClick="KeywordList_MouseDoubleClick" KeyDown="KeywordList_KeyDown">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Margin="6,4" ToolTip="{Binding Description}">
-                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="#1B6EC2"/>
-                            <TextBlock Text="{Binding Kind}" Foreground="#7C93AC" FontSize="9" FontFamily="Segoe UI"/>
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{DynamicResource ThemeAccentBrush}"/>
+                            <TextBlock Text="{Binding Kind}" Foreground="{DynamicResource ThemeDisabledBrush}" FontSize="9" FontFamily="Segoe UI"/>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>

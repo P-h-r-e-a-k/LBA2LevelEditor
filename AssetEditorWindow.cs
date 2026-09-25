@@ -16,12 +16,12 @@ internal sealed class AssetEditorWindow : Window
     private readonly string? lba1Directory, lba2Directory;
     private readonly ComboBox libraryBox = new() { Width = 170, Margin = new Thickness(0, 0, 10, 0) };
     private readonly TextBox filterBox = new() { Width = 90, Padding = new Thickness(3), ToolTip = "Jump to a picture number" };
-    private readonly ListBox list = new() { Width = 140, FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E)) };
+    private readonly ListBox list = new() { Width = 140, FontFamily = new FontFamily("Consolas") };
     private readonly Image picture = new();
     private readonly Canvas surface = new() { Background = Brushes.Transparent };
     private readonly Canvas paletteCanvas = new() { Width = 256, Height = 256 };
-    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
-    private readonly TextBlock status = new() { Foreground = UiBrushes.Text, Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock info = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly TextBlock status = new() { Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Slider zoomSlider = new() { Minimum = 2, Maximum = 24, Value = 10, Width = 140, IsSnapToTickEnabled = true, TickFrequency = 1 };
     private readonly RadioButton paintTool = new() { Content = "Paint", IsChecked = true, GroupName = "t" }, eraseTool = new() { Content = "Erase", GroupName = "t" };
     private readonly Button saveButton = new() { Content = "Save" };
@@ -45,8 +45,8 @@ internal sealed class AssetEditorWindow : Window
         Title = "Bricks and sprites";
         Width = 1180; Height = 780;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFA));
-        Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
+        SetResourceReference(Control.BackgroundProperty, "ThemeWindowBrush");
+        SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         BuildLayout();
         var choices = new List<Choice>();
         if (Lba1Game.IsInstalled(lba1Directory ?? "")) { choices.Add(new("LBA1 bricks", () => GphLibrary.Lba1Bricks(lba1Directory!))); choices.Add(new("LBA1 sprites", () => GphLibrary.Lba1Sprites(lba1Directory!))); }
@@ -61,10 +61,16 @@ internal sealed class AssetEditorWindow : Window
 
     private void BuildLayout()
     {
+        list.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+        list.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+        info.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        status.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
         var root = new DockPanel();
         var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8, 6, 8, 6) };
         DockPanel.SetDock(top, Dock.Top);
-        top.Children.Add(new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Foreground = UiBrushes.Muted });
+        var libraryLabel = new TextBlock { Text = "Library", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        libraryLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        top.Children.Add(libraryLabel);
         top.Children.Add(libraryBox);
         foreach (var (text, tip, handler) in new (string, string, RoutedEventHandler)[]
         {
@@ -82,7 +88,8 @@ internal sealed class AssetEditorWindow : Window
         saveButton.Padding = new Thickness(14, 3, 14, 3); saveButton.Click += (_, _) => Save();
         top.Children.Add(saveButton);
         root.Children.Add(top);
-        var bottom = new Border { Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), Child = status };
+        var bottom = new Border { Child = status };
+        bottom.SetResourceReference(Border.BackgroundProperty, "ThemeFieldBrush");
         DockPanel.SetDock(bottom, Dock.Bottom);
         root.Children.Add(bottom);
 
@@ -97,15 +104,21 @@ internal sealed class AssetEditorWindow : Window
         list.SelectionChanged += (_, _) => { if (list.SelectedItem is Entry e && e.Number != number) { if (ConfirmKeep()) ShowPicture(e.Number); else { /* stay */ } } };
 
         var right = new StackPanel { Width = 290, Margin = new Thickness(8) };
-        right.Children.Add(new TextBlock { Text = "Colour (click to choose, right-click the picture to pick)", FontSize = 10, Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 0, 4) });
+        var colourLabel = new TextBlock { Text = "Colour (click to choose, right-click the picture to pick)", FontSize = 10, Margin = new Thickness(0, 0, 0, 4) };
+        colourLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        right.Children.Add(colourLabel);
         paletteCanvas.MouseLeftButtonDown += (_, e) => { var p = e.GetPosition(paletteCanvas); colour = (byte)(Math.Clamp((int)(p.Y / 16), 0, 15) * 16 + Math.Clamp((int)(p.X / 16), 0, 15)); UpdateSwatch(); };
-        right.Children.Add(new Border { BorderBrush = UiBrushes.Muted, BorderThickness = new Thickness(1), Child = paletteCanvas, HorizontalAlignment = HorizontalAlignment.Left });
+        var paletteBorder = new Border { BorderThickness = new Thickness(1), Child = paletteCanvas, HorizontalAlignment = HorizontalAlignment.Left };
+        paletteBorder.SetResourceReference(Border.BorderBrushProperty, "ThemeTextMutedBrush");
+        right.Children.Add(paletteBorder);
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        paintTool.Foreground = eraseTool.Foreground = Foreground; paintTool.Margin = new Thickness(0, 0, 12, 0);
+        paintTool.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); eraseTool.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); paintTool.Margin = new Thickness(0, 0, 12, 0);
         tools.Children.Add(paintTool); tools.Children.Add(eraseTool);
         right.Children.Add(tools);
         var zoomRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        zoomRow.Children.Add(new TextBlock { Text = "Zoom", Foreground = UiBrushes.Muted, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+        var zoomLabel = new TextBlock { Text = "Zoom", Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        zoomLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        zoomRow.Children.Add(zoomLabel);
         zoomRow.Children.Add(zoomSlider);
         zoomSlider.ValueChanged += (_, _) => Layout();
         right.Children.Add(zoomRow);
@@ -119,7 +132,8 @@ internal sealed class AssetEditorWindow : Window
         surface.MouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && surface.IsMouseCaptured) Paint(e.GetPosition(picture), false); };
         surface.MouseLeftButtonUp += (_, _) => surface.ReleaseMouseCapture();
         surface.MouseRightButtonDown += (_, e) => PickColour(e.GetPosition(picture));
-        var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = surface, Background = new SolidColorBrush(Color.FromRgb(0xC3, 0xDB, 0xF5)) };
+        var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = surface };
+        scroll.SetResourceReference(Control.BackgroundProperty, "ThemeHoverBrush");
         root.Children.Add(scroll);
         Content = root;
         PreviewKeyDown += (_, e) => { if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z) { Undo(); e.Handled = true; } else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S) { Save(); e.Handled = true; } };

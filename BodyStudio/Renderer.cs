@@ -43,10 +43,12 @@ public static class Renderer
     // KeyBackground and KeyGrid are the colours a marker is made transparent by (Lba1ActorImages.Transparent): renders that become markers keep them; a picture shown as it is passes its own.
     public static readonly Color KeyBackground=Color.FromArgb(25,30,39),KeyGrid=Color.FromArgb(44,52,64);
     public static readonly Color ViewBackground=Color.FromArgb(232,240,250),ViewGrid=Color.FromArgb(203,221,240);
-    // The rest of the app's own light theme (Theme.xaml), so Body Studio's plain WinForms controls don't look like a different program.
-    public static readonly Color PanelBackground=Color.FromArgb(0xE8,0xF0,0xFA),FieldBackground=Color.White,ButtonBackground=Color.FromArgb(0xD6,0xE6,0xF7),
-        ButtonBorder=Color.FromArgb(0x9F,0xBE,0xE0),ButtonHover=Color.FromArgb(0xC3,0xDB,0xF5),Accent=Color.FromArgb(0x1B,0x6E,0xC2),
-        Border=Color.FromArgb(0xA9,0xC3,0xE0),Text=Color.FromArgb(0x10,0x24,0x3E),TextMuted=Color.FromArgb(0x4E,0x6B,0x8A);
+    // The app's own chrome palette used to be duplicated here too (PanelBackground, FieldBackground, ...)
+    // for BodyStudioWindow/AnimationStudioWindow's own controls to match by eye -- gone now that both
+    // reference the real theme resources directly (SetResourceReference, see their own ApplyTheme), which
+    // also means they retheme live instead of only ever matching whatever this file's own copy was frozen
+    // to at the time. KeyBackground/KeyGrid/ViewBackground/ViewGrid above are different: they feed the
+    // rasterizer below directly (Render's own background/gridLine parameters), not WPF chrome, so they stay.
     public static Bitmap Render(Body model,Color[] palette,int width,int height,float yaw,bool wire,bool bones=false,bool headOnly=false,Vector3[]? pose=null,Lba1Shading? shading=null,Color? background=null,Color? gridLine=null)
     {
         width=Math.Max(1,width);height=Math.Max(1,height);
@@ -190,7 +192,10 @@ public sealed class ModelView : System.Windows.Controls.Grid
     public ModelView()
     {
         ClipToBounds=true;
-        Background=new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(Renderer.ViewBackground.R,Renderer.ViewBackground.G,Renderer.ViewBackground.B));
+        // Matches the main app's own 3D viewport (SceneViewBorder in MainWindow.xaml), which retheme the
+        // same way -- the rendered body itself always sits on Renderer.ViewBackground regardless (baked
+        // into the bitmap by Renderer.Render), only the empty margin around it follows the theme.
+        this.SetResourceReference(BackgroundProperty,"ThemeWindowBrush");
         Children.Add(image);Children.Add(placeholder);Children.Add(stats);Children.Add(hint);
         MouseDown+=(_,e)=>{drag=e.GetPosition(this);CaptureMouse();};
         MouseMove+=(_,e)=>{if(drag is {} p){var cur=e.GetPosition(this);Yaw+=(float)(cur.X-p.X)*0.012f;drag=cur;Redraw();}};

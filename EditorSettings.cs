@@ -42,6 +42,10 @@ internal sealed class EditorSettings
 
     public string Lba1Directory { get; set; } = "";
 
+    // AppTheme's own name (ThemeManager.Save/Parse), not the enum cast to int -- so inserting a new theme
+    // later doesn't renumber an already-saved choice out from under it.
+    public string Theme { get; set; } = "Light";
+
     // LBA1: show scenes that join into one map as that map (see Lba1Areas). On until the user turns it off; kept between runs. (The setting this replaces,
     // Lba1JoinAreas, started off, so its saved value says nothing about what was chosen.)
     public bool Lba1JoinConnectedAreas { get; set; } = true;

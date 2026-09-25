@@ -148,8 +148,8 @@ internal sealed class IslandEditorView
     private readonly TextBox shadowDepthBox = new() { Text = "5" };
     private readonly CheckBox terrainShadowBox = new() { Content = "Terrain casts shadows", IsChecked = true };
     private readonly CheckBox decorShadowBox = new() { Content = "Objects cast shadows" };
-    private readonly TextBlock info = new() { Foreground = UiBrushes.Text, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
-    private readonly Canvas profile = new() { Height = 96, Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)), ClipToBounds = true };
+    private readonly TextBlock info = new() { TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
+    private readonly Canvas profile = new() { Height = 96, ClipToBounds = true };
     private readonly Image atlasImage = new() { Width = 256, Height = 256, Stretch = Stretch.Fill };
     private readonly Canvas atlasCanvas = new() { Width = 256, Height = 256 };
     private readonly Rectangle atlasSelection = new() { Stroke = Brushes.Yellow, StrokeThickness = 1, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
@@ -161,7 +161,6 @@ internal sealed class IslandEditorView
     private readonly StackPanel decorPanel = new();
     private bool loadingFields;
     private string? currentName;
-    private static readonly Brush Fore = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
 
     public event Action<string>? StatusChanged;
     public event Action? Saved;
@@ -204,21 +203,26 @@ internal sealed class IslandEditorView
 
     // ---- layout ---------------------------------------------------------------------------------------------------------------------------
 
-    private static Brush Muted => new SolidColorBrush(Color.FromRgb(0x4E, 0x6B, 0x8A));
-
+    // Resource key names, not resolved Brush values, so DynamicResource inside these Setters keeps tracking
+    // the active theme once the Style is applied to a live Button -- WPF resolves a Setter's DynamicResource
+    // against whatever element the Style ends up on, not against anything at XamlReader.Parse time.
     private static readonly Style ButtonStyle = (Style)System.Windows.Markup.XamlReader.Parse(
         "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='Button'>" +
-        "<Setter Property='Foreground' Value='#10243E'/><Setter Property='Background' Value='#C3DBF5'/><Setter Property='BorderBrush' Value='#A9C3E0'/>" +
+        "<Setter Property='Foreground' Value='{DynamicResource ThemeTextBrush}'/><Setter Property='Background' Value='{DynamicResource ThemeHoverBrush}'/><Setter Property='BorderBrush' Value='{DynamicResource ThemeBorderBrush}'/>" +
         "<Setter Property='Padding' Value='9,3'/><Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>" +
         "<Border x:Name='B' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='1' Padding='{TemplateBinding Padding}'>" +
         "<ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/></Border><ControlTemplate.Triggers>" +
-        "<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='B' Property='Background' Value='#C3DBF5'/></Trigger>" +
-        "<Trigger Property='IsPressed' Value='True'><Setter TargetName='B' Property='Background' Value='#A9C3E0'/></Trigger>" +
+        "<Trigger Property='IsMouseOver' Value='True'><Setter TargetName='B' Property='Background' Value='{DynamicResource ThemeHoverBrush}'/></Trigger>" +
+        "<Trigger Property='IsPressed' Value='True'><Setter TargetName='B' Property='Background' Value='{DynamicResource ThemeBorderBrush}'/></Trigger>" +
         "<Trigger Property='IsEnabled' Value='False'><Setter TargetName='B' Property='Opacity' Value='0.45'/></Trigger>" +
         "</ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>");
 
     private void BuildLayout()
     {
+        info.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextBrush");
+        // Fully qualified: this class's own Panel property (the map-area piece it hands out) would otherwise
+        // shadow the System.Windows.Controls.Panel type name here.
+        profile.SetResourceReference(System.Windows.Controls.Panel.BackgroundProperty, "ThemeFieldBrush");
         // action bar at the top of the panel: undo / redo / save, weld, check, and the optional top-down map
         var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 2) };
         undoButton.ToolTip = "Undo (Ctrl+Z)"; redoButton.ToolTip = "Redo (Ctrl+Y)"; saveButton.ToolTip = "Save the island (Ctrl+S); the original is kept as .bak";
@@ -234,12 +238,13 @@ internal sealed class IslandEditorView
             button.Click += handler;
             actions.Children.Add(button);
         }
-        var liveNote = new TextBlock { Text = "The 3D view shows your edits as you make them (from a preview copy). Save writes the island into the game folder.", TextWrapping = TextWrapping.Wrap, Foreground = Muted, FontSize = 10, Margin = new Thickness(0, 2, 0, 6) };
+        var liveNote = new TextBlock { Text = "The 3D view shows your edits as you make them (from a preview copy). Save writes the island into the game folder.", TextWrapping = TextWrapping.Wrap, FontSize = 10, Margin = new Thickness(0, 2, 0, 6) };
+        liveNote.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
         foreach (var (v, name) in new[] { (MapView.Terrain, "Terrain (as lit)"), (MapView.Height, "Height"), (MapView.Light, "Baked light"), (MapView.Shadows, "Baked shadows (vs plain light)"), (MapView.GameCode, "Game codes"), (MapView.WaterDepth, "Water depth") })
             viewBox.Items.Add(new ComboBoxItem { Content = name, Tag = v });
         viewBox.SelectedIndex = 0; viewBox.Margin = new Thickness(0, 4, 0, 0);
         viewBox.SelectionChanged += (_, _) => { if (viewBox.SelectedItem is ComboBoxItem { Tag: MapView v }) { view = v; if (mapActive) RedrawAll(); } };
-        mapBox.Foreground = Fore; mapBox.Margin = new Thickness(0, 2, 0, 0);
+        mapBox.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); mapBox.Margin = new Thickness(0, 2, 0, 0);
         mapBox.ToolTip = "Replace the 3D view with a map from above that can also show the height, the baked light and shadows, the game codes and the water depth";
         mapBox.Checked += (_, _) => MapRequested?.Invoke(true);
         mapBox.Unchecked += (_, _) => MapRequested?.Invoke(false);
@@ -262,7 +267,8 @@ internal sealed class IslandEditorView
             var grid = new UniformGrid { Columns = 2 };
             foreach (var (t, name, tip) in items)
             {
-                var button = new RadioButton { Content = name, GroupName = "tool", ToolTip = tip, Margin = new Thickness(0, 1, 4, 1), Foreground = Fore };
+                var button = new RadioButton { Content = name, GroupName = "tool", ToolTip = tip, Margin = new Thickness(0, 1, 4, 1) };
+                button.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
                 var captured = t;
                 button.Checked += (_, _) => SelectTool(captured);
                 toolButtons[t] = button;
@@ -287,8 +293,8 @@ internal sealed class IslandEditorView
         codeBox.SelectedIndex = 1;
         settings.Children.Add(FieldRow("Game code", codeBox, "what the ground does"));
         settings.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL for Add object"));
-        horizontalBox.Foreground = followBox.Foreground = diagonalBox.Foreground = steepUnwalkableBox.Foreground = Fore;
-        terrainShadowBox.Foreground = decorShadowBox.Foreground = Fore;
+        foreach (Control c in new Control[] { horizontalBox, followBox, diagonalBox, steepUnwalkableBox, terrainShadowBox, decorShadowBox })
+            c.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
         settings.Children.Add(horizontalBox); settings.Children.Add(followBox); settings.Children.Add(diagonalBox);
         steepUnwalkableBox.ToolTip = "While raising, lowering, smoothing or otherwise reshaping the ground, marks any ground triangle steeper than this as blocked (Twinsen can't step onto it) -- and un-marks one that flattens back below it.";
         settings.Children.Add(steepUnwalkableBox);
@@ -323,10 +329,14 @@ internal sealed class IslandEditorView
         stack.Children.Add(Section("Baked light and shadows", bake, open: false, out _));
 
         var atlas = new StackPanel();
-        atlas.Children.Add(new TextBlock { Text = "Drag a square, then use Paint atlas tile.", Foreground = Muted, FontSize = 10, Margin = new Thickness(0, 0, 0, 4) });
+        var atlasNote = new TextBlock { Text = "Drag a square, then use Paint atlas tile.", FontSize = 10, Margin = new Thickness(0, 0, 0, 4) };
+        atlasNote.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        atlas.Children.Add(atlasNote);
         atlasCanvas.Children.Add(atlasImage); atlasCanvas.Children.Add(atlasSelection);
         atlasCanvas.MouseLeftButtonDown += AtlasDown; atlasCanvas.MouseMove += AtlasMove; atlasCanvas.MouseLeftButtonUp += (_, _) => atlasCanvas.ReleaseMouseCapture();
-        atlas.Children.Add(new Border { BorderBrush = Muted, BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left });
+        var atlasBorder = new Border { BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left };
+        atlasBorder.SetResourceReference(Border.BorderBrushProperty, "ThemeTextMutedBrush");
+        atlas.Children.Add(atlasBorder);
         stack.Children.Add(Section("Ground atlas", atlas, open: false, out openAtlas));
         Panel = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = stack };
 
@@ -358,7 +368,8 @@ internal sealed class IslandEditorView
     private static UIElement Section(string title, UIElement content, bool open, out Action<bool> setOpen)
     {
         var body = new Border { Child = content, Visibility = open ? Visibility.Visible : Visibility.Collapsed, Padding = new Thickness(0, 2, 0, 4) };
-        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Foreground = Muted, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2) };
+        var header = new TextBlock { Text = (open ? "▾  " : "▸  ") + title, FontFamily = new FontFamily("Consolas"), FontSize = 10.5, Cursor = Cursors.Hand, Margin = new Thickness(0, 12, 0, 2) };
+        header.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
         void Set(bool show) { body.Visibility = show ? Visibility.Visible : Visibility.Collapsed; header.Text = (show ? "▾  " : "▸  ") + title; }
         header.MouseLeftButtonDown += (_, _) => Set(body.Visibility != Visibility.Visible);
         setOpen = Set;
@@ -367,8 +378,19 @@ internal sealed class IslandEditorView
         return panel;
     }
 
-    private static TextBlock Label(string text) => new() { Text = text, Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
-    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 10, Foreground = Muted, Margin = new Thickness(0, 12, 0, 4) };
+    private static TextBlock Label(string text)
+    {
+        var t = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        t.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        return t;
+    }
+
+    private static TextBlock Heading(string text)
+    {
+        var t = new TextBlock { Text = text, FontSize = 10, Margin = new Thickness(0, 12, 0, 4) };
+        t.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        return t;
+    }
 
     private static UIElement FieldRow(string label, Control box, string tip)
     {
@@ -380,9 +402,9 @@ internal sealed class IslandEditorView
         box.ToolTip = tip; box.Padding = new Thickness(3);
         if (box is TextBox)
         {
-            box.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
-            box.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0x24, 0x3E));
-            box.BorderBrush = new SolidColorBrush(Color.FromRgb(0xA9, 0xC3, 0xE0));
+            box.SetResourceReference(Control.BackgroundProperty, "ThemeFieldBrush");
+            box.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
+            box.SetResourceReference(Control.BorderBrushProperty, "ThemeBorderBrush");
         }
         Grid.SetColumn(box, 1);
         grid.Children.Add(box);
@@ -679,7 +701,9 @@ internal sealed class IslandEditorView
         }
         var px = (pointer.Gx - renderer.OriginX) / renderer.CellsX * w;
         profile.Children.Add(new Line { X1 = px, X2 = px, Y1 = 0, Y2 = h, Stroke = Brushes.White, StrokeThickness = 1, Opacity = 0.6 });
-        profile.Children.Add(new TextBlock { Text = $"height along row {gz}   ({lo}..{hi}, orange = Level)", Foreground = Muted, FontSize = 10, Margin = new Thickness(4, 1, 0, 0) });
+        var profileLabel = new TextBlock { Text = $"height along row {gz}   ({lo}..{hi}, orange = Level)", FontSize = 10, Margin = new Thickness(4, 1, 0, 0) };
+        profileLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
+        profile.Children.Add(profileLabel);
     }
 
     // ---- tools ----------------------------------------------------------------------------------------------------------------------------
