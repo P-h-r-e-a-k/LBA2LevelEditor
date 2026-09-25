@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 
 namespace LBAAssembler;
@@ -94,15 +95,39 @@ internal static class WindowPlacement
 
     // Whether a rectangle this size at this position has at least MinVisible units showing on some monitor
     // that is actually connected right now (not just within the combined virtual desktop's own bounding
-    // box, which stays "big enough" even once a monitor that used to sit inside it is unplugged).
+    // box, which stays "big enough" even once a monitor that used to sit inside it is unplugged). Enumerates
+    // monitors directly via EnumDisplayMonitors/GetMonitorInfo rather than System.Windows.Forms.Screen --
+    // the one thing in this WPF app that used to need a WinForms reference for; native Win32 avoids it
+    // rather than paying for UseWindowsForms's own implicit-global-using workaround just for this.
     private static bool IsVisible(double x, double y, double width, double height)
     {
-        var rect = new System.Drawing.Rectangle((int)x, (int)y, (int)Math.Max(1, width), (int)Math.Max(1, height));
-        foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+        var left = x; var top = y; var right = x + Math.Max(1, width); var bottom = y + Math.Max(1, height);
+        var found = false;
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMonitor, IntPtr hdcMonitor, ref Rect monitorRect, IntPtr data) =>
         {
-            var overlap = System.Drawing.Rectangle.Intersect(rect, screen.WorkingArea);
-            if (overlap.Width >= MinVisible && overlap.Height >= MinVisible) return true;
-        }
-        return false;
+            var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+            if (GetMonitorInfo(hMonitor, ref info))
+            {
+                var overlapWidth = Math.Min(right, info.Work.Right) - Math.Max(left, info.Work.Left);
+                var overlapHeight = Math.Min(bottom, info.Work.Bottom) - Math.Max(top, info.Work.Top);
+                if (overlapWidth >= MinVisible && overlapHeight >= MinVisible) found = true;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData);
+    [DllImport("user32.dll")] private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public Rect Monitor;
+        public Rect Work;
+        public uint Flags;
     }
 }

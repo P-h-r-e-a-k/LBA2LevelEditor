@@ -369,8 +369,8 @@
                                                 <TextBlock Text="Editors" Style="{StaticResource Eyebrow}" Margin="0,16,0,6"/>
                                                 <Button x:Name="BuildSceneEditorButton" Content="Scene editor (actors, zones, points)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BuildSceneEditor_Click"/>
                                                 <Button x:Name="BuildGridButton" Content="Interior map (grid editor)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="GridEditor_Click"/>
-                                                <Button Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
-                                                <Button Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
+                                                <Button x:Name="BuildAssetButton" Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
+                                                <Button x:Name="BuildObjectButton" Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
                                                 <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
                                                 <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>
                                             </StackPanel>

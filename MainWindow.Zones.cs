@@ -62,7 +62,7 @@ public partial class MainWindow
         zoneOriginal = zone is null ? null : LookupZone(zone);
         LoadZoneForm();
         SyncZoneListSelection();
-        if (showTab && zone is not null && ZoneDetailsTab.IsVisible) ActivatePanel(ZoneDetailsTab);
+        if (showTab && zone is not null && ZoneDetailsTab.IsEnabled) ActivatePanel(ZoneDetailsTab);
         RefreshActorOverlayForSelection();
         if (center && zone is not null && interiorSceneActive) CenterOnZone(zone);
     }

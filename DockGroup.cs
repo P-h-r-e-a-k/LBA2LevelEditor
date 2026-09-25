@@ -21,6 +21,12 @@ internal sealed class DockItem
     public readonly bool CanFloat;
     public bool IsVisible = true;   // false: closed (not shown as a tab), brought back via SetVisible(true)
     public bool Floating;           // true: living in its own Window right now, not shown as a tab at all
+    // false: still shown at its normal tab-strip position (unlike IsVisible=false, which removes the tab
+    // entirely and lets its neighbours shift into the gap) but greyed out and not clickable -- for a tab
+    // that only applies in some modes (MainWindow.Modes.cs's Details/Build/Script), so the strip's order
+    // stays stable and Ctrl+1/2/3 muscle memory keeps landing in the same place regardless of which mode
+    // was active before.
+    public bool IsEnabled = true;
     internal DockGroup? Owner;
     internal DockFloatWindow? FloatWindow;
 
@@ -30,6 +36,7 @@ internal sealed class DockItem
     }
 
     public void SetVisible(bool visible) => Owner?.SetVisible(Key, visible);
+    public void SetEnabled(bool enabled) => Owner?.SetEnabled(Key, enabled);
     public void Activate() => Owner?.Activate(Key);
     // AvalonDock had two names for "the shown tab in its pane" (IsActive: DockingManager-wide;
     // IsSelected: within its own pane); this app only ever has one DockingManager, so both meant the
@@ -117,9 +124,9 @@ internal sealed class DockGroup : Grid
     public DockItem? Find(string key) => items.FirstOrDefault(i => i.Key == key);
     internal bool IsItemActive(DockItem item) => active == item;
 
-    // Shows or hides a closed panel -- the "Panels" menu's per-name reopen entries, and Modes.cs's
-    // per-mode tab visibility. Floating items are left alone (visible means "back on the tab strip",
-    // not "stop floating"; SetVisible(false) on a floating item just marks it non-visible for later).
+    // Shows or hides a closed panel -- the "Panels" menu's per-name reopen entries. Floating items are
+    // left alone (visible means "back on the tab strip", not "stop floating"; SetVisible(false) on a
+    // floating item just marks it non-visible for later).
     public void SetVisible(string key, bool visible)
     {
         var item = Find(key);
@@ -127,16 +134,33 @@ internal sealed class DockGroup : Grid
         item.IsVisible = visible;
         RebuildHeader();
         if (visible) Activate(key);
-        else if (active == item) Activate(items.FirstOrDefault(i => i.IsVisible && !i.Floating)?.Key ?? "");
+        else if (active == item) Activate(items.FirstOrDefault(i => i.IsVisible && i.IsEnabled && !i.Floating)?.Key ?? "");
+    }
+
+    // Modes.cs's per-mode tab availability: keeps the tab in the strip at its normal position, greyed
+    // out and unclickable, instead of removing it (see IsEnabled's own comment on DockItem).
+    public void SetEnabled(string key, bool enabled)
+    {
+        var item = Find(key);
+        if (item is null || item.IsEnabled == enabled) return;
+        item.IsEnabled = enabled;
+        if (!enabled && active == item)
+        {
+            var fallback = items.FirstOrDefault(i => i.IsVisible && i.IsEnabled && !i.Floating);
+            if (fallback is not null) SetActive(fallback);
+        }
+        RebuildHeader();
     }
 
     // Shows (if closed) and selects a panel -- "bring this to the front," used when a zone is clicked,
     // Play mode starts, etc. Un-floats it first if it was floating, matching what a user would expect
-    // clicking "Play" in the menu to do even if Play is currently sitting in its own window.
+    // clicking "Play" in the menu to do even if Play is currently sitting in its own window. A disabled
+    // tab (wrong mode for it right now) can't be activated -- callers that want to jump to one of these
+    // switch mode first (MainWindow.xaml.cs's ShowPanel_Click).
     public void Activate(string key)
     {
         var item = Find(key);
-        if (item is null) return;
+        if (item is null || !item.IsEnabled) return;
         if (item.Floating) Unfloat(item);
         if (!item.IsVisible) { item.IsVisible = true; RebuildHeader(); }
         if (pinned) { ShowFlyout(item); return; }
@@ -253,7 +277,7 @@ internal sealed class DockGroup : Grid
         var text = new TextBlock { Text = item.Title, FontFamily = new FontFamily("Consolas"), FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         row.Children.Add(text);
-        if (item.CanClose)
+        if (item.CanClose && item.IsEnabled)
         {
             var close = new Button
             {
@@ -265,12 +289,15 @@ internal sealed class DockGroup : Grid
         }
         var tab = new Border
         {
-            Child = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = Cursors.Hand,
+            Child = row, Padding = new Thickness(10, 4, 8, 4), Margin = new Thickness(0, 0, 2, 0), Cursor = item.IsEnabled ? Cursors.Hand : Cursors.Arrow,
             Background = isActive ? (Brush)FindResource("ThemeWindowBrush") : (Brush)FindResource("ThemeRaisedBrush"),
             BorderBrush = (Brush)FindResource("ThemeBorderBrush"), BorderThickness = new Thickness(1, 1, 1, 0),
+            // Matches IslandEditorView's own disabled-control opacity (0.45) rather than inventing a second convention.
+            Opacity = item.IsEnabled ? 1.0 : 0.45,
         };
         text.Foreground = isActive ? (Brush)FindResource("ThemeTextBrush") : (Brush)FindResource("ThemeTextMutedBrush");
-        tab.MouseLeftButtonDown += (_, e) => { if (pinned) ShowFlyout(item); else SetActive(item); e.Handled = true; };
+        if (item.IsEnabled) tab.MouseLeftButtonDown += (_, e) => { if (pinned) ShowFlyout(item); else SetActive(item); e.Handled = true; };
+        else tab.ToolTip = $"{item.Title} isn't available in the current mode";
         return tab;
     }
 }

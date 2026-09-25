@@ -100,10 +100,17 @@ public partial class MainWindow
         BuildScenePanel.Visibility = wantTerrain ? Visibility.Collapsed : Visibility.Visible;
         if (wantTerrain) OnTerrainStateChanged();
         BuildSceneHelp.Text = BuildHelpText();
+        // The Build tab's own Editors buttons are a second entry point to the same windows the Tools
+        // menu's ToolsMenu_SubmenuOpened already gates -- matching that here closes the gap the Tools
+        // menu can't reach on its own (see its own comment).
+        var eitherConfigured = Lba1Configured || Lba2Configured;
+        BuildGridButton.IsEnabled = eitherConfigured;
+        BuildAssetButton.IsEnabled = eitherConfigured;
+        BuildObjectButton.IsEnabled = eitherConfigured;
 
-        SetPanelVisible(ZoneDetailsTab, editMode != EditMode.Script);
-        SetPanelVisible(BuildTab, editMode == EditMode.Build);
-        SetPanelVisible(ScriptTab, editMode == EditMode.Script);
+        SetPanelEnabled(ZoneDetailsTab, editMode != EditMode.Script);
+        SetPanelEnabled(BuildTab, editMode == EditMode.Build);
+        SetPanelEnabled(ScriptTab, editMode == EditMode.Script);
         SetPanelVisible(PlayTab, true);
         var home = editMode switch { EditMode.Build => BuildTab, EditMode.Script => ScriptTab, _ => ZonesTab };
         var currentlyShown = new[] { ZonesTab, ZoneDetailsTab, BuildTab, ScriptTab, PlayTab }.FirstOrDefault(t => t.IsActive);

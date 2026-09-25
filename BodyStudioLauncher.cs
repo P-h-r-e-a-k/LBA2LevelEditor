@@ -1,48 +1,32 @@
-using Forms = System.Windows.Forms;
-
 namespace LBAAssembler;
 
-// Launches LBA Body Studio's MainForm (BodyStudio/MainForm.cs, absorbed
-// from the standalone LbaBodyStudio project) as its own top-level window
-// from inside this WPF app. WinForms and WPF each pump the same underlying
-// Win32 message loop, so a Form shown with plain Show() (not
-// Application.Run) works fine alongside the WPF Dispatcher already running
-// this app -- it just needs EnableVisualStyles/SetCompatibleTextRenderingDefault
-// called once before the first Form/Control is ever created, which a WPF
-// app's own startup never does on its own.
+// Launches LBA Body Studio's window (BodyStudio/BodyStudioWindow.cs, absorbed from the standalone
+// LbaBodyStudio project) as its own top-level WPF window. Was a WinForms Form until the Interface
+// Audit's WPF-port item; see BodyStudioWindow.cs's own comment. One instance at a time (re-activates the
+// existing one rather than opening a second) -- unchanged from before the port, not something the audit
+// asked to change -- but now registered with WindowLifecycle like every other secondary window, closing
+// the "different lifecycle... than every other window's per-instance position memory" half of that
+// finding too, not just the WinForms-vs-WPF half.
 internal static class BodyStudioLauncher
 {
-    private static Forms.Form? openForm;
+    private static LbaBodyStudio.BodyStudioWindow? openWindow;
 
     public static void Show(System.Windows.Window owner)
     {
-        // Shared with every other WinForms-window launcher's own call to this -- see WinFormsCompat's
-        // own comment for why a per-launcher-class flag isn't enough.
-        WinFormsCompat.EnsureInitialized();
-
-        if (openForm is { IsDisposed: false })
+        if (openWindow is not null)
         {
-            openForm.WindowState = Forms.FormWindowState.Normal;
-            openForm.Activate();
+            if (openWindow.WindowState == System.Windows.WindowState.Minimized) openWindow.WindowState = System.Windows.WindowState.Normal;
+            openWindow.Activate();
             return;
         }
 
-        openForm = new LbaBodyStudio.MainForm();
-        openForm.FormClosed += (_, _) => openForm = null;
-        openForm.Show(new Win32WindowHandle(owner));
+        openWindow = new LbaBodyStudio.BodyStudioWindow { Owner = owner };
+        openWindow.Closed += (_, _) => openWindow = null;
+        WindowLifecycle.Register(openWindow, "BodyStudioWindow");
+        openWindow.Show();
     }
 
-    // MainForm.FormClosing already asks about unsaved changes; if the user cancels, the form (and
-    // openForm) simply stays as it is, same as clicking its own close button would.
-    public static void Close() => openForm?.Close();
-
-    // IWin32Window wrapper so Body Studio's own window comes up owned by the
-    // actor attributes window that launched it (Show(IWin32Window), not the
-    // owner-less Show()), matching this codebase's existing per-actor
-    // non-modal window pattern rather than leaving it floating unowned.
-    private sealed class Win32WindowHandle : System.Windows.Forms.IWin32Window
-    {
-        public nint Handle { get; }
-        public Win32WindowHandle(System.Windows.Window window) => Handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
-    }
+    // BodyStudioWindow.Closing already asks about unsaved changes; if the user cancels, the window (and
+    // openWindow) simply stays as it is, same as clicking its own close button would.
+    public static void Close() => openWindow?.Close();
 }

@@ -1361,6 +1361,7 @@ public partial class MainWindow : Window
     // ---- dockable side panels (DockGroup -- see MainWindow.Docking.cs) ----------------------------------------------------------------
 
     private static void SetPanelVisible(DockItem panel, bool visible) => panel.SetVisible(visible);
+    private static void SetPanelEnabled(DockItem panel, bool enabled) => panel.SetEnabled(enabled);
 
     // Brings a panel back if the user (or a mode switch) had it hidden or floated, then makes it the shown tab in its pane.
     private static void ActivatePanel(DockItem panel) => panel.Activate();
@@ -1373,7 +1374,14 @@ public partial class MainWindow : Window
             "Location" => LocationAnchorable, "Mode" => ModeAnchorable, "Zones" => ZonesTab, "Details" => ZoneDetailsTab,
             "Build" => BuildTab, "Play" => PlayTab, "Script" => ScriptTab, "Minimap" => MinimapAnchorable, _ => null
         };
-        if (panel is not null) ActivatePanel(panel);
+        if (panel is null) return;
+        // Details/Build/Script stay in the tab strip but disabled outside their mode (ApplyMode) -- switch
+        // into a mode that enables the requested one first, so picking it from this menu always works
+        // rather than silently doing nothing to a disabled tab.
+        if (panel == ZoneDetailsTab && editMode == EditMode.Script) SetMode(EditMode.Explore);
+        else if (panel == BuildTab && editMode != EditMode.Build) SetMode(EditMode.Build);
+        else if (panel == ScriptTab && editMode != EditMode.Script) SetMode(EditMode.Script);
+        ActivatePanel(panel);
     }
 
     // Undoes closed/floated-out-of-reach panels by making every one of them visible again (docked

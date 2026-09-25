@@ -6,30 +6,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <!--
-      LBA Body Studio (BodyStudio/*.cs, absorbed from the standalone
-      LbaBodyStudio project) is a Windows Forms app: .NET lets a single
-      project host both UI stacks side by side, so ActorAttributesWindow
-      (WPF) can launch its MainForm (WinForms) directly in-process rather
-      than shelling out to a separate exe.
-    -->
-    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <!--
-    UseWindowsForms's own implicit global usings (System.Drawing,
-    System.Windows.Forms) collide with the WPF codebase's own bare Color/
-    Point/ComboBox/TextBox/Application/Brush/KeyEventArgs/MouseEventArgs/
-    ScrollEventArgs (all ambiguous against the System.Windows.* equivalent)
-    the moment both UI stacks share one project, so they're removed here to
-    restore the plain-WPF ambient set every existing file already assumed.
-    BodyStudio's own files (which do need System.Drawing/System.Windows.Forms)
-    just say so explicitly instead of relying on an implicit global using.
+    LBA Body Studio (BodyStudio/*.cs, absorbed from the standalone LbaBodyStudio project) used to be a
+    Windows Forms app (MainForm.cs/AnimationStudioForm.cs); both were ported to plain WPF windows for the
+    Interface Audit's "two windows are genuinely WinForms in a WPF app" finding (BodyStudioWindow.cs/
+    AnimationStudioWindow.cs), so UseWindowsForms and its own implicit-global-using workaround (System.
+    Drawing/System.Windows.Forms collided with the WPF codebase's own bare Color/Point/ComboBox/TextBox/
+    Application/Brush ambient set) are gone with it. Renderer.cs's own rasterizer still uses System.Drawing
+    (Bitmap/Graphics/Color, converted to a WPF BitmapSource only at the ModelView boundary, see its own
+    comment), which is a plain data/2D-drawing library, not WinForms, and stays available without this flag.
   -->
-  <ItemGroup>
-    <Using Remove="System.Drawing" />
-    <Using Remove="System.Windows.Forms" />
-  </ItemGroup>
 
   <!-- tools/ holds separate console harnesses (each its own project); keep their sources and obj output out of the app. -->
   <ItemGroup>

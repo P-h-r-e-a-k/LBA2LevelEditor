@@ -4,7 +4,6 @@ using System.Linq;
 using System.Numerics;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
 namespace LbaBodyStudio;
 
@@ -164,7 +163,14 @@ public static class Renderer
     }
 }
 
-public sealed class ModelView : Control
+// WPF body preview: a plain composite control (not a UserControl/.xaml -- matches how every other
+// secondary window in the app builds its own tree in code, see GridEditorWindow.cs) hosting the Image
+// Renderer.Render's own GDI+ bitmap is converted onto, plus two overlay TextBlocks for the stats/hint
+// text OnPaint used to bake into the bitmap itself (crisper this way, and there's no OnPaint hook to
+// bake into once this isn't a WinForms Control any more). Renderer.Render itself is untouched -- it was
+// already plain GDI+ bitmap generation with no WinForms/Control dependency at all, so the only real
+// porting work was this shell and the final Bitmap -> BitmapSource conversion below.
+public sealed class ModelView : System.Windows.Controls.Grid
 {
     public Generated? Model;
     public float Yaw;
@@ -174,18 +180,51 @@ public sealed class ModelView : Control
     // preview, via Lba1Pose.World) -- null means "render the body's own neutral/modelled pose", the
     // original behaviour.
     public Vector3[]? Pose;
-    Point? drag;
-    public ModelView(){DoubleBuffered=true;BackColor=Renderer.ViewBackground;SetStyle(ControlStyles.ResizeRedraw,true);}
-    protected override void OnPaint(PaintEventArgs e)
+
+    readonly System.Windows.Controls.Image image=new(){Stretch=System.Windows.Media.Stretch.None,HorizontalAlignment=System.Windows.HorizontalAlignment.Left,VerticalAlignment=System.Windows.VerticalAlignment.Top};
+    readonly System.Windows.Controls.TextBlock placeholder=new(){Text="Generate a body to preview it here",Foreground=System.Windows.Media.Brushes.Silver,HorizontalAlignment=System.Windows.HorizontalAlignment.Center,VerticalAlignment=System.Windows.VerticalAlignment.Center};
+    readonly System.Windows.Controls.TextBlock stats=new(){Foreground=System.Windows.Media.Brushes.LightGray,Margin=new System.Windows.Thickness(16),HorizontalAlignment=System.Windows.HorizontalAlignment.Left,VerticalAlignment=System.Windows.VerticalAlignment.Top};
+    readonly System.Windows.Controls.TextBlock hint=new(){Foreground=System.Windows.Media.Brushes.LightGray,Margin=new System.Windows.Thickness(16),HorizontalAlignment=System.Windows.HorizontalAlignment.Left,VerticalAlignment=System.Windows.VerticalAlignment.Bottom};
+    System.Windows.Point? drag;
+
+    public ModelView()
     {
-        base.OnPaint(e);
-        if(Model==null){TextRenderer.DrawText(e.Graphics,"Generate a body to preview it here",Font,ClientRectangle,Color.Silver,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);return;}
-        using var bitmap=Renderer.Render(Model.Body,Model.Palette,Width,Height,Yaw,Wire,Bones,HeadOnly,Pose,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);e.Graphics.DrawImageUnscaled(bitmap,0,0);
-        TextRenderer.DrawText(e.Graphics,$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones",Font,new Point(16,16),Color.LightGray);
-        TextRenderer.DrawText(e.Graphics,Pose==null?"Drag to rotate  |  Neutral pose  |  Palette colours":"Drag to rotate  |  Animated pose  |  Palette colours",Font,new Point(16,Height-32),Color.LightGray);
+        ClipToBounds=true;
+        Background=new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(Renderer.ViewBackground.R,Renderer.ViewBackground.G,Renderer.ViewBackground.B));
+        Children.Add(image);Children.Add(placeholder);Children.Add(stats);Children.Add(hint);
+        MouseDown+=(_,e)=>{drag=e.GetPosition(this);CaptureMouse();};
+        MouseMove+=(_,e)=>{if(drag is {} p){var cur=e.GetPosition(this);Yaw+=(float)(cur.X-p.X)*0.012f;drag=cur;Redraw();}};
+        MouseUp+=(_,_)=>{drag=null;ReleaseMouseCapture();};
+        SizeChanged+=(_,_)=>Redraw();
     }
-    protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);drag=e.Location;Capture=true;}
-    protected override void OnMouseMove(MouseEventArgs e){base.OnMouseMove(e);if(drag is Point p){Yaw+=(e.X-p.X)*0.012f;drag=e.Location;Invalidate();}}
-    protected override void OnMouseUp(MouseEventArgs e){base.OnMouseUp(e);drag=null;Capture=false;}
+
+    public void Invalidate()=>Redraw();
+
+    void Redraw()
+    {
+        var w=Math.Max(1,(int)ActualWidth);var h=Math.Max(1,(int)ActualHeight);
+        if(Model is null){image.Source=null;placeholder.Visibility=System.Windows.Visibility.Visible;stats.Text="";hint.Text="";return;}
+        placeholder.Visibility=System.Windows.Visibility.Collapsed;
+        using var bitmap=Renderer.Render(Model.Body,Model.Palette,w,h,Yaw,Wire,Bones,HeadOnly,Pose,background:Renderer.ViewBackground,gridLine:Renderer.ViewGrid);
+        image.Source=ToBitmapSource(bitmap);
+        stats.Text=$"LBA{Model.Body.Game}  •  {Model.Body.Vertices.Count} points  •  {Model.Body.Faces.Count} polygons  •  {Model.Body.Bones.Count} bones";
+        hint.Text=Pose==null?"Drag to rotate  |  Neutral pose  |  Palette colours":"Drag to rotate  |  Animated pose  |  Palette colours";
+    }
+
+    // GetHbitmap() allocates a native GDI bitmap handle that CreateBitmapSourceFromHBitmap does NOT take
+    // ownership of -- DeleteObject it explicitly, or every redraw (a mouse-drag rotate fires many of
+    // these a second) leaks a GDI handle until the process runs out of them.
+    static System.Windows.Media.Imaging.BitmapSource ToBitmapSource(Bitmap bitmap)
+    {
+        var handle=bitmap.GetHbitmap();
+        try
+        {
+            var source=System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(handle,IntPtr.Zero,System.Windows.Int32Rect.Empty,System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+            source.Freeze();
+            return source;
+        }
+        finally{DeleteObject(handle);}
+    }
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr hObject);
 }
 
