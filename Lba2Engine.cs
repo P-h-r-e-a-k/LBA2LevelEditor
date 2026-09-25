@@ -81,12 +81,14 @@ internal sealed class Lba2PlayOptions
     public AudioLevels? Audio;                          // the sound balance (default: the settings' LBA2 balance)
     public string? LoadSave;                            // a save (in the user folder's save\) that the game loads instead of starting a new game
     public int? ListenPort;                             // --listen <port>: the script-breakpoints control socket (Lba2ControlClient), bound to 127.0.0.1 only
+    public int? FallbackMusic;                          // a jingle to force (playmusic N 1) when the scene's own is 255 (see MainWindow.ResolveLba2MusicFallback)
 
     public Lba2PlayOptions WithScene(int scene)
     {
         var copy = (Lba2PlayOptions)MemberwiseClone();
         copy.Scene = scene;
         copy.LoadSave = null;
+        copy.FallbackMusic = null;
         return copy;
     }
 
@@ -104,6 +106,9 @@ internal sealed class Lba2PlayOptions
         else { args.Add("--exec-at"); args.Add("5"); args.Add($"cube {Scene}"); }
         // where the player put the hero: moved there once the scene is running
         if (Spawn is { } spawn) { args.Add("--exec-at"); args.Add("40"); args.Add($"teleport {spawn.X} {spawn.Y} {spawn.Z}"); }
+        // a scene whose own jingle is 255 (native: "keep whatever's already playing") started cold, with
+        // nothing playing yet, would otherwise sit in silence -- see MainWindow.ResolveLba2MusicFallback
+        if (FallbackMusic is { } music) { args.Add("--exec-at"); args.Add("42"); args.Add($"playmusic {music} 1"); }
         if (!Sound) args.Add("--no-audio");
         if (KeepFocus) args.Add("--ignore-focus");
         if (ListenPort is { } port) { args.Add("--listen"); args.Add(port.ToString()); }

@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using LBAAssembler.Lba1;
 using LBAAssembler.LbaScript;
+using LBAAssembler.Scenes;
 
 namespace LBAAssembler;
 
@@ -190,6 +191,7 @@ public partial class MainWindow
         options.ZoneMask = ZoneMask();
         options.Paths = pathsVisible;
         options.ListenPort = Lba2BreakpointsPort;
+        options.FallbackMusic = ResolveLba2MusicFallback(scene);
 
         var label = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene)?.Option.Display ?? $"scene {scene}";
         var host = new EmbeddedGameHost();
@@ -221,6 +223,42 @@ public partial class MainWindow
         PlayStatus.Text = $"Playing {label}. It plays what is saved on disk. Click the game to give it the keyboard.";
         lba2ControlScene = scene;
         _ = StartLba2Control(scene);
+    }
+
+    // A scene's own Music/CubeJingle byte can be 255 (SceneModel.Music == -1, the sign-extended read of that
+    // same byte -- see SceneSerializer.ParseLba2): the native engine's own OBJECT.CPP skips PlayMusic entirely
+    // for that value, by design, so a scene reached the normal way (walking in from a neighbouring cube) just
+    // keeps whatever that cube's own music already was. "Play scene" starts every scene in total isolation --
+    // a cold process with nothing playing yet -- so a 255 scene played this way sits in dead silence instead
+    // of the ambient theme a real playthrough would have carried into it (confirmed live: roughly two thirds
+    // of scenes 0-40 are 255). Read a byte, that's most plausibly what a tester calls "the wrong music" (no
+    // music at all where the scene should have some) rather than a mis-picked track.
+    //
+    // There's no room graph here to find which cube a player would actually have arrived from, so this uses
+    // the nearest available stand-in: the scene's own island's first exterior scene (the same "the game's own
+    // entry point" scene BuildSceneEntries/Lba2SceneToPlay already treat as that island's default), which is
+    // where most players are actually carrying that island's theme from when they wander into a 255 room.
+    // Null (no change from today) when the scene already has its own real jingle, its island can't be
+    // resolved, or that fallback scene is itself 255.
+    private int? ResolveLba2MusicFallback(int scene)
+    {
+        if (ReadLba2SceneMusic(scene) is not -1) return null;
+        var target = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene);
+        if (target?.IslandFile is not { } island) return null;
+        var fallback = allSceneEntries.FirstOrDefault(s => !s.IsInterior && s.Option.Index != scene && string.Equals(s.IslandFile, island, StringComparison.OrdinalIgnoreCase));
+        if (fallback is null) return null;
+        var fallbackMusic = ReadLba2SceneMusic(fallback.Option.Index);
+        return fallbackMusic == -1 ? null : fallbackMusic;
+    }
+
+    private int ReadLba2SceneMusic(int scene)
+    {
+        var scenePath = Path.Combine(gameRoot, "SCENE.HQR");
+        if (!File.Exists(scenePath)) return -1;
+        var archive = HqrArchive.Open(scenePath);
+        var hqrIndex = scene + 1;
+        if (!archive.IsValid(hqrIndex)) return -1;
+        return SceneSerializer.Parse(SceneGame.Lba2, archive.Read(hqrIndex)).Music;
     }
 
     // ---- LBA2 script breakpoints (the --listen control socket) ------------------------------------------------------------------------
