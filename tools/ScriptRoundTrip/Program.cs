@@ -129,6 +129,7 @@ internal static class Program
             "horn" => GameFlagMining.RunHorn(args),
             "horndump" => GameFlagMining.RunHornDump(args),
             "horntext" => GameFlagMining.RunHornText(args),
+            "testedits" => TestEditsSessionTest.Run(args),
             _ => Usage(),
         };
     }

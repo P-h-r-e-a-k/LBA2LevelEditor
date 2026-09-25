@@ -85,7 +85,11 @@ public partial class MainWindow
     {
         if (!modeReady) return;
         // The game folder in the title: the editor saves into it, so any test or user can see which one is in use.
-        Title = $"LBA Assembler  -  {(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
+        // While test edits are active that folder is the scratch mirror (EditorSettings.TestModeActive), not the
+        // real one -- called out here too, not just in the status line, since the title stays on screen no matter
+        // which tab or dialog has focus.
+        var testPrefix = TestEditsActive ? "[Testing -- not saved to the real game folder]  " : "";
+        Title = $"LBA Assembler  -  {testPrefix}{(currentGame == GameKind.Lba1 ? EditorSettings.Current.Lba1Directory : gameRoot)}";
         BuildViewBar.Visibility = TerrainEditable ? Visibility.Visible : Visibility.Collapsed;
         var wantTerrain = editMode == EditMode.Build && buildTerrainView && TerrainEditable && ShowTerrainEditor();
         terrainToolsActive = wantTerrain;

@@ -32,6 +32,10 @@ internal static class BodyStudioLauncher
         openForm.Show(new Win32WindowHandle(owner));
     }
 
+    // MainForm.FormClosing already asks about unsaved changes; if the user cancels, the form (and
+    // openForm) simply stays as it is, same as clicking its own close button would.
+    public static void Close() => openForm?.Close();
+
     // IWin32Window wrapper so Body Studio's own window comes up owned by the
     // actor attributes window that launched it (Show(IWin32Window), not the
     // owner-less Show()), matching this codebase's existing per-actor

@@ -28,6 +28,11 @@ internal static class AnimationStudioLauncher
         openForm.Show(new Win32WindowHandle(owner));
     }
 
+    // Unlike BodyStudioLauncher.Close(), AnimationStudioForm has no unsaved-changes prompt of its own yet
+    // (Body Studio's was added separately) -- this closes it exactly as its own window-close button already
+    // does today, with no new data-loss risk beyond that existing gap.
+    public static void Close() => openForm?.Close();
+
     private sealed class Win32WindowHandle : System.Windows.Forms.IWin32Window
     {
         public nint Handle { get; }

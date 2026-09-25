@@ -170,6 +170,12 @@
                     <MenuItem x:Name="Lba2FixScriptingMenuItem" Header="LBA2: Fi_x scripting errors…" Click="Lba2FixScriptingErrors_Click"/>
                     <MenuItem x:Name="Lba1SurpriseMenuItem" Header="LBA1: _Make surprise changes…" Click="Lba1SurpriseChanges_Click"/>
                 </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Test edits" ToolTip="Try changes against a scratch copy of the game folder before any of them touch your real files">
+                    <MenuItem x:Name="TestEditsStartMenuItem" Header="_Start testing…" Click="TestEditsStart_Click"/>
+                    <MenuItem x:Name="TestEditsCommitMenuItem" Header="_Commit test edits to the game folder…" Click="TestEditsCommit_Click"/>
+                    <MenuItem x:Name="TestEditsDiscardMenuItem" Header="_Discard test edits" Click="TestEditsDiscard_Click"/>
+                </MenuItem>
             </MenuItem>
         </Menu>
 

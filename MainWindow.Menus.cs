@@ -38,6 +38,9 @@ public partial class MainWindow
         Lba2PlayMenuItem.IsEnabled = Lba2Configured;
         Lba2FixScriptingMenuItem.IsEnabled = Lba2Configured;
         Lba1SurpriseMenuItem.IsEnabled = Lba1Configured;
+        TestEditsStartMenuItem.IsEnabled = eitherConfigured && !TestEditsActive;
+        TestEditsCommitMenuItem.IsEnabled = TestEditsActive;
+        TestEditsDiscardMenuItem.IsEnabled = TestEditsActive;
     }
 
     private static MenuItem Note(string text) => new() { Header = text, IsEnabled = false };

@@ -72,6 +72,16 @@ internal sealed class EditorSettings
     private static EditorSettings? cached;
     public static EditorSettings Current => cached ??= Load();
 
+    // Set by MainWindow.TestEditsSession while GameDirectory/Lba1Directory are temporarily pointed at a
+    // scratch shadow copy of the game folder (see LiveDataRoot.CreateFullMirror) instead of the real one --
+    // every editor already reads these two properties directly rather than caching them (over a dozen call
+    // sites, not just MainWindow's own `gameRoot`), so redirecting them here is what makes "test first"
+    // apply uniformly without each editor needing its own awareness of it. The risk that redirection buys
+    // is exactly what this guards: ANY unrelated Save() elsewhere (a settings checkbox toggled while
+    // testing, say) would otherwise happily persist the shadow folder's scratch path as the user's real
+    // game directory. Guarded centrally here rather than by auditing every Save() call site.
+    public static bool TestModeActive;
+
     private static EditorSettings Load()
     {
         foreach (var directory in new[] { PortableSettingsDirectory, LegacySettingsDirectory })
@@ -103,6 +113,12 @@ internal sealed class EditorSettings
 
     public void Save()
     {
+        // Silent, not a throw: two of Save()'s four call sites (WindowLifecycle's Closed handler, every
+        // secondary window's own) have no exception handling around it at all, since a real save can only
+        // fail with IOException/UnauthorizedAccessException, both already handled by falling back to
+        // LegacySettingsDirectory below -- throwing something neither of those catches would crash on the
+        // next window closed while testing, not just skip a save that genuinely should be skipped here.
+        if (TestModeActive) { DebugLog.Log("EditorSettings: Save() skipped -- a test-edits session has GameDirectory/Lba1Directory pointed at a scratch copy."); return; }
         var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
         try
         {
