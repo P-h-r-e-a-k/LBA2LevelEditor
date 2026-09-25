@@ -9,9 +9,16 @@ using System.Windows.Threading;
 namespace LBAAssembler;
 
 // Shows the LBA2 engine (lba2cc.exe, a separate process with its own SDL window) inside the main window: the engine's window is
-// taken over as a child of this control's own window (style stripped to a bare child, sized to the largest 4:3 rectangle that
-// fits), so playing a scene happens in the editor's view and not in a window of its own. Keyboard focus goes to the engine
-// window like it would to a child control; the game keeps its own input handling.
+// taken over as a child of this control's own window (style stripped to a bare child, sized to fill the space FitSize() was
+// called against), so playing a scene happens in the editor's view and not in a window of its own. Keyboard focus goes to the
+// engine window like it would to a child control; the game keeps its own input handling.
+//
+// No more forced 4:3: the community engine's own renderer computes its camera projection/FOV from the actual --resolution it's
+// launched with (SetProjection in EXTFUNC.CPP, not a hardcoded 320x240/4:3 assumption -- fixed and documented as such in the
+// engine's own docs/WIDESCREEN.md), and its HUD/menus were re-anchored off fixed 640x480 pixel coordinates for the same reason.
+// Forcing a 4:3 box here was this host's own artificial constraint, not something the engine needed -- it just produced large
+// black bars whenever the available space wasn't 4:3, which is what FitSize() now avoids by requesting the actual available
+// size (clamped to what the engine's own --resolution validation accepts) instead.
 internal sealed class EmbeddedGameHost : HwndHost
 {
     private const int WS_CHILD = 0x40000000, WS_VISIBLE = 0x10000000, WS_CLIPCHILDREN = 0x02000000, WS_CLIPSIBLINGS = 0x04000000;
@@ -85,16 +92,22 @@ internal sealed class EmbeddedGameHost : HwndHost
     public bool Running => process is { HasExited: false } && game != IntPtr.Zero;
     public int ProcessId => process?.Id ?? 0;
 
-    // The size in device pixels the game should be launched at: the largest 4:3 rectangle that fits this control.
+    // The size in device pixels the game should be launched at: this control's own actual size, clamped to
+    // what the engine's own --resolution validation accepts (Res_ValidateDimensions: width 320-1920 and a
+    // multiple of 8, height 200-1024). No aspect-ratio constraint of its own any more -- see this class's
+    // own comment for why that's safe. Cached (launchWidth/Height) so Fit() can keep centering the game at
+    // the size it actually believes it's rendering at, not recompute a different "best fit now" later.
     public (int Width, int Height) FitSize()
     {
         var dpi = VisualTreeHelper.GetDpi(this);
-        var w = Math.Max(320, (int)(ActualWidth * dpi.DpiScaleX));
-        var h = Math.Max(240, (int)(ActualHeight * dpi.DpiScaleY));
-        var fitW = Math.Min(w, h * 4 / 3);
-        fitW -= fitW % 2;
-        return (Math.Max(320, fitW), Math.Max(240, fitW * 3 / 4));
+        var w = Math.Clamp((int)(ActualWidth * dpi.DpiScaleX), 320, 1920);
+        var h = Math.Clamp((int)(ActualHeight * dpi.DpiScaleY), 200, 1024);
+        w -= w % 8;
+        launchWidth = w; launchHeight = h;
+        return (w, h);
     }
+
+    private int launchWidth, launchHeight;
 
     protected override HandleRef BuildWindowCore(HandleRef parent)
     {
@@ -169,14 +182,26 @@ internal sealed class EmbeddedGameHost : HwndHost
         return best;
     }
 
-    // Centres the largest 4:3 rectangle that fits in the control.
+    // Centres the game at the resolution it was actually launched with (FitSize's own cached result), not a
+    // freshly recomputed "best fit now": the engine's own internal rendering resolution is fixed for the
+    // life of the process (--resolution is a launch-time argument only, there is no live equivalent this
+    // host can safely drive -- the engine's own console `resolution` command exists but is documented as
+    // leaving the scene rendered into the corner unless something also re-runs Init3DView, which nothing
+    // reachable from here does). Recomputing a different size and just Win32-resizing the child window
+    // would only move the black bars from this host's own paint into SDL's own internal logical-
+    // presentation letterboxing instead, with no actual FOV gain -- the two would disagree about what
+    // "the current size" even is. If the control is later resized smaller than the launch size, SDL scales
+    // its own framebuffer down to fit (the same SDL_LOGICAL_PRESENTATION_LETTERBOX mechanism that already
+    // exists for exactly this); if resized larger, this simply centres the game in the extra space, the
+    // same as before FitSize() stopped forcing 4:3, just against the real launch size instead of a fresh
+    // 4:3 guess.
     private void Fit()
     {
         if (game == IntPtr.Zero || host == IntPtr.Zero || !GetClientRect(host, out var rect)) return;
         int w = rect.Right - rect.Left, h = rect.Bottom - rect.Top;
         if (w < 16 || h < 16) return;
-        var fitW = Math.Min(w, h * 4 / 3);
-        var fitH = fitW * 3 / 4;
+        var fitW = launchWidth > 0 ? Math.Min(w, launchWidth) : w;
+        var fitH = launchHeight > 0 ? Math.Min(h, launchHeight) : h;
         MoveWindow(game, (w - fitW) / 2, (h - fitH) / 2, fitW, fitH, true);
     }
 
