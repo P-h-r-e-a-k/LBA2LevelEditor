@@ -192,7 +192,6 @@ public partial class MainWindow
         ApplyInteriorView();
         RefreshZoneListIfVisible();
         ApplyMode();
-        UpdateLocation();
     }
 
     // In a joined map an actor is picked; double-clicking it opens its scene on its own, with the actor selected.
@@ -214,6 +213,5 @@ public partial class MainWindow
         ShowInteriorScene(scene);
         selectedActorIndex = actor - 1;
         RefreshActorOverlayForSelection();
-        UpdateLocation();
     }
 }

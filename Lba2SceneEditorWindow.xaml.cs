@@ -725,8 +725,10 @@ public partial class Lba2SceneEditorWindow : Window
             if (answer == MessageBoxResult.Yes && !TrySave()) return;
         }
         var options = Lba2Play.LastOptions is { } last ? last.WithScene(sceneNumber) : new Lba2PlayOptions { Scene = sceneNumber };
-        if (Lba2Play.Launch(directory, options, out var problem) is null) MessageBox.Show(this, problem ?? "The game didn't start.", "LBA2: play scene", MessageBoxButton.OK, MessageBoxImage.Warning);
-        else SetStatus($"The LBA2 engine is starting scene {sceneNumber}.");
+        var playWindow = new Lba2PlayHostWindow(directory, options) { Owner = this };
+        WindowLifecycle.Register(playWindow, "Lba2PlayHostWindow");
+        playWindow.Show();
+        SetStatus($"The LBA2 engine is starting scene {sceneNumber}.");
     }
 
     // ---- adding ----

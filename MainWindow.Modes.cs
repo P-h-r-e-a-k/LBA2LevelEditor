@@ -188,6 +188,7 @@ public partial class MainWindow
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
         {
+            SetStatus($"Saved, but couldn't reload the view: {error.Message}", StatusKind.Warning);
             DebugLog.Log($"MainWindow: reloading {activeFile} after a terrain save failed: {error.Message}");
         }
         if (nativeViewActive) RenderNativeCamera();
@@ -338,7 +339,6 @@ public partial class MainWindow
     // The Play button names the scene it will start.
     private void UpdatePlayButton()
     {
-        UpdateLocation();
         if (placing) return;
         if (currentGame != GameKind.Lba2 || !Lba2Configured) { PlayButton.Content = "▶  Play scene"; PlayButton.ToolTip = "Play the selected scene in the LBA1 play mode"; return; }
         var scene = Lba2SceneToPlay();

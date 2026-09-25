@@ -35,7 +35,7 @@ public partial class MainWindow
 
         var tabGroup = new DockGroup { NormalSize = 300 };
         ZonesTab = tabGroup.AddItem("Zones", "Zones", ZonesPanelContent);
-        ZoneDetailsTab = tabGroup.AddItem("Details", "Details", DetailsPanelContent);
+        ZoneDetailsTab = tabGroup.AddItem("Details", "Zone details", DetailsPanelContent);
         BuildTab = tabGroup.AddItem("Build", "Build", BuildPanelContent);
         PlayTab = tabGroup.AddItem("Play", "Play", PlayPanelContent);
         ScriptTab = tabGroup.AddItem("Script", "Script", ScriptPanelContent);

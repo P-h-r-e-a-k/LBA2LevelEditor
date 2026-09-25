@@ -8,9 +8,9 @@ namespace LBAAssembler;
 // Choosing what is open through the menus: Scenes > LBA1 / LBA2 > Island > Area. An island's areas are its scenes (LBA2: the outdoor
 // scenes, each one cube of the island, then its interiors; LBA1: the connected outside maps first (as joined maps, or with joining off as
 // their scenes), then the other scenes). Names are the game's descriptions without numbers or island names, capitalised (SceneMenuNames);
-// nothing in a scene list is ticked (the top bar says where you are). The
-// island / scene boxes of the top bar are still what does the opening (they stay in the window, hidden), so every path that
-// changes the open scene works the same whether it came from a menu or from the code.
+// nothing in a scene list is ticked (the top bar says where you are). The island / scene boxes of the top bar are the same
+// Game/Island/Scene combos a user can drive directly, so every path that changes the open scene works the same whether it
+// came from a menu, from typing into a combo, or from the code.
 public partial class MainWindow
 {
     private void GameMenu_SubmenuOpened(object sender, RoutedEventArgs e)
@@ -18,6 +18,26 @@ public partial class MainWindow
         if (!ReferenceEquals(e.OriginalSource, sender)) return;          // a nested submenu opening
         if (ReferenceEquals(sender, Lba1Menu)) BuildLba1Menu();
         else BuildLba2Menu();
+    }
+
+    // Disables the Tools entries a missing game folder would otherwise pop a MessageBox for on click --
+    // the Scenes menu already shows this as a disabled note instead of letting the user click through to a
+    // popup (see BuildLba1Menu/BuildLba2Menu's own Note() calls); this brings Tools in line with it. The
+    // handlers keep their own guard too, since Editors items are also reachable from the Build tab's panel.
+    private void ToolsMenu_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, sender)) return;
+        var eitherConfigured = Lba1Configured || Lba2Configured;
+        ObjectBrowserMenuItem.IsEnabled = eitherConfigured;
+        AssetEditorMenuItem.IsEnabled = eitherConfigured;
+        GridEditorMenuItem.IsEnabled = eitherConfigured;
+        Lba1EditorMenuItem.IsEnabled = Lba1Configured;
+        Lba2EditorMenuItem.IsEnabled = Lba2Configured;
+        IslandEditorMenuItem.IsEnabled = Lba2Configured;
+        Lba1PlayMenuItem.IsEnabled = Lba1Configured;
+        Lba2PlayMenuItem.IsEnabled = Lba2Configured;
+        Lba2FixScriptingMenuItem.IsEnabled = Lba2Configured;
+        Lba1SurpriseMenuItem.IsEnabled = Lba1Configured;
     }
 
     private static MenuItem Note(string text) => new() { Header = text, IsEnabled = false };
@@ -34,20 +54,6 @@ public partial class MainWindow
     }
 
     private static bool IsDemoScene(SceneEntry scene) => DescriptionOf(scene.Option.Display).StartsWith("Demo Scene", StringComparison.OrdinalIgnoreCase);
-
-    // The area's name without the island's own name in front ("38: White Leaf Desert, near the Camel" -> "38: near the Camel"): the island is
-    // already what the area is listed under.
-    private static string StripIsland(string display, string? island)
-    {
-        if (string.IsNullOrEmpty(island)) return display;
-        var colon = display.IndexOf(": ", StringComparison.Ordinal);
-        var head = colon is >= 0 and < 6 ? display[..(colon + 2)] : "";
-        var text = display[head.Length..];
-        // (the island's own name, or what the descriptions call it: "White Leaf Desert, ..." on Desert Island)
-        foreach (var name in new[] { island }.Concat(SceneMenuNames.IslandNames).OrderByDescending(n => n.Length))
-            if (text.StartsWith(name + ", ", StringComparison.OrdinalIgnoreCase)) { text = text[(name.Length + 2)..]; break; }
-        return head + text;
-    }
 
     private Dictionary<string, string?> islandNameCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -231,38 +237,5 @@ public partial class MainWindow
             SceneCombo.SelectedItem = scene;
         }
         if (wasPlaying) StartPlay(GameKind.Lba1);
-    }
-
-    // ---- where we are -----------------------------------------------------------------------------------------------------------------------
-
-    // The top bar's label: the game, the island and the area that is open.
-    private void UpdateLocation()
-    {
-        if (currentGame == GameKind.Lba1)
-        {
-            var island = IslandCombo.SelectedItem?.ToString() ?? "";
-            LocationGame.Text = "LBA1  ›  " + island;
-            LocationArea.Text = StripIsland(SceneCombo.SelectedItem?.ToString() ?? "", island);
-            return;
-        }
-        if (lba2JoinedView && lba2AreaName is not null)
-        {
-            LocationGame.Text = "LBA2  ›  " + Lba2IslandLabel(Path.GetFileNameWithoutExtension(activeFile));
-            LocationArea.Text = lba2AreaName;
-            return;
-        }
-        var scene = Lba2SceneToPlay();
-        var entry = allSceneEntries.FirstOrDefault(s => s.Option.Index == scene);
-        if (entry is not null && IsDemoScene(entry))
-        {
-            LocationGame.Text = "LBA2  ›  " + DemoLabel;
-            var description = DescriptionOf(entry.Option.Display);
-            var dash = description.IndexOf(" - ", StringComparison.Ordinal);
-            LocationArea.Text = $"{scene}: " + (dash >= 0 ? description[(dash + 3)..] : description);
-            return;
-        }
-        var file = Path.GetFileNameWithoutExtension(activeFile);
-        LocationGame.Text = "LBA2  ›  " + Lba2IslandLabel(file);
-        LocationArea.Text = entry is null ? "" : StripIsland(entry.Option.Display, Lba2IslandName(entry.IslandFile));
     }
 }

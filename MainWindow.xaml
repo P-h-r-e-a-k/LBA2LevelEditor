@@ -115,7 +115,6 @@
             <MenuItem Header="_File" Foreground="#10243E">
                 <MenuItem Header="_Open…" InputGestureText="Ctrl+O" Click="Open_Click"/>
                 <MenuItem Header="_Save" InputGestureText="Ctrl+S" Click="Save_Click"/>
-                <MenuItem Header="_Export…" Click="Export_Click"/>
                 <Separator/>
                 <MenuItem Header="Se_ttings…" Click="Settings_Click"/>
                 <Separator/>
@@ -138,7 +137,7 @@
                     <MenuItem Header="Location" Click="ShowPanel_Click" Tag="Location"/>
                     <MenuItem Header="Mode" Click="ShowPanel_Click" Tag="Mode"/>
                     <MenuItem Header="Zones" Click="ShowPanel_Click" Tag="Zones"/>
-                    <MenuItem Header="Details" Click="ShowPanel_Click" Tag="Details"/>
+                    <MenuItem Header="Zone details" Click="ShowPanel_Click" Tag="Details"/>
                     <MenuItem Header="Build" Click="ShowPanel_Click" Tag="Build"/>
                     <MenuItem Header="Play" Click="ShowPanel_Click" Tag="Play"/>
                     <MenuItem Header="Script" Click="ShowPanel_Click" Tag="Script"/>
@@ -151,20 +150,26 @@
                 <MenuItem x:Name="Lba1Menu" Header="LBA_1" SubmenuOpened="GameMenu_SubmenuOpened"><MenuItem Header="…"/></MenuItem>
                 <MenuItem x:Name="Lba2Menu" Header="LBA_2" SubmenuOpened="GameMenu_SubmenuOpened"><MenuItem Header="…"/></MenuItem>
             </MenuItem>
-            <MenuItem Header="_Tools" Foreground="#10243E">
-                <MenuItem Header="_Body Studio…" Click="BodyStudio_Click"/>
-                <MenuItem Header="_Animation Studio…" Click="AnimationStudio_Click"/>
-                <MenuItem Header="LBA2: play _scene (the full engine)…" Click="Lba2Play_Click"/>
-                <MenuItem Header="LBA2: scene e_ditor…" Click="Lba2Editor_Click"/>
-                <MenuItem Header="LBA2: island _terrain editor (Build mode)" Click="IslandEditor_Click"/>
-                <MenuItem Header="LBA1 / LBA2: br_icks and sprites…" Click="AssetEditor_Click"/>
-                <MenuItem Header="LBA1 / LBA2: _objects and bodies…" Click="ObjectBrowser_Click"/>
-                <MenuItem Header="LBA1 / LBA2: interior _grid editor…" Click="GridEditor_Click"/>
-                <MenuItem Header="LBA2: Fi_x scripting errors…" Click="Lba2FixScriptingErrors_Click"/>
-                <Separator/>
-                <MenuItem Header="LBA1: scene _editor…" Click="Lba1Editor_Click"/>
-                <MenuItem Header="LBA1: _play scene…" Click="Lba1Play_Click"/>
-                <MenuItem Header="LBA1: _Make surprise changes…" Click="Lba1SurpriseChanges_Click"/>
+            <MenuItem Header="_Tools" Foreground="#10243E" SubmenuOpened="ToolsMenu_SubmenuOpened">
+                <MenuItem Header="_Editors" ToolTip="Also reachable from the Build tab's Editors panel, and (Body Studio) from Objects and bodies">
+                    <MenuItem Header="_Body Studio…" Click="BodyStudio_Click"/>
+                    <MenuItem Header="_Animation Studio…" Click="AnimationStudio_Click"/>
+                    <MenuItem x:Name="ObjectBrowserMenuItem" Header="LBA1 / LBA2: _objects and bodies…" Click="ObjectBrowser_Click"/>
+                    <MenuItem x:Name="AssetEditorMenuItem" Header="LBA1 / LBA2: br_icks and sprites…" Click="AssetEditor_Click"/>
+                    <MenuItem x:Name="GridEditorMenuItem" Header="LBA1 / LBA2: interior _grid editor…" Click="GridEditor_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="Lba1EditorMenuItem" Header="LBA1: scene _editor…" Click="Lba1Editor_Click"/>
+                    <MenuItem x:Name="Lba2EditorMenuItem" Header="LBA2: scene e_ditor…" Click="Lba2Editor_Click"/>
+                    <MenuItem x:Name="IslandEditorMenuItem" Header="LBA2: island _terrain editor (Build mode)" Click="IslandEditor_Click"/>
+                </MenuItem>
+                <MenuItem Header="_Play" ToolTip="Plays a specific game's open scene regardless of which one the Game selector currently shows -- for the game that's already showing, the Play tab's own button does the same thing">
+                    <MenuItem x:Name="Lba1PlayMenuItem" Header="LBA1: play _scene…" Click="Lba1Play_Click"/>
+                    <MenuItem x:Name="Lba2PlayMenuItem" Header="LBA2: play _scene (the full engine)…" Click="Lba2Play_Click"/>
+                </MenuItem>
+                <MenuItem Header="_Data fixes">
+                    <MenuItem x:Name="Lba2FixScriptingMenuItem" Header="LBA2: Fi_x scripting errors…" Click="Lba2FixScriptingErrors_Click"/>
+                    <MenuItem x:Name="Lba1SurpriseMenuItem" Header="LBA1: _Make surprise changes…" Click="Lba1SurpriseChanges_Click"/>
+                </MenuItem>
             </MenuItem>
         </Menu>
 
@@ -182,24 +187,22 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Margin="0,0,20,0" VerticalAlignment="Center" MinWidth="220" MaxWidth="440">
-                                        <TextBlock x:Name="LocationGame" Style="{StaticResource FieldLabel}" Margin="0,0,0,3"/>
-                                        <TextBlock x:Name="LocationArea" FontSize="14" TextTrimming="CharacterEllipsis"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="0" Margin="0,0,16,0" Visibility="Collapsed">
+                                    <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
                                         <TextBlock Text="Game" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                                        <ComboBox x:Name="GameCombo" Style="{StaticResource DropdownBox}" Width="84" Padding="8,4" SelectionChanged="GameCombo_SelectionChanged">
+                                        <ComboBox x:Name="GameCombo" Style="{StaticResource DropdownBox}" Width="84" Padding="8,4" SelectionChanged="GameCombo_SelectionChanged" ToolTip="Switch between LBA1 and LBA2">
                                             <ComboBoxItem Content="LBA1" Tag="1"/>
                                             <ComboBoxItem Content="LBA2" Tag="2" IsSelected="True"/>
                                         </ComboBox>
                                     </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="0,0,16,0" Visibility="Collapsed">
+                                    <StackPanel Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center">
                                         <TextBlock Text="Island" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                                        <ComboBox x:Name="IslandCombo" Style="{StaticResource DropdownBox}" Width="170" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"/>
+                                        <ComboBox x:Name="IslandCombo" Style="{StaticResource DropdownBox}" Width="170" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
+                                                  ToolTip="Type to filter, or pick from the list"/>
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2" Margin="0,0,16,0" Visibility="Collapsed">
+                                    <StackPanel Grid.Column="2" Margin="0,0,16,0" VerticalAlignment="Center">
                                         <TextBlock Text="Scene" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                                        <ComboBox x:Name="SceneCombo" Style="{StaticResource DropdownBox}" Width="300" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"/>
+                                        <ComboBox x:Name="SceneCombo" Style="{StaticResource DropdownBox}" Width="300" Padding="8,4" IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
+                                                  ToolTip="Type to filter, or pick from the list"/>
                                     </StackPanel>
                                     <CheckBox x:Name="JoinAreasCheck" Grid.Column="4" Content="Join connected areas" Visibility="Collapsed" VerticalAlignment="Bottom" Margin="0,0,16,7"
                                               Foreground="#10243E" Click="JoinAreas_Click"
@@ -230,7 +233,8 @@
                                             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="16"/></Grid.RowDefinitions>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
                                             <Grid x:Name="ViewportHost" Grid.Row="0" Grid.Column="0" ClipToBounds="True" SizeChanged="ViewportHost_SizeChanged" MouseWheel="TerrainViewport_MouseWheel" MouseRightButtonDown="TerrainViewport_MouseRightButtonDown" MouseLeave="Viewport_MouseLeave"
-                                                  MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp">
+                                                  MouseDown="TerrainViewport_MouseDown" MouseMove="TerrainViewport_MouseMove" MouseUp="TerrainViewport_MouseUp"
+                                                  ToolTip="Middle-drag or the arrow keys to pan, wheel to zoom (left-drag rotates/tilts when that's ticked above)">
                                                 <Image x:Name="TerrainViewport" Stretch="Fill" SnapsToDevicePixels="True" SizeChanged="TerrainViewport_SizeChanged" ClipToBounds="True" />
                                                 <Canvas x:Name="InteriorHost" Background="Black" Visibility="Collapsed" ClipToBounds="True">
                                                     <Image x:Name="InteriorViewImage" Stretch="None" SnapsToDevicePixels="False"/>

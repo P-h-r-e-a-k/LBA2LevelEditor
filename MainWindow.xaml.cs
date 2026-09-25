@@ -20,7 +20,6 @@ public partial class MainWindow : Window
 {
     private string gameRoot = EditorSettings.Current.GameDirectory;
     private readonly CommunityRendererBackend nativeRenderer;
-    private readonly TerrainType[] fallbackTiles = new TerrainType[16 * 16];
     private IslandDocument? currentIsland;
     private string activeFile = "DESERT.ILE";
     private double cameraYaw = 45;
@@ -126,7 +125,6 @@ public partial class MainWindow : Window
         KeyDown += MainWindow_KeyDown;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         PreviewKeyUp += (_, e) => { if (playing) lba1Play?.ForwardKey(e, false); };
-        SeedFallbackMap();
         BuildZoneList();
 
         islandFilter = new FilterableComboBox(IslandCombo, () => islandOptions);
@@ -468,16 +466,6 @@ public partial class MainWindow : Window
         palette = paletteOffset >= 0 && paletteOffset <= xpl.Length - 768 ? xpl[paletteOffset..(paletteOffset + 768)] : Array.Empty<byte>();
         shadeTable = fogOffset >= 0 && fogOffset <= xpl.Length - 4096 ? xpl[fogOffset..(fogOffset + 4096)] : Array.Empty<byte>();
         return palette;
-    }
-
-    private void SeedFallbackMap()
-    {
-        for (var index = 0; index < fallbackTiles.Length; index++)
-        {
-            var row = index / 16;
-            var column = index % 16;
-            fallbackTiles[index] = row < 2 || row > 13 || column < 2 || column > 13 ? TerrainType.Water : TerrainType.Grass;
-        }
     }
 
     private void RenderSoftwareTerrain()
@@ -948,7 +936,7 @@ public partial class MainWindow : Window
         var focus = Lba1FocusScene();          // (what is on screen, before the list changes under it)
         lba1JoinAreas = JoinAreasCheck.IsChecked == true;
         EditorSettings.Current.Lba1JoinConnectedAreas = lba1JoinAreas;
-        try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
+        try { EditorSettings.Current.Save(); } catch (Exception error) { SetStatus($"Couldn't save that setting: {error.Message}", StatusKind.Warning); DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
         if (currentGame == GameKind.Lba1 && IslandCombo.SelectedItem is FilterableComboBox.Option island) RefreshLba1SceneOptions(island.Index, focus);
         else if (currentGame == GameKind.Lba2) RefreshLba2AfterJoinToggle();
     }
@@ -1313,7 +1301,7 @@ public partial class MainWindow : Window
     {
         highlightSelection = HighlightCheck.IsChecked == true;
         EditorSettings.Current.HighlightSelection = highlightSelection;
-        try { EditorSettings.Current.Save(); } catch (Exception error) { DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
+        try { EditorSettings.Current.Save(); } catch (Exception error) { SetStatus($"Couldn't save that setting: {error.Message}", StatusKind.Warning); DebugLog.Log($"MainWindow: settings save failed: {error.Message}"); }
         RefreshActorOverlayForSelection();
     }
 
@@ -1522,7 +1510,7 @@ public partial class MainWindow : Window
             }
         }
         RefreshZoneListIfVisible();
-        FileLabel.Text = $"{(undo ? "Undid" : "Redid")}: {next.Description}";
+        SetStatus($"{(undo ? "Undid" : "Redid")}: {next.Description}", StatusKind.Success);
     }
 
     // Tools > LBA1: Make surprise changes: connects the bedroom (scene 61) to Lupin Burg and adds the pink elf to it
@@ -1721,11 +1709,13 @@ public partial class MainWindow : Window
     // The scene editor hands an actor over to the full attribute dialog or the script editor, which work on the scene shown here.
     private void EditLba1ActorFromEditor(int scene, int actor, bool script)
     {
-        if (currentGame != GameKind.Lba1 || lba1Game is null)
-        {
-            MessageBox.Show(this, "Switch the main window to LBA1 (the Game selector) to use the full editors.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
+        // Used to just refuse with "switch to LBA1 yourself" -- IslandEditor_Click's own equivalent (the
+        // LBA2 island terrain editor entry point) switches for the user instead, so this now matches it.
+        // SwitchGame can itself decline (unsaved terrain edits, confirmed away) -- the recheck after it
+        // mirrors IslandEditor_Click's own, and a decline here just leaves the editor window's request
+        // unfulfilled rather than piling on a second dialog explaining why.
+        if (currentGame != GameKind.Lba1) SwitchGame(GameKind.Lba1);
+        if (currentGame != GameKind.Lba1 || lba1Game is null) return;
         zoneCache.Clear();
         lba1Session.ForgetScene(scene);
         ReloadLba1AfterEdit();
@@ -1747,6 +1737,7 @@ public partial class MainWindow : Window
         }
         catch (Exception error)
         {
+            SetStatus($"Saved, but couldn't reload the view: {error.Message}", StatusKind.Warning);
             DebugLog.Log($"MainWindow: LBA1 reload failed: {error}");
             return;
         }
@@ -2487,6 +2478,7 @@ public partial class MainWindow : Window
     {
         if (minimapPopup is not null) { minimapPopup.Activate(); return; }
         minimapPopup = new MinimapPopupWindow(this);
+        WindowLifecycle.Register(minimapPopup, "MinimapPopupWindow");
         minimapPopup.ImageClicked += NavigateMinimapTo;
         minimapPopup.Closed += (_, _) => minimapPopup = null;
         RefreshMinimapPopup();
@@ -3140,7 +3132,16 @@ public partial class MainWindow : Window
         if (nativeViewActive) RenderNativeCamera(); else RenderSoftwareTerrain();
         e.Handled = true;
     }
-    private void Open_Click(object sender, RoutedEventArgs e) { if (currentGame == GameKind.Lba1) return; var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot }; if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName); }
+    // LBA1 has no equivalent "open a file" concept here -- it works from the one installed game folder
+    // (File > Settings), not a chosen .ILE -- so this used to just silently do nothing for it, on both the
+    // menu click and the Ctrl+O shortcut (a global KeyBinding, so disabling the menu item alone wouldn't
+    // have covered the keyboard path anyway).
+    private void Open_Click(object sender, RoutedEventArgs e)
+    {
+        if (currentGame == GameKind.Lba1) { SetStatus("LBA1 doesn't use Open -- it plays from the game folder set under File > Settings."); return; }
+        var dialog = new OpenFileDialog { Filter = "LBA2 islands (*.ILE)|*.ILE|All files (*.*)|*.*", InitialDirectory = gameRoot };
+        if (dialog.ShowDialog() == true) LoadIsland(dialog.FileName);
+    }
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
@@ -3179,9 +3180,30 @@ public partial class MainWindow : Window
         foreach (var w in windows) w.ReloadForRestyle();
     }
 
-    // File > Save writes the island the terrain editor changed; with nothing of that pending it is the old JSON draft export.
-    private void Save_Click(object sender, RoutedEventArgs e) { if (terrainEditor is { Dirty: true } editor) editor.Save(); else Export_Click(sender, e); }
-    private void Export_Click(object sender, RoutedEventArgs e) { var dialog = new SaveFileDialog { Filter = "JSON draft (*.json)|*.json", FileName = Path.GetFileNameWithoutExtension(activeFile) + ".json" }; if (dialog.ShowDialog() != true) return; var draft = new { format = "lba2-ile-draft", width = 16, height = 16, tiles = fallbackTiles }; File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(draft, new JsonSerializerOptions { WriteIndented = true })); }
+    // FileLabel used to be one unchanging colour for every message, so a failure read identically to a
+    // success or a routine status line. These are the same warning/good colours Theme.xaml's own header
+    // comment documents as part of the palette (never exposed as named resources, used inline like every
+    // other colour in this file) -- Warning covers both "went wrong" and "didn't happen the way you'd
+    // expect," since the palette itself only draws that one line, not a separate error/warning split.
+    private enum StatusKind { Info, Success, Warning }
+    private static readonly Brush StatusInfoBrush = new SolidColorBrush(Color.FromRgb(0x7C, 0x93, 0xAC));
+    private static readonly Brush StatusSuccessBrush = new SolidColorBrush(Color.FromRgb(0x14, 0x66, 0x4A));
+    private static readonly Brush StatusWarningBrush = new SolidColorBrush(Color.FromRgb(0xA3, 0x2C, 0x22));
 
-    private enum TerrainType { Grass, Sand, Water, Stone, Dirt }
+    private void SetStatus(string message, StatusKind kind = StatusKind.Info)
+    {
+        FileLabel.Text = message;
+        FileLabel.Foreground = kind switch { StatusKind.Success => StatusSuccessBrush, StatusKind.Warning => StatusWarningBrush, _ => StatusInfoBrush };
+    }
+
+    // File > Save writes pending terrain edits -- the only kind of change this button covers; zone, actor,
+    // and script edits each save from their own Apply button. This used to silently fall through to
+    // exporting a hardcoded placeholder map as a "JSON draft" when nothing was terrain-dirty -- dead
+    // prototype scaffolding left over from before the real save paths existed, sitting behind the app's
+    // most standard shortcut. It's just a status message now.
+    private void Save_Click(object sender, RoutedEventArgs e)
+    {
+        if (terrainEditor is { Dirty: true } editor) editor.Save();
+        else SetStatus("Nothing to save here -- zone, actor, and script edits each save from their own Apply button.", StatusKind.Info);
+    }
 }

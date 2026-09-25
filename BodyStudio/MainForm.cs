@@ -27,9 +27,27 @@ public sealed class MainForm : Form
     readonly ComboBox previewGame=Combo("LBA1","LBA2");
     readonly List<Generated> generated=[];
     Settings? generatedSettings;
+    // No dirty flag, no undo, and no close-time warning existed here at all (unlike every WPF editor in
+    // the app, which all guard Closing on a dirty flag) -- the one editor where a long tuning session could
+    // vanish on a single misclick. Settings is already a plain POCO round-tripped whole via ReadSettings()/
+    // Apply() for Save/Load, so that same pair doubles as the undo snapshot mechanism: no cloning method
+    // needed, just capture what ReadSettings() returns before each change lands. `applying` guards Apply()
+    // itself from re-triggering the same change-tracking loop it's driving (loading a project, or an undo/
+    // redo restore, would otherwise push its own restore back onto the stack as if the user had typed it).
+    bool dirty,applying;
+    Settings lastKnownGood=new();
+    // List, not Stack<T>: undo/redo both need to push/pop the newest end (List.Add / RemoveAt(Count-1) are
+    // just as O(1) for that), but capping also needs to drop the OLDEST entry once full, which Stack<T> has
+    // no way to do at all -- its Pop() only ever removes the newest, so capping through it would silently
+    // discard the entry just pushed instead of the one furthest back.
+    readonly List<Settings> undoStack=[],redoStack=[];
+    const int UndoCap=50;
+    static void Push(List<Settings> stack,Settings s){stack.Add(s);if(stack.Count>UndoCap)stack.RemoveAt(0);}
+    static Settings Pop(List<Settings> stack){var s=stack[^1];stack.RemoveAt(stack.Count-1);return s;}
     public MainForm()
     {
         Text="LBA Assembler — Body Studio";Size=new(1400,930);MinimumSize=new(1050,720);Font=new Font("Segoe UI",10);StartPosition=FormStartPosition.CenterScreen;BackColor=Color.White;
+        KeyPreview=true;
         var main=new SplitContainer(){Width=1350,Dock=DockStyle.Fill,FixedPanel=FixedPanel.Panel1,SplitterDistance=390,Panel1MinSize=360,BackColor=Renderer.Border};Controls.Add(main);Controls.Add(status);
         var fields=new TableLayoutPanel(){Dock=DockStyle.Fill,AutoScroll=true,ColumnCount=1,Padding=new Padding(18),BackColor=Renderer.PanelBackground};main.Panel1.Controls.Add(fields);
         void Add(Control c){c.Margin=new Padding(0,0,0,10);c.Dock=DockStyle.Top;fields.Controls.Add(c);}
@@ -74,18 +92,55 @@ public sealed class MainForm : Form
         var modelTab=new TabPage("3D body");modelTab.Controls.Add(preview);var imageTab=new TabPage("Reference image");imageTab.Controls.Add(reference);tabs.TabPages.Add(modelTab);tabs.TabPages.Add(imageTab);right.Controls.Add(tabs);
         wire.CheckedChanged+=(_,_)=>{preview.Wire=wire.Checked;preview.Invalidate();};bones.CheckedChanged+=(_,_)=>{preview.Bones=bones.Checked;preview.Invalidate();};front.Click+=(_,_)=>{preview.Yaw=negative.Checked?0:MathF.PI;preview.Invalidate();};back.Click+=(_,_)=>{preview.Yaw=negative.Checked?MathF.PI:0;preview.Invalidate();};previewGame.SelectedIndexChanged+=(_,_)=>ShowGenerated();
         generate.Click+=async(_,_)=>await Generate();export.Click+=async(_,_)=>await Export();
-        save.Click+=(_,_)=>{using var d=new SaveFileDialog(){Filter="Body Studio project|*.json",FileName="body-project.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>File.WriteAllText(d.FileName,JsonSerializer.Serialize(ReadSettings(),new JsonSerializerOptions{WriteIndented=true})));};
-        load.Click+=(_,_)=>{using var d=new OpenFileDialog(){Filter="Body Studio project|*.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>{Apply(JsonSerializer.Deserialize<Settings>(File.ReadAllText(d.FileName))??throw new InvalidDataException("Empty project."));LoadImage();});};
+        save.Click+=(_,_)=>SaveProject();
+        load.Click+=(_,_)=>{using var d=new OpenFileDialog(){Filter="Body Studio project|*.json"};if(d.ShowDialog()==DialogResult.OK)Try(()=>{var loaded=JsonSerializer.Deserialize<Settings>(File.ReadAllText(d.FileName))??throw new InvalidDataException("Empty project.");applying=true;try{Apply(loaded);}finally{applying=false;}LoadImage();lastKnownGood=loaded;dirty=false;});};
         Apply(new Settings(){OutputFolder=Path.Combine(AppContext.BaseDirectory,"Body Exports"),Lba1Folder=LBAAssembler.EditorSettings.Current.Lba1Directory,Lba2Folder=LBAAssembler.EditorSettings.Current.GameDirectory});
-        // Any setting change invalidates the export snapshot until regenerated.
+        dirty=false;
+        // Any setting change invalidates the export snapshot until regenerated, marks the project dirty, and
+        // (unless it's Apply() itself driving the controls, e.g. Load/Undo/Redo) pushes what things looked
+        // like a moment ago onto the undo stack.
+        void Changed()
+        {
+            InvalidateGeneration();
+            if(applying)return;
+            dirty=true;
+            Push(undoStack,lastKnownGood);redoStack.Clear();
+            lastKnownGood=ReadSettings();
+        }
         foreach(Control c in Descendants(fields))
         {
-            if(c is TextBox t)t.TextChanged+=(_,_)=>InvalidateGeneration();
-            if(c is NumericUpDown n)n.ValueChanged+=(_,_)=>InvalidateGeneration();
-            if(c is ComboBox cb)cb.SelectedIndexChanged+=(_,_)=>InvalidateGeneration();
-            if(c is CheckBox ch)ch.CheckedChanged+=(_,_)=>InvalidateGeneration();
+            if(c is TextBox t)t.TextChanged+=(_,_)=>Changed();
+            if(c is NumericUpDown n)n.ValueChanged+=(_,_)=>Changed();
+            if(c is ComboBox cb)cb.SelectedIndexChanged+=(_,_)=>Changed();
+            if(c is CheckBox ch)ch.CheckedChanged+=(_,_)=>Changed();
         }
+        KeyDown+=(_,e)=>
+        {
+            if(e.Control&&e.KeyCode==Keys.Z&&undoStack.Count>0){Push(redoStack,ReadSettings());ApplyRestoring(Pop(undoStack));e.Handled=true;}
+            else if(e.Control&&e.KeyCode==Keys.Y&&redoStack.Count>0){Push(undoStack,ReadSettings());ApplyRestoring(Pop(redoStack));e.Handled=true;}
+        };
+        FormClosing+=(_,e)=>{if(dirty&&!ConfirmDiscard())e.Cancel=true;};
         ApplyTheme();
+    }
+    // Undo/redo restores through the same Apply() Save/Load already uses, but -- unlike a normal edit --
+    // shouldn't itself push a fresh undo entry or leave the project marked dirty relative to this restored
+    // point (Ctrl+Z then Ctrl+Z again should keep walking further back, not get stuck re-recording the same
+    // step forward).
+    void ApplyRestoring(Settings s){applying=true;try{Apply(s);}finally{applying=false;}lastKnownGood=s;dirty=true;}
+    void SaveProject()
+    {
+        using var d=new SaveFileDialog(){Filter="Body Studio project|*.json",FileName="body-project.json"};
+        if(d.ShowDialog()!=DialogResult.OK)return;
+        Try(()=>{File.WriteAllText(d.FileName,JsonSerializer.Serialize(ReadSettings(),new JsonSerializerOptions{WriteIndented=true}));dirty=false;});
+    }
+    // Mirrors GridEditorWindow.cs / AssetEditorWindow.cs's own Closing-guard shape (Yes/No/Cancel, Yes saves
+    // first) -- the WPF editors in this app all have this; this is the one place it was missing.
+    bool ConfirmDiscard()
+    {
+        var answer=MessageBox.Show(this,"This project has unsaved changes. Save before closing?","Body Studio",MessageBoxButtons.YesNoCancel,MessageBoxIcon.Question);
+        if(answer==DialogResult.Cancel)return false;
+        if(answer==DialogResult.Yes)SaveProject();
+        return !dirty||answer==DialogResult.No;
     }
     // Matches the rest of the app's own light theme (Theme.xaml) instead of plain WinForms defaults. Runs once, over every
     // control the form ends up with, rather than colouring each one where it's built.
