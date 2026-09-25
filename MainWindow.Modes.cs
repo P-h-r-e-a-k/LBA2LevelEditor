@@ -279,6 +279,51 @@ public partial class MainWindow
         RefreshActorOverlayForSelection();
     }
 
+    // ---- the ZONES tab: the actors in view -- same list/label logic as the Script tab's own actor list
+    // above, opening the attributes window instead of the script window (see the Interface Audit's
+    // "Actors and zones get unequal editing UX" finding: zones already had a docked "in view" list here,
+    // actors only ever opened as one floating window per actor with no way to find one again once several
+    // are open). Reuses both existing per-game window openers (OpenLba1ActorWindow/OpenActorAttributesWindow)
+    // rather than adding a third way to open one. ---------------------------------------------------------
+
+    private bool actorsInViewListSyncing;
+
+    private void ActorsInViewRefresh_Click(object sender, RoutedEventArgs e) => RefreshActorsInViewList();
+
+    private void RefreshActorsInViewList()
+    {
+        var indexes = (interiorSceneActive
+                ? interiorActors.Select(a => a.Index)
+                : lastNativeActorScreens?.Select(a => a.Index) ?? Enumerable.Empty<int>())
+            .Distinct().OrderBy(i => i).ToList();
+        actorsInViewListSyncing = true;
+        try
+        {
+            ActorsInViewList.Items.Clear();
+            foreach (var index in indexes)
+            {
+                var text = currentGame == GameKind.Lba1 && index >= 1000 ? $"Scene {index / 1000}, actor #{index % 1000}" : $"Actor #{index}";
+                ActorsInViewList.Items.Add(new ListBoxItem { Content = text, Tag = index, IsSelected = selectedActorIndex == index });
+            }
+            ActorsInViewHeader.Text = $"Actors in view ({indexes.Count})";
+        }
+        finally { actorsInViewListSyncing = false; }
+    }
+
+    private void ActorsInViewList_DoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ActorsInViewList.SelectedItem is not ListBoxItem { Tag: int index }) return;
+        if (currentGame == GameKind.Lba1) OpenLba1ActorWindow(index);
+        else OpenActorAttributesWindow(index);
+    }
+
+    private void ActorsInViewList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (actorsInViewListSyncing || ActorsInViewList.SelectedItem is not ListBoxItem { Tag: int index }) return;
+        selectedActorIndex = index;
+        RefreshActorOverlayForSelection();
+    }
+
     // ---- Build tab buttons -----------------------------------------------------------------------------------------------------------------------
 
     private void BuildSceneEditor_Click(object sender, RoutedEventArgs e)

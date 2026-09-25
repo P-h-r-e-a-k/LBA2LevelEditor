@@ -78,6 +78,10 @@ public partial class MainWindow
     private void RefreshZoneListIfVisible()
     {
         if (ZoneDetailsTab.IsSelected) RefreshZoneList();
+        // The Zones tab's own "Actors in view" list (MainWindow.Modes.cs) needs refreshing at the same
+        // points as the zone list above -- both go stale for the same reason (the view changed) -- so
+        // this piggybacks on every one of this method's own call sites instead of repeating them.
+        if (ZonesTab.IsSelected) RefreshActorsInViewList();
     }
 
     private void ZoneListRefresh_Click(object sender, RoutedEventArgs e) => RefreshZoneList();

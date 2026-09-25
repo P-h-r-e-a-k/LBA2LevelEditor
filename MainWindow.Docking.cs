@@ -40,7 +40,7 @@ public partial class MainWindow
         PlayTab = tabGroup.AddItem("Play", "Play", PlayPanelContent);
         ScriptTab = tabGroup.AddItem("Script", "Script", ScriptPanelContent);
         tabGroup.Activate("Zones");   // AddItem's own "first item added becomes active" already lands here; explicit for clarity
-        tabGroup.ActiveItemChanged += (_, item) => { if (item == ZoneDetailsTab) RefreshZoneList(); };
+        tabGroup.ActiveItemChanged += (_, item) => { if (item == ZoneDetailsTab) RefreshZoneList(); else if (item == ZonesTab) RefreshActorsInViewList(); };
 
         var minimapGroup = new DockGroup { NormalSize = 270, Height = 270 };
         MinimapAnchorable = minimapGroup.AddItem("Minimap", "Minimap", MinimapPanelContent);
