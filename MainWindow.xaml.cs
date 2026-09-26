@@ -3089,30 +3089,58 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int command);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern void SwitchToThisWindow(IntPtr hWnd, bool altTab);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
 
+    // Attempts at 0, 150 ms ... then every half second for about four seconds in all: the first attempt is at Loaded (before the first
+    // real paint), and the native renderer's own window / the first native render can still take the focus after that. It stops as soon
+    // as the window really is the foreground window. Each attempt escalates: the borrowed-input SetForegroundWindow, then (from the
+    // second attempt) a topmost pulse + SwitchToThisWindow, then a synthetic Alt tap (the old "release the foreground lock" trick, which
+    // also works when the foreground window belongs to an elevated process that AttachThreadInput can't attach to).
     private static void ForceForegroundRetrying(Window window, int attempt = 0)
     {
-        if (ForceForeground(window) || attempt >= 4) return;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        var done = ForceForeground(window, attempt);
+        if (attempt == 0 || done || attempt >= 9) DebugLog.Log($"MainWindow: foreground attempt {attempt}: {(done ? "now in front" : "still behind")}");
+        if (done || attempt >= 9) return;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(attempt < 3 ? 150 : 500) };
         timer.Tick += (_, _) => { timer.Stop(); ForceForegroundRetrying(window, attempt + 1); };
         timer.Start();
     }
 
     // Returns whether the window is (now) the foreground window.
-    private static bool ForceForeground(Window window)
+    private static bool ForceForeground(Window window, int attempt)
     {
         var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero) return false;
+        if (GetForegroundWindow() == handle) return true;
+        if (IsIconic(handle)) ShowWindow(handle, 9);       // SW_RESTORE
         var foreground = GetForegroundWindow();
-        if (foreground == handle) return true;
-        var foregroundThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
+        var foregroundThread = foreground == IntPtr.Zero ? 0 : GetWindowThreadProcessId(foreground, IntPtr.Zero);
         var thisThread = GetCurrentThreadId();
-        if (foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true))
+        var attached = foregroundThread != 0 && foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true);
+        try
         {
+            if (attempt >= 1)
+            {
+                const uint noMoveNoSize = 0x0001 | 0x0002;        // SWP_NOSIZE | SWP_NOMOVE
+                SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, noMoveNoSize);      // HWND_TOPMOST, then straight back
+                SetWindowPos(handle, new IntPtr(-2), 0, 0, 0, 0, noMoveNoSize);      // HWND_NOTOPMOST
+            }
+            if (attempt >= 2)
+            {
+                keybd_event(0x12, 0, 0, UIntPtr.Zero);            // VK_MENU down / up
+                keybd_event(0x12, 0, 2, UIntPtr.Zero);
+            }
+            BringWindowToTop(handle);
             SetForegroundWindow(handle);
-            AttachThreadInput(thisThread, foregroundThread, false);
+            if (attempt >= 1) SwitchToThisWindow(handle, true);
         }
-        else SetForegroundWindow(handle);
+        finally { if (attached) AttachThreadInput(thisThread, foregroundThread, false); }
         window.Activate();
         return GetForegroundWindow() == handle;
     }
