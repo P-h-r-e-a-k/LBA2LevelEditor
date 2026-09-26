@@ -17,7 +17,6 @@ namespace LBAAssembler;
 internal sealed class GridEditorWindow : Window
 {
     private const int Cell = 9;
-    private enum Tool { Paint, Erase, Fill }
 
     private readonly List<IGridBackend> backends = new();
     private readonly ComboBox backendBox = new() { Width = 90 };
@@ -33,7 +32,8 @@ internal sealed class GridEditorWindow : Window
     private readonly TextBlock cellInfo = new() { TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 11, Margin = new Thickness(0, 6, 0, 0) };
     private readonly TextBlock status = new() { Margin = new Thickness(8, 3, 8, 3), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Button saveButton = new() { Content = "Save" }, undoButton = new() { Content = "Undo" }, redoButton = new() { Content = "Redo" };
-    private readonly RadioButton paintTool = new() { Content = "Paint", IsChecked = true, GroupName = "gt" }, eraseTool = new() { Content = "Erase", GroupName = "gt" }, fillTool = new() { Content = "Fill rectangle", GroupName = "gt" };
+    private readonly RadioButton paintTool = new() { Content = "Paint", IsChecked = true, GroupName = "gt" }, eraseTool = new() { Content = "Erase", GroupName = "gt" }, fillTool = new() { Content = "Fill rectangle", GroupName = "gt" }, moveTool = new() { Content = "Move", GroupName = "gt" };
+    private (int Block, int X, int Y, int Z, int GrabX, int GrabZ)? moving;      // a block picked up with the Move tool: its origin, and where in it the pointer holds it
     private readonly StackPanel libraryPanel = new();
     private readonly DispatcherTimer isoTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
 
@@ -98,9 +98,10 @@ internal sealed class GridEditorWindow : Window
         gameLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
         top.Children.Add(gameLabel);
         top.Children.Add(backendBox); backendBox.Margin = new Thickness(0, 0, 14, 0);
-        foreach (var t in new[] { paintTool, eraseTool, fillTool }) { t.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); t.Margin = new Thickness(0, 0, 10, 0); t.VerticalAlignment = VerticalAlignment.Center; top.Children.Add(t); }
+        foreach (var t in new[] { paintTool, moveTool, eraseTool, fillTool }) { t.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush"); t.Margin = new Thickness(0, 0, 10, 0); t.VerticalAlignment = VerticalAlignment.Center; top.Children.Add(t); }
         paintTool.ToolTip = "Click / drag: places the selected block, its origin at the cell";
         eraseTool.ToolTip = "Click: removes the whole block under the pointer";
+        moveTool.ToolTip = "Press on a building, wall or other block and drag: the whole block moves with the pointer on this layer (hold Ctrl to leave a copy behind). Undo puts it back";
         fillTool.ToolTip = "Drag a rectangle: fills the layer with the block, stepping by its size";
         var layerLabel = new TextBlock { Text = "Layer", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 6, 0) };
         layerLabel.SetResourceReference(TextBlock.ForegroundProperty, "ThemeTextMutedBrush");
@@ -389,6 +390,15 @@ internal sealed class GridEditorWindow : Window
     private void PlanDown(object sender, MouseButtonEventArgs e)
     {
         if (CellAt(e.GetPosition(planHost)) is not { } c) return;
+        if (moveTool.IsChecked == true)
+        {
+            if (GridPaint.OriginOf(grid, library, c.X, (int)layer.Value, c.Z) is not { } origin) { SetStatus("No block there on this layer: pick the layer the block is on."); return; }
+            moving = (origin.Block, origin.X, origin.Y, origin.Z, c.X - origin.X, c.Z - origin.Z);
+            planHost.CaptureMouse();
+            dragStart = c;
+            SetStatus($"Moving block {origin.Block}: drop it where it should go" + (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ? " (a copy is left behind)." : "."));
+            return;
+        }
         planHost.CaptureMouse();
         dragStart = c;
         if (fillTool.IsChecked != true) Apply(c);
@@ -398,6 +408,14 @@ internal sealed class GridEditorWindow : Window
     {
         if (CellAt(e.GetPosition(planHost)) is not { } c) return;
         Canvas.SetLeft(cursor, c.X * Cell); Canvas.SetTop(cursor, c.Z * Cell);
+        if (moving is { } held)
+        {
+            // the picked block's outline follows the pointer, held where it was picked up
+            var size = GridPaint.Info(library, held.Block) is { } picked ? (picked.Dx, picked.Dz) : (1, 1);
+            Canvas.SetLeft(cursor, (c.X - held.GrabX) * Cell); Canvas.SetTop(cursor, (c.Z - held.GrabZ) * Cell);
+            cursor.Width = size.Item1 * Cell; cursor.Height = size.Item2 * Cell;
+            return;
+        }
         var span = GridPaint.Info(library, block) is { } info && paintTool.IsChecked == true ? (info.Dx, info.Dz) : (1, 1);
         cursor.Width = span.Item1 * Cell; cursor.Height = span.Item2 * Cell;
         var y = (int)layer.Value;
@@ -415,9 +433,29 @@ internal sealed class GridEditorWindow : Window
     {
         if (!planHost.IsMouseCaptured) return;
         planHost.ReleaseMouseCapture();
+        if (moving is { } held)
+        {
+            moving = null;
+            if (CellAt(e.GetPosition(planHost)) is { } drop) MoveBlock(held, drop.X - held.GrabX, drop.Z - held.GrabZ, Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+            dragStart = null;
+            return;
+        }
         if (fillTool.IsChecked == true && dragStart is { } a && CellAt(e.GetPosition(planHost)) is { } b)
             Edit("fill", g => GridPaint.FillRectangle(g, library, block, a.X, a.Z, b.X, b.Z, (int)layer.Value));
         dragStart = null;
+    }
+
+    // The Move tool's drop: the block's cells are cleared (unless copying) and it is placed again with its origin at (x, z), on the same layer.
+    private void MoveBlock((int Block, int X, int Y, int Z, int GrabX, int GrabZ) held, int x, int z, bool copy)
+    {
+        if (x == held.X && z == held.Z) { SetStatus("The block is where it was."); return; }
+        Edit(copy ? "copy block" : "move block", g =>
+        {
+            var cells = GridPaint.PlaceCells(library, held.Block, x, held.Y, z) ?? throw new ArgumentException("The block doesn't fit there: it would stick out of the map.");
+            return Lba1GridEdit.SetCells(copy ? g : GridPaint.Erase(g, library, held.X, held.Y, held.Z), cells);
+        });
+        if (status.Text.StartsWith("Can't do that")) return;
+        SetStatus(copy ? $"Copied block {held.Block} to x {x}, z {z}." : $"Moved block {held.Block} to x {x}, z {z}.");
     }
 
     private void PickAt(Point p)

@@ -128,9 +128,9 @@ public partial class MainWindow
     private string BuildHelpText()
     {
         if (currentGame == GameKind.Lba1)
-            return "Right-click an actor for its attributes; double-click it to edit. Change zones under Details. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Scripts are edited in Script mode.";
+            return "Right-click an actor for its attributes; double-click it to edit. Change zones under Details. The scene editor opens the scene as data (add, move, delete, duplicate, undo, save). Buildings and other blocks are placed and moved in the interior map (grid editor). Scripts are edited in Script mode.";
         if (interiorSceneActive)
-            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under Details. The interior's map (its bricks and blocks) is edited in the grid editor. Scripts are edited in Script mode.";
+            return "Right-click the view to add an actor, double-click an actor to edit it, change zones under Details. The interior's map (its bricks and blocks: place, move and copy buildings and furniture) is edited in the grid editor. Scripts are edited in Script mode.";
         return "Right-click the view and choose Add Actor Here to place an actor; double-click an actor to change it; change zones under Details. Scripts are edited in Script mode. Pick 'Terrain' above to sculpt the island itself.";
     }
 
