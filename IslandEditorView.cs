@@ -31,7 +31,7 @@ internal sealed class IslandEditorView
         Raise, Lower, Smooth, Flatten, LevelPlane, Ramp, Terrace, Relief,
         PaintLight, Darken, Lighten, RemoveShadows, CastShadows, BlobShadow, WaterDepth,
         Eyedropper, PaintTile, PaintTexture, PaintCode, FixDiagonals,
-        SelectDecor, AddDecor, ObjectShadow, ClearObjectShadow,
+        SelectDecor, RotateDecor, AddDecor, ObjectShadow, ClearObjectShadow,
     }
 
     private static readonly (string Group, (Tool Tool, string Name, string Tip)[] Items)[] ToolGroups =
@@ -71,8 +71,9 @@ internal sealed class IslandEditorView
         }),
         ("Objects", new[]
         {
-            (Tool.SelectDecor, "Select / move", "Click an object to select it, drag to move it, Delete removes it"),
-            (Tool.AddDecor, "Add object", "Click to place a new object (the Body number of the island's OBL file)"),
+            (Tool.SelectDecor, "Select / move", "Click an object to select it, drag to move it, Delete removes it. Q and E turn the selected object 15 degrees (Shift: 90)"),
+            (Tool.RotateDecor, "Rotate", "Press on an object and drag around it to turn it: it snaps to 15 degrees (hold Shift to turn freely). Q and E turn the selected object 15 degrees (Shift: 90)"),
+            (Tool.AddDecor, "Add object", "Click to place a new object: a copy of the selected one, or the Body number of the island's OBL file typed under Selected object"),
             (Tool.ObjectShadow, "Shadow under object", "Click an object to bake a shadow under its bounding box, as the retail islands have under buildings (depth = Shadow depth)"),
             (Tool.ClearObjectShadow, "Clear object shadow", "Click an object to lift the baked shadow under it back to plain lighting"),
         }),
@@ -135,6 +136,8 @@ internal sealed class IslandEditorView
     private readonly TextBox reliefBox = new() { Text = "0.8" };
     private readonly TextBox bodyBox = new() { Text = "0" };
     private readonly ComboBox codeBox = new();
+    private readonly ComboBox usedBodiesBox = new();
+    private string usedBodiesKey = "";
     private readonly CheckBox horizontalBox = new() { Content = "Horizontal (flatten the slope too)" };
     private readonly CheckBox followBox = new() { Content = "Objects follow the ground", IsChecked = true };
     private readonly CheckBox diagonalBox = new() { Content = "Also copy the diagonal" };
@@ -263,8 +266,10 @@ internal sealed class IslandEditorView
         var tools = new StackPanel();
         foreach (var (group, items) in ToolGroups)
         {
-            tools.Children.Add(Heading(group));
+            var heading = Heading(group);
+            tools.Children.Add(heading);
             var grid = new UniformGrid { Columns = 2 };
+            if (group is not ("View" or "Objects")) { terrainOnlyParts.Add(heading); terrainOnlyParts.Add(grid); }
             foreach (var (t, name, tip) in items)
             {
                 var button = new RadioButton { Content = name, GroupName = "tool", ToolTip = tip, Margin = new Thickness(0, 1, 4, 1) };
@@ -282,7 +287,9 @@ internal sealed class IslandEditorView
         brush.Children.Add(SliderRow("Radius", radius, "vertices (cells); [ and ] change it"));
         brush.Children.Add(SliderRow("Hardness", hardness, "how much of the radius is full strength"));
         brush.Children.Add(SliderRow("Strength", strength, "rate while held"));
-        stack.Children.Add(Section("Brush", brush, open: true, out _));
+        var brushSection = Section("Brush", brush, open: true, out _);
+        terrainOnlyParts.Add(brushSection);
+        stack.Children.Add(brushSection);
 
         var settings = new StackPanel();
         settings.Children.Add(FieldRow("Level", levelBox, "world units; the height Flatten pulls to"));
@@ -292,16 +299,25 @@ internal sealed class IslandEditorView
         for (var i = 0; i < 16; i++) codeBox.Items.Add($"{i}: {IslandPolygon.CodeJeuNames[i]}");
         codeBox.SelectedIndex = 1;
         settings.Children.Add(FieldRow("Game code", codeBox, "what the ground does"));
-        settings.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL for Add object"));
         foreach (Control c in new Control[] { horizontalBox, followBox, diagonalBox, steepUnwalkableBox, terrainShadowBox, decorShadowBox })
             c.SetResourceReference(Control.ForegroundProperty, "ThemeTextBrush");
-        settings.Children.Add(horizontalBox); settings.Children.Add(followBox); settings.Children.Add(diagonalBox);
+        settings.Children.Add(horizontalBox); settings.Children.Add(diagonalBox);
         steepUnwalkableBox.ToolTip = "While raising, lowering, smoothing or otherwise reshaping the ground, marks any ground triangle steeper than this as blocked (Twinsen can't step onto it) -- and un-marks one that flattens back below it.";
         settings.Children.Add(steepUnwalkableBox);
         settings.Children.Add(FieldRow("Unwalkable angle °", steepAngleBox, "from horizontal; a cliff face is close to 90°"));
-        stack.Children.Add(Section("Tool settings", settings, open: true, out _));
+        var settingsSection = Section("Tool settings", settings, open: true, out _);
+        terrainOnlyParts.Add(settingsSection);
+        stack.Children.Add(settingsSection);
 
         stack.Children.Add(Section("Under the pointer", info, open: true, out _));
+
+        var place = new StackPanel();
+        place.Children.Add(FieldRow("Object body", bodyBox, "Body number in the island's OBL file, for Add object (selecting an object fills it in)"));
+        usedBodiesBox.ToolTip = "The bodies this island already uses, with how many objects each has: pick one to place more of it";
+        usedBodiesBox.SelectionChanged += (_, _) => { if (usedBodiesBox.SelectedItem is ComboBoxItem { Tag: int body }) bodyBox.Text = body.ToString(); };
+        place.Children.Add(FieldRow("Used here", usedBodiesBox, "The bodies this island already uses, with how many objects each has: pick one to place more of it"));
+        place.Children.Add(followBox);
+        stack.Children.Add(Section("Place objects", place, open: true, out _));
 
         BuildDecorPanel();
         stack.Children.Add(Section("Selected object", decorPanel, open: true, out _));
@@ -326,7 +342,9 @@ internal sealed class IslandEditorView
         BakeButton("Shadows under objects", "Bakes a footprint shadow under every object at least 2 cells across (like the retail buildings)", (_, _) => FootprintsAll(false));
         BakeButton("Remove all shadows", "Lifts every shadowed vertex back to the plain lighting", (_, _) => RemoveAllShadows());
         bake.Children.Add(bakeButtons);
-        stack.Children.Add(Section("Baked light and shadows", bake, open: false, out _));
+        var bakeSection = Section("Baked light and shadows", bake, open: false, out _);
+        terrainOnlyParts.Add(bakeSection);
+        stack.Children.Add(bakeSection);
 
         var atlas = new StackPanel();
         var atlasNote = new TextBlock { Text = "Drag a square, then use Paint atlas tile.", FontSize = 10, Margin = new Thickness(0, 0, 0, 4) };
@@ -337,7 +355,9 @@ internal sealed class IslandEditorView
         var atlasBorder = new Border { BorderThickness = new Thickness(1), Child = atlasCanvas, HorizontalAlignment = HorizontalAlignment.Left };
         atlasBorder.SetResourceReference(Border.BorderBrushProperty, "ThemeTextMutedBrush");
         atlas.Children.Add(atlasBorder);
-        stack.Children.Add(Section("Ground atlas", atlas, open: false, out openAtlas));
+        var atlasSection = Section("Ground atlas", atlas, open: false, out openAtlas);
+        terrainOnlyParts.Add(atlasSection);
+        stack.Children.Add(atlasSection);
         Panel = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = stack };
 
         // map area: the map and the profile strip
@@ -560,7 +580,20 @@ internal sealed class IslandEditorView
         redoButton.ToolTip = history?.RedoLabel is { } r ? $"Redo {r} (Ctrl+Y)" : "Redo (Ctrl+Y)";
         StateChanged?.Invoke();
         saveButton.Content = history?.Dirty == true ? "Save *" : "Save";
+        RefreshUsedBodies();
         Edited?.Invoke();
+    }
+
+    // The "Used here" list: each body the island's objects use and how many there are of it (rebuilt only when that changes).
+    private void RefreshUsedBodies()
+    {
+        var used = island is null ? new List<(int Body, int Count)>()
+            : island.Cubes.Values.SelectMany(c => c.Decors).GroupBy(d => d.Body & 0xFFFF).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).Select(g => (Body: g.Key, Count: g.Count())).ToList();
+        var key = string.Join(",", used.Select(u => $"{u.Body}x{u.Count}"));
+        if (key == usedBodiesKey) return;
+        usedBodiesKey = key;
+        usedBodiesBox.Items.Clear();
+        foreach (var (body, count) in used) usedBodiesBox.Items.Add(new ComboBoxItem { Content = $"{body}  (x{count})", Tag = body });
     }
 
     private void DoUndo() { if (history?.Undo() == true) { ReselectAfterHistory(); } }
@@ -712,7 +745,7 @@ internal sealed class IslandEditorView
     {
         tool = t; rampStart = null;
         if (renderer is not null) RebuildOverlay();
-        brushCircle.Visibility = t is Tool.SelectDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow ? Visibility.Collapsed : brushCircle.Visibility;
+        brushCircle.Visibility = t is Tool.SelectDecor or Tool.RotateDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow ? Visibility.Collapsed : brushCircle.Visibility;
         if (t == Tool.PaintTile) openAtlas(true);
         var tip = ToolGroups.SelectMany(g => g.Items).First(i => i.Tool == t).Tip;
         SetStatus(tip);
@@ -794,12 +827,41 @@ internal sealed class IslandEditorView
     private void Capture() { if (mapActive) viewport.CaptureMouse(); }
     private void ReleaseCapture() { if (mapActive) viewport.ReleaseMouseCapture(); }
 
-    public bool Busy => stroking || draggingDecor;
+    public bool Busy => stroking || draggingDecor || rotatingDecor;
     public bool NavigateTool => tool == Tool.Navigate;
     // tools that paint with the round brush (the host draws the brush ring for them)
-    public bool BrushTool => tool is not (Tool.Navigate or Tool.Eyedropper or Tool.Ramp or Tool.SelectDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow);
+    public bool BrushTool => tool is not (Tool.Navigate or Tool.Eyedropper or Tool.Ramp or Tool.SelectDecor or Tool.RotateDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow);
     public double BrushRadius => radius.Value;
     public (double X, double Y, double Z)? SelectedObjectWorld => selected is { } s ? WorldOf(s) : null;
+
+    // The selected object's bounding box (its ZV) in island world units, as its eight corners: the bottom four then the top four.
+    public (double X, double Y, double Z)[]? SelectedObjectBox
+    {
+        get
+        {
+            if (selected is not { } s) return null;
+            var (ox, _, oz) = WorldOf(s);
+            double offX = ox - s.Decor.X, offZ = oz - s.Decor.Z;
+            var (x0, x1, z0, z1, y0, y1) = (s.Decor.XMin + offX, s.Decor.XMax + offX, s.Decor.ZMin + offZ, s.Decor.ZMax + offZ, (double)s.Decor.YMin, (double)s.Decor.YMax);
+            return new[] { (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), (x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1) };
+        }
+    }
+
+    // The editor shows only what places and turns buildings and other objects (true), or all of its tools (false).
+    private bool decorOnly;
+    private readonly List<UIElement> terrainOnlyParts = new();
+    public bool DecorOnly
+    {
+        get => decorOnly;
+        set
+        {
+            if (decorOnly == value) return;
+            decorOnly = value;
+            foreach (var part in terrainOnlyParts) part.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
+            if (value && tool is not (Tool.SelectDecor or Tool.RotateDecor or Tool.AddDecor or Tool.ObjectShadow or Tool.ClearObjectShadow)) toolButtons[Tool.SelectDecor].IsChecked = true;
+            else if (!value && tool is Tool.SelectDecor or Tool.RotateDecor or Tool.AddDecor) toolButtons[Tool.Navigate].IsChecked = true;
+        }
+    }
     public string? IslandPath => island?.Path;
     public (int Lo, int Hi) HeightRange => island is null ? (0, 0) : IslandOps.HeightRange(island);
     public byte[]? ToBytes() => island?.ToBytes();
@@ -827,6 +889,7 @@ internal sealed class IslandEditorView
         pointer = (gx, gz);
         if (island is null) return;
         if (draggingDecor && selected is { } s) MoveDecorTo(s);
+        else if (rotatingDecor && selected is { } r) RotateTo(r);
         UpdateInfo();
     }
 
@@ -852,6 +915,7 @@ internal sealed class IslandEditorView
             case Tool.Eyedropper: Pick(); return;
             case Tool.Ramp: RampClick(); return;
             case Tool.SelectDecor: SelectAt(); return;
+            case Tool.RotateDecor: RotateStart(); return;
             case Tool.AddDecor: AddAt(); return;
             case Tool.ObjectShadow or Tool.ClearObjectShadow:
                 selected = DecorAt(pointer.Gx, pointer.Gz);
@@ -882,6 +946,7 @@ internal sealed class IslandEditorView
     private void PointerUpCore()
     {
         if (draggingDecor) { draggingDecor = false; history?.Commit("move object"); ReleaseCapture(); RebuildOverlay(); UpdateButtons(); return; }
+        if (rotatingDecor) { FinishRotate(); return; }
         if (!stroking) return;
         stroking = false;
         strokeTimer.Stop();
@@ -911,6 +976,7 @@ internal sealed class IslandEditorView
         brushCircle.Width = brushCircle.Height = r * 2;
         Canvas.SetLeft(brushCircle, CellToPixelX(pointer.Gx) - r); Canvas.SetTop(brushCircle, CellToPixelZ(pointer.Gz) - r);
         if (draggingDecor && selected is { } s) MoveDecorTo(s);
+        else if (rotatingDecor && selected is { } turning) RotateTo(turning);
         UpdateInfo();
         if (!stroking) DrawProfile();
     }
@@ -1029,19 +1095,51 @@ internal sealed class IslandEditorView
 
     // ---- objects ----------------------------------------------------------------------------------------------------------------------------
 
+    // The object under a ground point (cells): the smallest bounding box the point is inside, else the object whose box edge or origin is
+    // nearest within the pointer tolerance (so a building is picked by clicking its wall or roof, not only its exact origin).
+    // Set by a host that can see the objects on screen: given a bounding box's eight corners (island world units) it says how far from the
+    // viewer the box is when the pointer is over it (smaller = nearer), or null when the pointer is not over it.
+    public Func<(double X, double Y, double Z)[], double?>? ScreenPick { get; set; }
+
     private (IslandCube Cube, IslandDecor Decor)? DecorAt(double gx, double gz)
     {
         if (island is null) return null;
-        (IslandCube, IslandDecor)? best = null; var bestDistance = 1e9;
+        if (ScreenPick is { } onScreen)
+        {
+            (IslandCube, IslandDecor)? nearest = null; var nearestDepth = double.MaxValue;
+            foreach (var (cx, cz, cube) in IslandOps.CubeCells(island))
+            {
+                double ox = cx * IslandFile.CubeSize, oz = cz * IslandFile.CubeSize;
+                foreach (var d in cube.Decors)
+                {
+                    double x0 = ox + d.XMin, x1 = ox + d.XMax, z0 = oz + d.ZMin, z1 = oz + d.ZMax, y0 = d.YMin, y1 = d.YMax;
+                    if (onScreen(new[] { (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), (x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1) }) is { } depth && depth < nearestDepth)
+                    { nearestDepth = depth; nearest = (cube, d); }
+                }
+            }
+            if (nearest is not null) return nearest;
+        }
+        (IslandCube, IslandDecor)? best = null; var bestScore = double.MaxValue;
+        const double cell = IslandFile.CellSize;
         foreach (var (cx, cz, cube) in IslandOps.CubeCells(island))
+        {
+            double ox = cx * IslandFile.CubeSize, oz = cz * IslandFile.CubeSize;
             foreach (var d in cube.Decors)
             {
-                double wx = (cx * IslandFile.CubeSize + d.X) / (double)IslandFile.CellSize, wz = (cz * IslandFile.CubeSize + d.Z) / (double)IslandFile.CellSize;
-                var distance = Math.Sqrt((wx - gx) * (wx - gx) + (wz - gz) * (wz - gz));
-                if (distance < bestDistance) { bestDistance = distance; best = (cube, d); }
+                double wx = (ox + d.X) / cell, wz = (oz + d.Z) / cell;
+                double x0 = (ox + d.XMin) / cell, x1 = (ox + d.XMax) / cell, z0 = (oz + d.ZMin) / cell, z1 = (oz + d.ZMax) / cell;
+                var origin = Math.Sqrt((wx - gx) * (wx - gx) + (wz - gz) * (wz - gz));
+                double ex = Math.Max(Math.Max(x0 - gx, gx - x1), 0), ez = Math.Max(Math.Max(z0 - gz, gz - z1), 0);
+                var edge = Math.Sqrt(ex * ex + ez * ez);
+                if (edge > pointerTolerance && origin > pointerTolerance) continue;
+                var score = edge == 0 ? Math.Max(0, x1 - x0) * Math.Max(0, z1 - z0) : 1e6 + Math.Min(edge, origin);
+                if (score < bestScore) { bestScore = score; best = (cube, d); }
             }
-        return bestDistance <= pointerTolerance ? best : null;
+        }
+        return best;
     }
+
+    private (double X, double Z) grab;          // the picked object's origin minus the pointer (cells): it moves with the pointer, it doesn't jump to it
 
     private void SelectAt()
     {
@@ -1053,6 +1151,8 @@ internal sealed class IslandEditorView
         Edited?.Invoke();
         if (selected is { } s)
         {
+            var (wx, _, wz) = WorldOf(s);
+            grab = (wx / IslandFile.CellSize - pointer.Gx, wz / IslandFile.CellSize - pointer.Gz);
             history.Begin();
             draggingDecor = true;
             Capture();
@@ -1062,7 +1162,7 @@ internal sealed class IslandEditorView
     private void MoveDecorTo((IslandCube Cube, IslandDecor Decor) s)
     {
         if (island is null) return;
-        var wx = pointer.Gx * 512; var wz = pointer.Gz * 512;
+        var wx = (pointer.Gx + grab.X) * 512; var wz = (pointer.Gz + grab.Z) * 512;
         var y = (int)Math.Round(IslandOps.Altitude(island, wx, wz) ?? s.Decor.Y);
         if (IslandDecors.Move(island, s.Cube, s.Decor, wx, wz, followBox.IsChecked == true ? y : null))
         {
@@ -1071,6 +1171,91 @@ internal sealed class IslandEditorView
             selected = (cube, s.Decor);
             RebuildOverlay(); LoadDecorFields(); Edited?.Invoke();
         }
+    }
+
+    // ---- turning an object ----------------------------------------------------------------------------------------------------------------------
+
+    private const int TurnUnits = 4096;         // the engine's full turn
+    private bool rotatingDecor;
+    private double rotStartPointer;             // the pointer's bearing from the object when the drag began (radians)
+    private int rotStartBeta;
+    // +1: the object's Beta grows the way the pointer's bearing atan2(dz, dx) does; -1: the other way round
+    private const int BetaSign = -1;
+
+    private double PointerBearing((IslandCube Cube, IslandDecor Decor) s)
+    {
+        var (wx, _, wz) = WorldOf(s);
+        return Math.Atan2(pointer.Gz * IslandFile.CellSize - wz, pointer.Gx * IslandFile.CellSize - wx);
+    }
+
+    private void RotateStart()
+    {
+        if (island is null || history is null) return;
+        selected = DecorAt(pointer.Gx, pointer.Gz);
+        decorPanel.IsEnabled = selected is not null;
+        LoadDecorFields();
+        RebuildOverlay();
+        Edited?.Invoke();
+        if (selected is not { } s) { SetStatus("No object under the pointer: press on the one to turn."); return; }
+        history.Begin();
+        rotatingDecor = true;
+        rotStartBeta = s.Decor.Beta & 0xFFFF;
+        rotStartPointer = PointerBearing(s);
+        Capture();
+    }
+
+    private void RotateTo((IslandCube Cube, IslandDecor Decor) s)
+    {
+        var (wx, _, wz) = WorldOf(s);
+        double dx = pointer.Gx * IslandFile.CellSize - wx, dz = pointer.Gz * IslandFile.CellSize - wz;
+        if (dx * dx + dz * dz < 256 * 256) return;          // (right on top of the object the bearing is meaningless)
+        var turned = (PointerBearing(s) - rotStartPointer) * TurnUnits / (2 * Math.PI) * BetaSign;
+        var beta = rotStartBeta + turned;
+        if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) beta = Math.Round(beta / (TurnUnits / 24.0)) * (TurnUnits / 24.0);
+        SetFacing(s.Decor, (int)Math.Round(beta));
+        LoadDecorFields();
+        Edited?.Invoke();
+    }
+
+    private void FinishRotate()
+    {
+        rotatingDecor = false;
+        ReleaseCapture();
+        if (selected is { } s)
+        {
+            var total = (((s.Decor.Beta & 0xFFFF) - rotStartBeta) % TurnUnits + TurnUnits) % TurnUnits;
+            if (total is TurnUnits / 4 or TurnUnits * 3 / 4) TurnFootprint(s.Decor, total);
+        }
+        history?.Commit("rotate object");
+        RebuildOverlay(); UpdateButtons();
+    }
+
+    // The facing is the low 16 bits of Beta; the high 16 (the hide variable) stay.
+    private static void SetFacing(IslandDecor d, int units)
+        => d.Beta = (d.Beta & ~0xFFFF) | (((units % TurnUnits) + TurnUnits) % TurnUnits);
+
+    // A quarter turn puts the bounding box's long side the other way. The engine turns a body about its origin as Rotate(x, z, beta) does
+    // (x' = x cos + z sin, z' = z cos - x sin), so a box corner (dx, dz) from the origin goes to (dz, -dx) for +90 degrees and (-dz, dx) for +270.
+    private static void TurnFootprint(IslandDecor d, int turnedUnits)
+    {
+        int x0 = d.XMin - d.X, x1 = d.XMax - d.X, z0 = d.ZMin - d.Z, z1 = d.ZMax - d.Z;
+        if (turnedUnits == TurnUnits / 4) { d.XMin = d.X + z0; d.XMax = d.X + z1; d.ZMin = d.Z - x1; d.ZMax = d.Z - x0; }
+        else { d.XMin = d.X - z1; d.XMax = d.X - z0; d.ZMin = d.Z + x0; d.ZMax = d.Z + x1; }
+    }
+
+    // Q / E: the next multiple of `degrees` either way from the object's own facing (a quarter turn also turns its box).
+    private void TurnSelected(int direction, double degrees)
+    {
+        EditSelected("rotate object", (_, d) =>
+        {
+            var current = (d.Beta & 0xFFFF) * 360.0 / TurnUnits;
+            var next = direction > 0 ? Math.Floor(current / degrees + 1e-6) * degrees + degrees : Math.Ceiling(current / degrees - 1e-6) * degrees - degrees;
+            var units = (int)Math.Round(next * TurnUnits / 360.0);
+            var moved = (((units - (d.Beta & 0xFFFF)) % TurnUnits) + TurnUnits) % TurnUnits;
+            SetFacing(d, units);
+            if (moved is TurnUnits / 4 or TurnUnits * 3 / 4) TurnFootprint(d, moved);
+        });
+        Edited?.Invoke();
     }
 
     private void AddAt()
@@ -1095,6 +1280,7 @@ internal sealed class IslandEditorView
             var d = s.Decor;
             var values = new[] { (d.Body & 0xFFFF).ToString(), d.X.ToString(), d.Y.ToString(), d.Z.ToString(), Math.Round((d.Beta & 0xFFFF) * 360.0 / 4096).ToString(CultureInfo.InvariantCulture), d.CodeJeu.ToString(), (d.Beta >> 16).ToString(), $"{s.Cube.Id} ({string.Join(", ", island!.CellsOf(s.Cube.Id).Select(c => $"{c.X},{c.Z}"))})" };
             for (var i = 0; i < values.Length; i++) decorFields[i].Text = values[i];
+            bodyBox.Text = values[0];          // (Add object then places a copy of what is selected)
         }
         else foreach (var f in decorFields) f.Text = "";
         loadingFields = false;
@@ -1185,6 +1371,7 @@ internal sealed class IslandEditorView
         else if (ctrl && e.Key == Key.Y) DoRedo();
         else if (ctrl && e.Key == Key.S) Save();
         else if (e.Key == Key.Delete && selected is not null) DeleteSelected();
+        else if (e.Key is Key.Q or Key.E && !ctrl && selected is not null) TurnSelected(e.Key == Key.E ? 1 : -1, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 90 : 15);
         else if (e.Key == Key.OemOpenBrackets) radius.Value = Math.Max(1, radius.Value - 1);
         else if (e.Key == Key.OemCloseBrackets) radius.Value = Math.Min(60, radius.Value + 1);
         else return false;

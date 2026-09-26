@@ -2653,6 +2653,7 @@ public partial class MainWindow : Window
             if (PickGround(at, out var gx, out var gz))
             {
                 hoverCell = (gx, gz);
+                terrainEditor!.ScreenPick = box => ScreenPickBox(at, box);
                 if (terrainEditor!.PointerDown(gx, gz, PickToleranceCells(at))) { paintingTerrain = true; TerrainViewport.CaptureMouse(); }
                 DrawTerrainOverlay();
             }

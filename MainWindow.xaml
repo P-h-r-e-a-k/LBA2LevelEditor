@@ -389,12 +389,14 @@
                                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                                         <StackPanel x:Name="BuildViewBar" Grid.Row="0" Margin="16,12,16,2">
                                             <TextBlock Text="What to edit" Style="{StaticResource Eyebrow}" Margin="0,0,0,6"/>
-                                            <StackPanel Orientation="Horizontal">
-                                                <RadioButton x:Name="BuildTerrainRadio" Content="Terrain" GroupName="buildview" IsChecked="True" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,0,16,0" Checked="BuildView_Changed"
+                                            <WrapPanel Orientation="Horizontal">
+                                                <RadioButton x:Name="BuildTerrainRadio" Content="Terrain" GroupName="buildview" IsChecked="True" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,0,16,4" Checked="BuildView_Changed"
                                                              ToolTip="Sculpt the island in the 3D view, live: heights, levelling, baked light and shadows, ground, objects"/>
-                                                <RadioButton x:Name="BuildSceneRadio" Content="Actors and zones" GroupName="buildview" Foreground="{DynamicResource ThemeTextBrush}" Checked="BuildView_Changed"
+                                                <RadioButton x:Name="BuildDecorRadio" Content="Buildings and decor" GroupName="buildview" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,0,16,4" Checked="BuildView_Changed"
+                                                             ToolTip="Place, move and turn the island's buildings, trees and other objects in the 3D view, live"/>
+                                                <RadioButton x:Name="BuildSceneRadio" Content="Actors and zones" GroupName="buildview" Foreground="{DynamicResource ThemeTextBrush}" Margin="0,0,0,4" Checked="BuildView_Changed"
                                                              ToolTip="Add and edit actors and zones in the 3D view"/>
-                                            </StackPanel>
+                                            </WrapPanel>
                                         </StackPanel>
                                         <ContentControl x:Name="TerrainPanelHost" Grid.Row="1"/>
                                         <ScrollViewer x:Name="BuildScenePanel" Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">

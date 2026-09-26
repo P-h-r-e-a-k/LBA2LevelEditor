@@ -23,6 +23,7 @@ public partial class MainWindow
     private bool modeSyncing;
     private IslandEditorView? terrainEditor;
     private bool terrainShown;                 // the top-down terrain map is on screen instead of the 3D view
+    private bool buildDecorView;           // ... of those, only the tools that place, move and turn objects
     private bool buildTerrainView = true;      // Build on an island: the terrain tools (true) or the actors-and-zones tools
     private bool sceneViewStale;               // the island was saved from the terrain editor; the 3D view still shows the old file
     private bool restoringIsland;
@@ -46,7 +47,8 @@ public partial class MainWindow
     private void BuildView_Changed(object sender, RoutedEventArgs e)
     {
         if (!modeReady) return;
-        buildTerrainView = BuildTerrainRadio.IsChecked == true;
+        buildDecorView = BuildDecorRadio.IsChecked == true;
+        buildTerrainView = BuildTerrainRadio.IsChecked == true || buildDecorView;      // (buildings and decor use the terrain editor's own pointer tools)
         ApplyMode();
     }
 
@@ -71,7 +73,7 @@ public partial class MainWindow
         if (changed) FileLabel.Text = next switch
         {
             EditMode.Explore => "Explore: move around the scene. Nothing is changed in this mode.",
-            EditMode.Build => terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under Details.",
+            EditMode.Build => terrainToolsActive && buildDecorView ? "Build: click a building or object to select it, drag to move it, drag with the Rotate tool (or press Q and E) to turn it. Add object places a copy of the selected one. The view shows your edits live." : terrainToolsActive ? "Build: pick a terrain tool in the Build tab and paint on the view; the view shows your edits live. Right drag orbits while a tool is chosen, middle drag pans." : "Build: right-click the view to add an actor, double-click an actor to edit it, change zones under Details.",
             _ => "Script: click an actor (or pick one in the Script tab) to open its script.",
         };
         Keyboard.Focus(this);
@@ -93,6 +95,7 @@ public partial class MainWindow
         BuildViewBar.Visibility = TerrainEditable ? Visibility.Visible : Visibility.Collapsed;
         var wantTerrain = editMode == EditMode.Build && buildTerrainView && TerrainEditable && ShowTerrainEditor();
         terrainToolsActive = wantTerrain;
+        if (wantTerrain && terrainEditor is not null) terrainEditor.DecorOnly = buildDecorView;
         SetTerrainShown(wantTerrain && terrainMapWanted);
         UpdateLive();
         if (!wantTerrain) { paintingTerrain = false; hoverCell = null; DrawTerrainOverlay(); }
@@ -220,7 +223,7 @@ public partial class MainWindow
         if (currentGame != GameKind.Lba2) SwitchGame(GameKind.Lba2);
         if (currentGame != GameKind.Lba2) return;
         if (interiorSceneActive && File.Exists(Path.Combine(gameRoot, activeFile))) LoadIsland(Path.Combine(gameRoot, activeFile));
-        buildTerrainView = true;
+        buildTerrainView = true; buildDecorView = false;
         modeSyncing = true;
         try { BuildTerrainRadio.IsChecked = true; }
         finally { modeSyncing = false; }

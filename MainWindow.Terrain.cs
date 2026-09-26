@@ -173,6 +173,33 @@ public partial class MainWindow
             : 3;
     }
 
+    // Whether a point of the 3D view is over an object's bounding box (its eight corners, island world units), and if so how far down the
+    // screen the box's foot is (negated: a box lower on the screen is nearer the viewer, so it counts as nearer).
+    private double? ScreenPickBox(Point widgetPoint, (double X, double Y, double Z)[] corners)
+    {
+        if (cameraModel is not { } model) return null;
+        var points = new List<Point>(8);
+        double footY = 0;
+        for (var i = 0; i < corners.Length; i++)
+        {
+            if (!model.Project(corners[i].X, corners[i].Y, corners[i].Z, out var u, out var v)) return null;
+            var p = ToWidget(model, u, v);
+            points.Add(p);
+            if (i < 4) footY += p.Y / 4;
+        }
+        // the convex hull of the projected corners (monotone chain) and whether the point is inside it
+        var sorted = points.OrderBy(p => p.X).ThenBy(p => p.Y).ToList();
+        double Cross(Point o, Point a, Point b) => (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X);
+        var hull = new List<Point>();
+        foreach (var p in sorted) { while (hull.Count >= 2 && Cross(hull[^2], hull[^1], p) <= 0) hull.RemoveAt(hull.Count - 1); hull.Add(p); }
+        var lower = hull.Count + 1;
+        for (var i = sorted.Count - 2; i >= 0; i--) { var p = sorted[i]; while (hull.Count >= lower && Cross(hull[^2], hull[^1], p) <= 0) hull.RemoveAt(hull.Count - 1); hull.Add(p); }
+        if (hull.Count < 4) return null;
+        for (var i = 0; i + 1 < hull.Count; i++)
+            if (Cross(hull[i], hull[i + 1], widgetPoint) < 0) return null;
+        return -footY;
+    }
+
     private Point ToWidget(NativeCameraModel model, double u, double v) => new(u * TerrainViewport.ActualWidth / model.FrameWidth, v * TerrainViewport.ActualHeight / model.FrameHeight);
 
     // The brush ring on the ground and the selected object, drawn over the 3D view.
@@ -207,6 +234,19 @@ public partial class MainWindow
             var ring = new Ellipse { Width = 26, Height = 26, Stroke = Brushes.Yellow, StrokeThickness = 2.5, IsHitTestVisible = false };
             Canvas.SetLeft(ring, p.X - 13); Canvas.SetTop(ring, p.Y - 13);
             BrushOverlayCanvas.Children.Add(ring);
+        }
+
+        // the selected object's bounding box (what the engine collides with and sorts by): it shows what a click picks and what a turn does to it
+        if (terrainEditor.SelectedObjectBox is { } box)
+        {
+            var corners = new Point?[8];
+            for (var i = 0; i < 8; i++) corners[i] = model.Project(box[i].X, box[i].Y, box[i].Z, out var bu, out var bv) ? ToWidget(model, bu, bv) : null;
+            foreach (var (a, b) in new[] { (0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7) })
+            {
+                if (corners[a] is not { } from || corners[b] is not { } to) continue;
+                BrushOverlayCanvas.Children.Add(new Line { X1 = from.X, Y1 = from.Y, X2 = to.X, Y2 = to.Y, Stroke = Brushes.Black, StrokeThickness = 3, Opacity = 0.5, IsHitTestVisible = false });
+                BrushOverlayCanvas.Children.Add(new Line { X1 = from.X, Y1 = from.Y, X2 = to.X, Y2 = to.Y, Stroke = Brushes.Yellow, StrokeThickness = 1.2, IsHitTestVisible = false });
+            }
         }
     }
 
