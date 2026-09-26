@@ -191,11 +191,10 @@
             </MenuItem>
         </Menu>
 
-        <DockPanel x:Name="LayoutHost" LastChildFill="True"/>
         <!-- Every panel's actual content, hidden here and wired into LayoutHost's DockGroups once at
              startup (MainWindow.Docking.cs's BuildDockLayout): see DockGroup's own comment for why
              AvalonDock was replaced with a purpose-built control. -->
-        <Grid x:Name="PanelContentPool" Visibility="Collapsed">
+        <Grid x:Name="PanelContentPool" Visibility="Collapsed" DockPanel.Dock="Top">
                                 <Grid x:Name="LocationPanelContent" Background="{DynamicResource ThemeWindowBrush}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
@@ -493,5 +492,10 @@
                                         </Border>
                                     </StackPanel>
         </Grid>
+        <!-- Last child of the outer DockPanel so it FILLS the window. It used to sit above the collapsed pool,
+             making the pool the fill child and LayoutHost merely dock-left at its desired width: the layout was
+             only ever as wide as its content wanted (which happened to be nearly full width for LBA2 but left a
+             big empty strip on the right once LBA1's narrower viewport content was showing). -->
+        <DockPanel x:Name="LayoutHost" LastChildFill="True"/>
     </DockPanel>
 </Window>
