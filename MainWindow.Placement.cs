@@ -23,6 +23,12 @@ public partial class MainWindow
     private IslandFile? placementGround;
     private Border? placementMarker;
     private bool draggingHero;
+    private bool placeManaged;                             // the marker moves on a managed isometric picture: any LBA1 map, or an LBA2 joined map
+    private Lba1SceneImage? placeImage;
+    private IReadOnlyList<Lba1AreaTile>? placeTiles;
+    private Lba1AreaTile? placeTile;                        // the tile of placeScene: placeWorld is in that scene's own coordinates
+    private Func<Lba1AreaTile, int[]>? placeTopsOf;         // per tile: the highest drawn layer of each grid column (-1 empty), index x + z * 64
+    private readonly Dictionary<Lba1AreaTile, int[]> placeTops = new();
     private Vector grabOffset;                              // pointer minus the pin tip when the marker was picked up: the marker moves with the pointer, not to it
 
     // Whether a placement has been started here (false: nothing to place him on, so the game just starts).
@@ -33,8 +39,9 @@ public partial class MainWindow
         // which for a scene only ever reachable through a join (e.g. 79, joined only under "Imperial Hotel" --
         // see Lba2Areas.Links) meant the checkbox looked broken with no explanation. Play still starts the
         // scene normally (LaunchPlay falls through to that below); only the drag-to-place step is skipped.
-        if (lba2JoinedView) { FileLabel.Text = "Can't choose where Twinsen starts from a joined multi-scene view -- starting the scene normally."; return false; }
         if (currentGame != GameKind.Lba2 || terrainShown || !Lba2Configured) return false;
+        placeManaged = false;
+        if (lba2JoinedView) return BeginLba2JoinedPlacement();
         var scene = Lba2SceneToPlay();
         SceneModel model;
         try { model = new SceneStore(SceneGame.Lba2, gameRoot).Load(scene); }
@@ -75,6 +82,12 @@ public partial class MainWindow
             RenderNativeCamera();
         }
         placeScene = scene;
+        ShowPlacementUi();
+        return true;
+    }
+
+    private void ShowPlacementUi()
+    {
         placing = true;
         PlayButton.Content = "▶  Start here";
         PlayButton.ToolTip = "Start the game with Twinsen where he is now (or drop him to start at once)";
@@ -85,7 +98,6 @@ public partial class MainWindow
         ActivatePanel(PlayTab);
         BuildPlacementMarker();
         UpdatePlacementMarker();
-        return true;
     }
 
     private void BuildPlacementMarker()
@@ -109,9 +121,9 @@ public partial class MainWindow
     {
         if (!placing || placementMarker is null) return;
         Point? at = null;
-        if (currentGame == GameKind.Lba1)
+        if (placeManaged)
         {
-            if (lba1ShownImage is { } shown) at = InteriorCanvasToView(shown.Project(placeWorld.X, placeWorld.Y, placeWorld.Z));
+            if (placeImage is { } shown && placeTile is { } tile) at = InteriorCanvasToView(shown.Project(placeWorld.X + tile.OffsetX, placeWorld.Y + tile.OffsetY, placeWorld.Z + tile.OffsetZ));
         }
         else if (interiorSceneActive)
         {
@@ -142,7 +154,7 @@ public partial class MainWindow
     {
         if (!draggingHero) return;
         var at = e.GetPosition(ViewportHost) - grabOffset;
-        if (currentGame == GameKind.Lba1) MovePlacementLba1(at);
+        if (placeManaged) MovePlacementManaged(at);
         else if (interiorSceneActive) MovePlacementInterior(at);
         else MovePlacementOutdoors(e.GetPosition(TerrainViewport) - grabOffset);
         UpdatePlacementMarker();
@@ -167,27 +179,30 @@ public partial class MainWindow
         placeWorld = (wx, altitude.Value, wz);
     }
 
-    // The isometric view is affine: at each floor height the ground point that projects under the pointer is found, and Twinsen goes to
-    // the first height (nearest to the one he is at, so a walkway stays a walkway) where a floor really is there: a solid brick with
-    // headroom above it. Only heights up to a little above the scene's own start are tried, because the walls of an interior have tops
-    // that would qualify and aren't drawn (the picture cuts the near walls away). Off every floor (outside the room, or over a wall)
-    // he stays where he was.
+    // The isometric view is affine: at each floor height the ground point that projects under the pointer is found. Heights are tried from
+    // the top down (higher = nearer the viewer = what is drawn on top), and Twinsen goes to the first height where a floor really is there: a
+    // solid brick with headroom above it. A floor has to be at least a 2 x 2 cells patch at that height, because the top of a wall is a floor
+    // to the engine too, and the near walls of an interior aren't drawn (the picture cuts them away).
+    // Off every floor (outside the room, or over a wall) he stays where he was.
     private void MovePlacementInterior(Point at)
     {
         var library = nativeRenderer.RendererLibrary;
         if (library is null || interiorZoom <= 0) return;
         var canvas = new Point((at.X - ViewportHost.ActualWidth / 2) / interiorZoom + interiorCenter.X, (at.Y - ViewportHost.ActualHeight / 2) / interiorZoom + interiorCenter.Y);
-        const int headroom = 3 * 256;
-        var top = (int)Math.Round(placeBaseY / 256.0) + 3;
-        var here = (int)Math.Round(placeWorld.Y / 256.0);
-        foreach (var level in Enumerable.Range(1, Math.Max(1, top)).OrderBy(l => Math.Abs(l - here)).ThenBy(l => l))
+        const int headroom = 2 * 256;
+        var top = 24;
+        bool Floor(int x, int z, int y) => library.InteriorFloorY(x, y + headroom - 1, z) == y;
+        for (var level = Math.Max(1, top); level >= 1; level--)
         {
             var y = level * 256;
             if (!SolveInteriorGround(library, canvas, y, out var x, out var z)) return;
-            if (library.InteriorFloorY(x, y + headroom - 1, z) == y) { placeWorld = (x, y, z); return; }
+            if (!Floor(x, z, y)) continue;
+            var patch = false;
+            foreach (var (dx, dz) in new[] { (512, 512), (-512, 512), (512, -512), (-512, -512) })
+                if (Floor(x + dx, z, y) && Floor(x, z + dz, y) && Floor(x + dx, z + dz, y)) { patch = true; break; }
+            if (patch) { placeWorld = (x, y, z); return; }
         }
     }
-
     // The scene-local (x, z) at height y whose picture is `canvas`.
     private static bool SolveInteriorGround(RendererLibraryApi library, Point canvas, int y, out int x, out int z)
     {
@@ -221,6 +236,7 @@ public partial class MainWindow
         placing = false;
         draggingHero = false;
         placementGround = null;
+        placeManaged = false; placeImage = null; placeTiles = null; placeTile = null; placeTopsOf = null; placeTops.Clear();
         PlacementCanvas.Children.Clear();
         placementMarker = null;
         StopPlayButton.Content = "■  Stop";
@@ -236,10 +252,12 @@ public partial class MainWindow
         var world = placeWorld;
         var scene = placeScene;
         var spawn = (X: 0, Y: 0, Z: 0);
-        if (currentGame == GameKind.Lba1)
+        if (placeManaged)
         {
+            // (world is in the coordinates of the scene the drop landed in, which is the one played)
+            var game = currentGame;
             EndPlacement();
-            LaunchPlay(GameKind.Lba1, ((int)world.X, (int)world.Y, (int)world.Z), null);
+            LaunchPlay(game, ((int)world.X, (int)world.Y, (int)world.Z), scene);
             return;
         }
         if (interiorSceneActive) spawn = ((int)world.X, (int)world.Y, (int)world.Z);
@@ -258,15 +276,18 @@ public partial class MainWindow
         LaunchPlay(GameKind.Lba2, spawn, scene);
     }
 
-    // ---- LBA1: the same, on the isometric picture of the scene ----------------------------------------------------------------------------
+
+    // ---- LBA1 maps and LBA2 joined maps: the same, on the managed isometric picture -------------------------------------------------------
 
     private Lba1SceneImage? lba1ShownImage;      // the picture of the scene on screen (its projection is what the marker uses)
+    private Lba1SceneImage? lba2JoinedImage;     // the picture of the LBA2 joined map on screen
 
     private bool BeginLba1Placement()
     {
-        if (currentGame != GameKind.Lba1 || lba1Game is null || lba1ShownImage is null || lba1CurrentTiles is not { Count: 1 } tiles || !interiorSceneActive) return false;
+        if (currentGame != GameKind.Lba1 || lba1Game is null || lba1ShownImage is null || lba1CurrentTiles is not { Count: > 0 } tiles || !interiorSceneActive) return false;
+        var game = lba1Game;
         Lba1Scene scene;
-        try { scene = lba1Game.LoadScene(tiles[0].Scene); }
+        try { scene = game.LoadScene(tiles[0].Scene); }
         catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
         {
             DebugLog.Log($"MainWindow: placement: couldn't read LBA1 scene {tiles[0].Scene}: {error.Message}");
@@ -274,29 +295,75 @@ public partial class MainWindow
         }
         if (scene.Actors.Count == 0) return false;
         var hero = scene.Actors[0];
-        placeWorld = (hero.X, hero.Y, hero.Z);
-        placeScene = tiles[0].Scene;
-        placing = true;
-        PlayButton.Content = "▶  Start here";
-        PlayButton.ToolTip = "Start the game with Twinsen where he is now (or drop him to start at once)";
-        StopPlayButton.Content = "✕  Cancel";
-        RestartPlayButton.Visibility = Visibility.Collapsed;
-        PlayRunningPanel.Visibility = Visibility.Visible; PlayRunningPanel.Margin = new Thickness(0, 8, 0, 0);
-        PlayStatus.Text = "Drag Twinsen to where the game should start, and let go. Or press Start here for his own spot. Esc cancels.";
-        ActivatePanel(PlayTab);
-        BuildPlacementMarker();
-        UpdatePlacementMarker();
+        return BeginManagedPlacement(lba1ShownImage, tiles, t => game.ColumnTops(t.Scene).TopY, tiles[0].Scene, (hero.X, hero.Y, hero.Z));
+    }
+
+    private bool BeginLba2JoinedPlacement()
+    {
+        if (lba2JoinedImage is not { } image || lba2CurrentTiles is not { Count: > 0 } tiles || lba2Interiors is not { } interiors) return false;
+        var scene = tiles[0].Scene;
+        if (interiors.LoadScene(scene) is not { } model) return false;
+        return BeginManagedPlacement(image, tiles, t => TopsOf(interiors.Placements(t)), scene, (model.Hero.X, model.Hero.Y, model.Hero.Z));
+    }
+
+    private bool BeginManagedPlacement(Lba1SceneImage image, IReadOnlyList<Lba1AreaTile> tiles, Func<Lba1AreaTile, int[]> topsOf, int scene, (double X, double Y, double Z) hero)
+    {
+        placeManaged = true;
+        placeImage = image; placeTiles = tiles; placeTopsOf = topsOf; placeTops.Clear();
+        placeTile = tiles.FirstOrDefault(t => t.Scene == scene) ?? tiles[0];
+        placeScene = scene;
+        placeWorld = hero;
+        placementGround = null;
+        ShowPlacementUi();
         return true;
     }
 
-    private void MovePlacementLba1(Point at)
+    private static int[] TopsOf(IEnumerable<Lba1Placement> cells)
     {
-        if (lba1ShownImage is not { } image || interiorZoom <= 0) return;
+        var top = new int[64 * 64];
+        Array.Fill(top, -1);
+        foreach (var p in cells)
+            if ((uint)p.X < 64 && (uint)p.Z < 64 && p.Y > top[p.X + p.Z * 64]) top[p.X + p.Z * 64] = p.Y;
+        return top;
+    }
+
+    private void MovePlacementManaged(Point at)
+    {
+        if (interiorZoom <= 0) return;
         var canvas = new Point((at.X - ViewportHost.ActualWidth / 2) / interiorZoom + interiorCenter.X, (at.Y - ViewportHost.ActualHeight / 2) / interiorZoom + interiorCenter.Y);
-        double u = (canvas.X - image.OriginX) * 512 / 24;
-        double v = (canvas.Y - image.OriginY + placeWorld.Y * 15 / 256) * 512 / 12;
-        var x = Math.Clamp((u + v) / 2, 0, 63 * 512);
-        var z = Math.Clamp((v - u) / 2, 0, 63 * 512);
-        placeWorld = (x, placeWorld.Y, z);
+        if (PickManagedGround(canvas) is not { } hit) return;      // (off the map: he stays where he was)
+        placeTile = hit.Tile; placeScene = hit.Tile.Scene;
+        placeWorld = (hit.X, hit.Y, hit.Z);
+    }
+
+    // What the picture shows under a canvas point: the ray through it is walked from high above down to the first grid column whose top it
+    // is at or below (higher on the ray = nearer the viewer = drawn on top). Twinsen goes on the top of that column, in the coordinates of the
+    // scene whose tile it is (tiles carry offsets in the shared map).
+    private (Lba1AreaTile Tile, double X, double Y, double Z)? PickManagedGround(Point canvas)
+    {
+        if (placeImage is not { } image || placeTiles is not { } tiles || placeTopsOf is not { } topsOf) return null;
+        double u = (canvas.X - image.OriginX) * 512 / 24;                     // = x - z, in the shared map's units
+        (double X, double Z) GroundAt(double y) { var v = (canvas.Y - image.OriginY + y * 15 / 256) * 512 / 12; return ((u + v) / 2, (v - u) / 2); }
+        int lowest = tiles.Min(t => t.OffsetY), highest = tiles.Max(t => t.OffsetY) + 25 * 256;
+        for (var y = highest; y >= lowest; y -= 64)
+        {
+            var (xa, za) = GroundAt(y);
+            foreach (var tile in tiles)
+            {
+                int cx = (int)Math.Floor((xa - tile.OffsetX + 256) / 512), cz = (int)Math.Floor((za - tile.OffsetZ + 256) / 512);
+                if ((uint)cx >= 64 || (uint)cz >= 64 || !tile.Holds(cx, cz)) continue;
+                if (!placeTops.TryGetValue(tile, out var tops)) placeTops[tile] = tops = topsOf(tile);
+                var top = tops[cz * 64 + cx];
+                if (top < 0) continue;
+                var floor = (top + 1) * 256;
+                if (y - tile.OffsetY > floor) continue;
+                // the point of that column's top face under the pointer (the column's middle when a side face was what was hit)
+                var (fx, fz) = GroundAt(tile.OffsetY + floor);
+                double sx = fx - tile.OffsetX, sz = fz - tile.OffsetZ;
+                if (Math.Floor((sx + 256) / 512) != cx || Math.Floor((sz + 256) / 512) != cz) { sx = cx * 512; sz = cz * 512; }
+                return (tile, sx, floor, sz);
+            }
+        }
+        return null;
     }
 }

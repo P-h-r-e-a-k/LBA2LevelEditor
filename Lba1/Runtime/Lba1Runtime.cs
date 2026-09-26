@@ -584,6 +584,8 @@ internal sealed partial class Lba1Runtime
         o.Beta = beta & 1023;
         o.RealAngle.InitAngle(o.Beta, o.Beta, 0, TimerRef);
         o.WorkFlags &= ~Falling;
+        startYFalling = 0;          // a fall is measured from where he now stands, not from the scene's own start height
+        CenterCameraOnHero();
     }
 
     public bool GameOver { get; private set; }

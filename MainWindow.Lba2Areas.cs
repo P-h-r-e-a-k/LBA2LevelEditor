@@ -171,6 +171,7 @@ public partial class MainWindow
         lba2JoinedView = true;
         lba2AreaName = areaName;
         lba2CurrentTiles = tiles;
+        lba2JoinedImage = image;
         SetMode(EditMode.Explore);
         interiorContent = new Rect(0, 0, image.Width, image.Height);
         nativeViewActive = false;

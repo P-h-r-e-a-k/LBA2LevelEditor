@@ -79,7 +79,7 @@ public partial class MainWindow
     {
         try
         {
-            if (game == GameKind.Lba1) StartLba1Play(spawn);
+            if (game == GameKind.Lba1) StartLba1Play(spawn, scene);
             else await StartLba2Play(spawn, scene);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
@@ -148,7 +148,7 @@ public partial class MainWindow
 
     // ---- LBA1 ------------------------------------------------------------------------------------------------------------------------------
 
-    private void StartLba1Play((int X, int Y, int Z)? spawn)
+    private void StartLba1Play((int X, int Y, int Z)? spawn, int? sceneOverride = null)
     {
         var directory = EditorSettings.Current.Lba1Directory;
         if (!Lba1Game.IsInstalled(directory))
@@ -156,7 +156,7 @@ public partial class MainWindow
             MessageBox.Show(this, "The LBA1 game folder isn't set. Choose it under File > Settings.", "LBA1", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var start = lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0;
+        var start = sceneOverride ?? (lba1CurrentTiles is { Count: > 0 } tiles ? tiles[0].Scene : 0);
         var game = new Lba1Game(directory);          // read again, so a scene the editor has just saved is what plays
         lba1Play = new Lba1PlayView(game, new Lba1ActorImages(game), directory) { ZoneFilter = ZoneShown, Audio = EditorSettings.Current.Lba1Audio };      // draws the zone types ticked in the Zones tab
         playingGame = GameKind.Lba1;
