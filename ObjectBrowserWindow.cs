@@ -69,6 +69,7 @@ internal sealed class ObjectBrowserWindow : Window
         {
             ("Export .body", "The body exactly as the game stores it", (_, _) => ExportBody()),
             ("Export .obj", "The neutral pose as a Wavefront OBJ with palette materials", (_, _) => ExportObj()),
+            ("Export 3D…", "Opens the 3D export window (glTF, OBJ, PLY, STL; textures included) on this body; every body, actor, island and interior is there too", (_, _) => Export3D()),
             ("Replace from .body…", "Replaces this entry with a body file (it is read back and checked first); a .bak of the archive is kept", (_, _) => Replace()),
             ("Body Studio…", "Opens Body Studio, to generate a body from a picture", (_, _) => BodyStudioLauncher.Show(this)),
         })
@@ -161,6 +162,14 @@ internal sealed class ObjectBrowserWindow : Window
             view.Source = image;
         }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or IndexOutOfRangeException) { status.Text = "Couldn't draw this body: " + e.Message; }
+    }
+
+    private void Export3D()
+    {
+        if (source is null) return;
+        var hint = source.File.Equals("OBJFIX.HQR", StringComparison.OrdinalIgnoreCase) ? "fixed objects" : $"LBA{source.Game} bodies";
+        var prefix = source.File.Equals("OBJFIX.HQR", StringComparison.OrdinalIgnoreCase) ? "objfix" : "body";
+        Export.ExportWindow.Show(this, lba1Directory, lba2Directory, hint, index < 0 ? null : $"{prefix}_{index:D4}");
     }
 
     private void ExportBody()

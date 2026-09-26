@@ -52,6 +52,9 @@ internal sealed class Lba2Interiors
         return tile.Window is null && tile.Without is null ? all : all.Where(p => tile.Holds(p.X, p.Z)).ToList();
     }
 
+    // A brick picture of LBA_BKG.HQR (null when there is none).
+    public byte[]? ReadBrick(int index) => Brick(index);
+
     private byte[]? Brick(int index)
     {
         if (bricks.TryGetValue(index, out var known)) return known;

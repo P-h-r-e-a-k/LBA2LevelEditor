@@ -42,6 +42,7 @@ public partial class App : Application
         {
             DebugLog.Log($"App: UnobservedTaskException: {args.Exception}");
         };
+        if (Export.ExportCli.Wants(e.Args)) { Shutdown(Export.ExportCli.Run(e.Args)); return; }      // batch export, no window
         new MainWindow().Show();
     }
 }

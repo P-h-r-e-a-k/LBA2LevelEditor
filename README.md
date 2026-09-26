@@ -315,6 +315,21 @@ render frame through before the blocking work starts, so the cursor/strip really
 `ActorAttributesWindow`'s own Body/Animation combos are the shared `FilterableComboBox` now (see the main window's Island/Scene pickers, or LBA1's own actor
 window), not a second, separately-maintained implementation of the same type-to-filter behaviour.
 
+## Export 3D models (glTF, OBJ, PLY, STL)
+
+**Tools > Editors > LBA1 / LBA2: export 3D models** (also a button in the Build tab and "Export 3D..." in Objects and bodies) writes the game's
+3D content for other tools; the files are not meant for the game. It opens on what is on screen (the island, the interior, the LBA1 scene).
+
+- **What:** LBA2 islands (the lit, textured ground of every cube plus every object placed on it; the Desert island includes the race track of
+  the game folder's own DESERT.ILE), the objects of each island's .OBL (buildings, trees, props), interiors and joined interiors, LBA1 scenes
+  and joined maps, every actor (by entity), every body of BODY.HQR of both games, and LBA2's fixed objects (OBJFIX.HQR: items, globes ...).
+- **Formats:** glTF binary (.glb: textures, colours, baked light, instanced objects), Wavefront OBJ (+ .mtl and PNG textures), PLY (vertex colours),
+  STL (bare triangles). Coordinates are converted to the right-handed, Y-up system of those formats; the default scale is 0.001 (about a metre for Twinsen).
+- **Limits:** bodies are in their neutral pose (no skeleton or animation), lighting other than the islands' baked light is dropped, and the block maps
+  of interiors and LBA1 scenes are boxes in each brick's average colour (the bricks are pictures, so ramps and curves are boxes).
+- **Batch:** `LBAAssembler.exe --export <folder> [--format glb|obj|ply|stl] [--category text] [--only text] [--limit n] [--scale n] [--no-terrain] [--no-objects]`
+  exports without a window and writes a summary to `<folder>/export.log`.
+
 ## Modes: Explore, Build, Script
 
 The main window has three modes, chosen with the buttons at the top of the right-hand column (or Ctrl+1 / Ctrl+2 / Ctrl+3, or

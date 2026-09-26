@@ -169,6 +169,7 @@
                     <MenuItem x:Name="ObjectBrowserMenuItem" Header="LBA1 / LBA2: _objects and bodies…" Click="ObjectBrowser_Click"/>
                     <MenuItem x:Name="AssetEditorMenuItem" Header="LBA1 / LBA2: br_icks and sprites…" Click="AssetEditor_Click"/>
                     <MenuItem x:Name="GridEditorMenuItem" Header="LBA1 / LBA2: interior _grid editor…" Click="GridEditor_Click"/>
+                    <MenuItem x:Name="ExportMenuItem" Header="LBA1 / LBA2: e_xport 3D models…" Click="Export3D_Click" ToolTip="Islands (with their objects and the Desert island race track), buildings, interiors, every actor and body, furniture and items, as glTF, OBJ, PLY or STL"/>
                     <Separator/>
                     <MenuItem x:Name="Lba1EditorMenuItem" Header="LBA1: scene _editor…" Click="Lba1Editor_Click"/>
                     <MenuItem x:Name="Lba2EditorMenuItem" Header="LBA2: scene e_ditor…" Click="Lba2Editor_Click"/>
@@ -407,6 +408,8 @@
                                                 <Button x:Name="BuildGridButton" Content="Buildings and decor: interior map (grid editor)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="GridEditor_Click"
                                                         ToolTip="Place, move, copy and remove the blocks (buildings, walls, furniture) of an interior or an LBA1 scene. Buildings on an LBA2 island are placed, moved and turned in the 3D view: pick the island, then Build > Buildings and decor"/>
                                                 <Button x:Name="BuildAssetButton" Content="Bricks and sprites…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AssetEditor_Click"/>
+                                                <Button x:Name="BuildExportButton" Content="Export 3D models (glTF, OBJ, PLY, STL)…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="Export3D_Click"
+                                                        ToolTip="Export islands, buildings, interiors, actors, bodies, furniture and items to common 3D formats (for other tools, not for the game)"/>
                                                 <Button x:Name="BuildObjectButton" Content="Objects and bodies…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="ObjectBrowser_Click"/>
                                                 <Button Content="Body Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="BodyStudio_Click"/>
                                                 <Button Content="Animation Studio…" Style="{StaticResource QuietButton}" HorizontalContentAlignment="Left" Padding="10,6" Margin="0,0,0,6" Click="AnimationStudio_Click"/>

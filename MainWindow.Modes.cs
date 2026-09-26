@@ -110,6 +110,7 @@ public partial class MainWindow
         BuildGridButton.IsEnabled = eitherConfigured;
         BuildAssetButton.IsEnabled = eitherConfigured;
         BuildObjectButton.IsEnabled = eitherConfigured;
+        BuildExportButton.IsEnabled = eitherConfigured;
 
         SetPanelEnabled(ZoneDetailsTab, editMode != EditMode.Script);
         SetPanelEnabled(BuildTab, editMode == EditMode.Build);

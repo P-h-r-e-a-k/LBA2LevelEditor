@@ -1665,6 +1665,25 @@ public partial class MainWindow : Window
         }
     }
 
+    // Tools > export 3D models: opens on what is on screen (the island, the interior, the LBA1 scene).
+    private void Export3D_Click(object sender, RoutedEventArgs e)
+    {
+        var lba1 = Lba1Configured ? EditorSettings.Current.Lba1Directory : null;
+        var lba2 = File.Exists(Path.Combine(gameRoot, "BODY.HQR")) ? gameRoot : null;
+        string? hint = null, file = null;
+        if (currentGame == GameKind.Lba2 && lba2 is not null)
+        {
+            if (interiorSceneActive) { hint = "LBA2 interiors"; file = $"interior_{interiorSceneNumber:D3}"; }
+            else { hint = "LBA2 islands"; file = Path.GetFileNameWithoutExtension(activeFile).ToLowerInvariant(); }
+        }
+        else if (currentGame == GameKind.Lba1 && lba1 is not null) { hint = "LBA1 scenes"; file = $"scene_{interiorSceneNumber:D3}"; }
+        try { Export.ExportWindow.Show(this, lba1, lba2, hint, file); }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
+        {
+            MessageBox.Show(this, $"Couldn't open the export window: {error.Message}", "Export 3D models", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     // Tools > bricks and sprites: the game's run-length pictures with a pixel editor, PNG import / export.
     private void AssetEditor_Click(object sender, RoutedEventArgs e)
     {

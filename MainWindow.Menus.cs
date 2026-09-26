@@ -31,6 +31,7 @@ public partial class MainWindow
         ObjectBrowserMenuItem.IsEnabled = eitherConfigured;
         AssetEditorMenuItem.IsEnabled = eitherConfigured;
         GridEditorMenuItem.IsEnabled = eitherConfigured;
+        ExportMenuItem.IsEnabled = eitherConfigured;
         Lba1EditorMenuItem.IsEnabled = Lba1Configured;
         Lba2EditorMenuItem.IsEnabled = Lba2Configured;
         IslandEditorMenuItem.IsEnabled = Lba2Configured;
