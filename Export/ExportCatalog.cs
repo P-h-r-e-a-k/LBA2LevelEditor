@@ -35,6 +35,7 @@ internal sealed class ExportCatalog
             list.Add(new("LBA2 interiors (blocky maps)", "The block map of an interior scene as a model of boxes in each brick's colour (the bricks are pictures, so this is an outline of the room and its furniture).", Lba2Interiors));
             list.Add(new("LBA2 joined interiors (several rooms as one model)", "Rooms that connect (a factory's floors, the control tower and the palace ...) placed edge to edge in one model, as the joined maps show them.", Lba2JoinedInteriors));
             list.Add(new("LBA2 actors (by entity)", "Every body of every actor kind (Twinsen, Zoe, creatures, guards ...) in the neutral pose, named by entity.", Lba2Actors));
+            list.Add(new("LBA2 buggy and cars", "The desert buggy (empty, with the racer, with Twinsen in it, open or closed) and the other cars: bodies of BODY.HQR found by name.", Lba2Cars));
             list.Add(new("LBA2 bodies (all of BODY.HQR)", "Every body of the archive by number.", Lba2Bodies));
             list.Add(new("LBA2 fixed objects (items, furniture, globes)", "OBJFIX.HQR: inventory items, the holomap globes and other loose objects.", Lba2Fixed));
         }
@@ -50,28 +51,38 @@ internal sealed class ExportCatalog
 
     // ---- bodies --------------------------------------------------------------------------------------------------------------------------
 
+    // The real entries of an archive: HqrArchive.ValidIndices also walks past the end of the offset table into the entry data, where words that
+    // merely look like offsets give "entries" that are not there.
+    private static IEnumerable<int> Entries(HqrArchive archive, string path)
+    {
+        var count = HqrArchive.CountEntries(path);
+        return archive.ValidIndices.Where(i => i < count);
+    }
+
     private static byte[] Palette(string directory) => HqrArchive.Open(Path.Combine(directory, "RESS.HQR")).Read(0);
 
     private ExportScene? BodyScene(int game, string directory, HqrArchive archive, int index, byte[] palette, byte[]? page, bool allowStatic, string name)
     {
         var body = Body.Read(archive.Read(index), game, allowStatic || game == 2);      // (LBA2 has plain non-animated bodies in BODY.HQR too)
         body.TexturePage = page;
-        var scene = new ExportScene { Name = name };
+        var scene = new ExportScene { Name = name, ExpectedTriangles = BodyMesher.ExpectedTriangles(body) };
         scene.Add(BodyMesher.Build(scene, body, palette, name));
         return scene;
     }
 
-    private List<ExportItem> BodiesOf(int game, string directory, string file, bool allowStatic, string folder, string prefix, string? names)
+    private List<ExportItem> BodiesOf(int game, string directory, string file, bool allowStatic, string folder, string prefix, string? names, Func<string?, bool>? nameFilter = null)
     {
-        var archive = HqrArchive.Open(Path.Combine(directory, file));
+        var archivePath = Path.Combine(directory, file);
+        var archive = HqrArchive.Open(archivePath);
         var palette = Palette(directory);
         var page = game == 2 ? HqrArchive.Open(Path.Combine(directory, "RESS.HQR")).Read(6) : null;
         var described = names is null ? Array.Empty<string?>() : HqdDescriptions.Load(names, archive.Count).Names;
         var items = new List<ExportItem>();
-        foreach (var i in archive.ValidIndices)
+        foreach (var i in Entries(archive, archivePath))
         {
             var index = i;
             var description = index < described.Count ? described[index] : null;
+            if (nameFilter is not null && !nameFilter(description)) continue;
             items.Add(new($"{index,4}  {description}".TrimEnd(), folder, $"{prefix}_{index:D4}", _ => BodyScene(game, directory, archive, index, palette, page, allowStatic, $"{prefix}_{index}")));
         }
         return items;
@@ -79,17 +90,23 @@ internal sealed class ExportCatalog
 
     private List<ExportItem> Lba1Bodies() => BodiesOf(1, lba1!, "BODY.HQR", false, "LBA1/bodies", "body", "BODY1.HQD");
     private List<ExportItem> Lba2Bodies() => BodiesOf(2, lba2!, "BODY.HQR", false, "LBA2/bodies", "body", "BODY2.HQD");
+    // The buggy is an ordinary body (BODY.HQR "Empty car", "Car with racer", Twinsen in the car ...; BUGGY.CPP draws the actor with GEN_BODY_NORMAL); the wheels turning
+    // is an animation, and animations are not exported.
+    private List<ExportItem> Lba2Cars() => BodiesOf(2, lba2!, "BODY.HQR", false, "LBA2/buggy_and_cars", "car", "BODY2.HQD",
+        name => name is not null && System.Text.RegularExpressions.Regex.IsMatch(name, @"(car|buggy)", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+
     private List<ExportItem> Lba2Fixed() => BodiesOf(2, lba2!, "OBJFIX.HQR", true, "LBA2/fixed_objects", "objfix", null);
 
     private List<ExportItem> Lba1Actors()
     {
         var directory = lba1!;
         var bodies = HqrArchive.Open(Path.Combine(directory, "BODY.HQR"));
-        var entities = HqrArchive.Open(Path.Combine(directory, "FILE3D.HQR"));
+        var entitiesPath = Path.Combine(directory, "FILE3D.HQR");
+        var entities = HqrArchive.Open(entitiesPath);
         var palette = Palette(directory);
         var names = HqdDescriptions.Load("FILE3D.HQD", entities.Count).Names;
         var items = new List<ExportItem>();
-        foreach (var entity in entities.ValidIndices)
+        foreach (var entity in Entries(entities, entitiesPath))
         {
             var e = entity;
             var d = entities.Read(e);
@@ -152,7 +169,7 @@ internal sealed class ExportCatalog
             var archive = HqrArchive.Open(obl);
             Terrain.IslandFile? island = null;
             byte[]? palette = null;
-            foreach (var i in archive.ValidIndices)
+            foreach (var i in Entries(archive, obl))
             {
                 var index = i;
                 items.Add(new($"{name}  #{index}", $"LBA2/island_objects/{name.ToLowerInvariant()}", $"{name.ToLowerInvariant()}_object_{index:D3}", _ =>
@@ -161,7 +178,7 @@ internal sealed class ExportCatalog
                     palette ??= Terrain.IslandMapRenderer.LoadPalette(directory, name);
                     var body = Body.Read(archive.Read(index), 2, allowStatic: true);
                     body.TexturePage = island.ObjectTexture;
-                    var scene = new ExportScene { Name = $"{name}_object_{index}" };
+                    var scene = new ExportScene { Name = $"{name}_object_{index}", ExpectedTriangles = BodyMesher.ExpectedTriangles(body) };
                     scene.Add(BodyMesher.Build(scene, body, palette, $"{name}_object_{index}"));
                     return scene;
                 }));
@@ -175,7 +192,8 @@ internal sealed class ExportCatalog
     private List<ExportItem> Lba1Scenes()
     {
         var directory = lba1!;
-        var grids = HqrArchive.Open(Path.Combine(directory, "LBA_GRI.HQR"));
+        var gridsPath = Path.Combine(directory, "LBA_GRI.HQR");
+        var grids = HqrArchive.Open(gridsPath);
         var blocks = HqrArchive.Open(Path.Combine(directory, "LBA_BLL.HQR"));
         var bricks = HqrArchive.Open(Path.Combine(directory, "LBA_BRK.HQR"));
         var palette = Palette(directory);
@@ -183,7 +201,7 @@ internal sealed class ExportCatalog
         var cache = new Dictionary<int, byte[]?>();
         byte[]? Brick(int index) => cache.TryGetValue(index, out var known) ? known : cache[index] = bricks.IsValid(index) ? bricks.Read(index) : null;
         var items = new List<ExportItem>();
-        foreach (var i in grids.ValidIndices.Where(i => i < 120 && blocks.IsValid(i)))
+        foreach (var i in Entries(grids, gridsPath).Where(i => i < 120 && blocks.IsValid(i)))
         {
             var scene = i;
             var description = scene < names.Count ? names[scene] : null;
@@ -253,10 +271,10 @@ internal sealed class ExportCatalog
 // Runs a batch of exports, one file each; a failure of one item is logged and the rest go on.
 internal static class ExportRunner
 {
-    public static (int Done, int Failed) Run(IReadOnlyList<ExportItem> items, ExportFormat format, float scale, string outputDirectory, ExportOptions options,
+    public static (int Done, int Failed, int Skipped) Run(IReadOnlyList<ExportItem> items, ExportFormat format, float scale, string outputDirectory, ExportOptions options,
         IProgress<(int Index, string Message)> progress, CancellationToken cancel)
     {
-        int done = 0, failed = 0;
+        int done = 0, failed = 0, skipped = 0;
         for (var i = 0; i < items.Count; i++)
         {
             if (cancel.IsCancellationRequested) break;
@@ -264,7 +282,10 @@ internal static class ExportRunner
             try
             {
                 var scene = item.Build(options);
+                if (scene is not null && scene.TriangleCount == 0 && scene.ExpectedTriangles == 0)
+                { progress.Report((i, $"{item.Label}: skipped, the game's own body is empty (points but no polygons).")); skipped++; continue; }
                 if (scene is null || scene.TriangleCount == 0) { progress.Report((i, $"{item.Label}: nothing to export (no geometry).")); failed++; continue; }
+                if (scene.Problem() is { } problem) { progress.Report((i, $"{item.Label}: NOT EXPORTED, the geometry is wrong ({problem}).")); failed++; continue; }
                 var path = Path.Combine(outputDirectory, item.Folder, SceneWriters.Safe(item.FileName) + SceneWriters.Extension(format));
                 SceneWriters.Write(scene, path, format, scale);
                 done++;
@@ -277,6 +298,6 @@ internal static class ExportRunner
                 progress.Report((i, $"{item.Label}: failed ({error.Message})"));
             }
         }
-        return (done, failed);
+        return (done, failed, skipped);
     }
 }

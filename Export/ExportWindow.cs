@@ -197,13 +197,13 @@ internal sealed class ExportWindow : Window
         var extraLog = new Progress<string>(message => Append("  " + message));
         var options = new ExportOptions { IslandTerrain = terrainBox.IsChecked == true, IslandObjects = objectsBox.IsChecked == true, Log = message => ((IProgress<string>)extraLog).Report(message) };
         var progress = new Progress<(int Index, string Message)>(report => { progressBar.Value = Math.Min(chosen.Count, report.Index + 1); Append(report.Message); });
-        (int Done, int Failed) result = default;
+        (int Done, int Failed, int Skipped) result = default;
         try { result = await Task.Run(() => ExportRunner.Run(chosen, format, scale, folder, options, progress, token)); }
         catch (Exception error) { Append("Export stopped: " + error.Message); DebugLog.Log($"Export window: {error}"); }
         var cancelled = token.IsCancellationRequested;
         running = null;
         exportButton.IsEnabled = true; cancelButton.IsEnabled = false;
-        Append($"{(cancelled ? "Stopped: " : "Done: ")}{result.Done} exported{(result.Failed > 0 ? $", {result.Failed} without geometry or failed" : "")}. Files are in {folder}");
+        Append($"{(cancelled ? "Stopped: " : "Done: ")}{result.Done} exported{(result.Failed > 0 ? $", {result.Failed} failed" : "")}{(result.Skipped > 0 ? $", {result.Skipped} empty in the game's data" : "")}. Files are in {folder}");
     }
 
     private void Append(string message)

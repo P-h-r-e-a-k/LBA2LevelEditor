@@ -80,6 +80,27 @@ internal sealed class ExportScene
     private readonly Dictionary<string, int> materialIndex = new();
 
     public int TriangleCount => Nodes.Sum(n => n.Mesh.TriangleCount);
+    // What the source should have produced (set for bodies: every polygon, sphere and line accounted for); null when unknown.
+    public int? ExpectedTriangles { get; set; }
+
+    // A problem with the geometry (a NaN, an index outside its vertex list, a missing material), or null.
+    public string? Problem()
+    {
+        foreach (var node in Nodes)
+        {
+            var mesh = node.Mesh;
+            if (mesh.Uvs.Count != mesh.Positions.Count) return $"{node.Name}: uv count differs from the vertex count";
+            foreach (var p in mesh.Positions) if (!float.IsFinite(p.X + p.Y + p.Z)) return $"{node.Name}: a vertex is not a finite number";
+            foreach (var primitive in mesh.Primitives)
+            {
+                if (primitive.Material < 0 || primitive.Material >= Materials.Count) return $"{node.Name}: a triangle has no material";
+                if (primitive.Indices.Count % 3 != 0) return $"{node.Name}: the index list isn't whole triangles";
+                foreach (var i in primitive.Indices) if (i < 0 || i >= mesh.Positions.Count) return $"{node.Name}: an index is outside the vertex list";
+            }
+        }
+        if (ExpectedTriangles is { } expected && expected != TriangleCount) return $"expected {expected} triangles but built {TriangleCount}";
+        return null;
+    }
     public bool HasTextures => Materials.Any(m => m.Texture is not null);
 
     public ExportNode Add(ExportMesh mesh, Matrix4x4? transform = null, string? name = null)

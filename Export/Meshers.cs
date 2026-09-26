@@ -10,6 +10,14 @@ namespace LBAAssembler.Export;
 // interiors. The output is for looking at and using elsewhere, not for the game: bodies are in their neutral pose, lighting is dropped.
 internal static class BodyMesher
 {
+    // The triangles a body must give: every polygon fanned, a sphere (10 x 6 segments) and a line (a 4-sided tube) each a fixed number.
+    public static int ExpectedTriangles(Body body)
+    {
+        var world = body.World();
+        return body.Faces.Where(f => f.Points.Length >= 3).Sum(f => f.Points.Length - 2) + body.Spheres.Count * 120
+             + body.Lines.Count(l => (world[l.A] - world[l.B]).LengthSquared() >= 1e-6f) * 8;
+    }
+
     public static ExportMesh Build(ExportScene scene, Body body, byte[] palette, string name, string keyPrefix = "")
     {
         var mesh = new ExportMesh(name);

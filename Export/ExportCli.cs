@@ -25,17 +25,17 @@ internal static class ExportCli
             var settings = EditorSettings.Current;
             var catalog = new ExportCatalog(settings.Lba1Directory, settings.GameDirectory);
             var options = new ExportOptions { IslandTerrain = !args.Contains("--no-terrain"), IslandObjects = !args.Contains("--no-objects"), Log = message => log.WriteLine("  " + message) };
-            int done = 0, failed = 0;
+            int done = 0, failed = 0, skipped = 0;
             foreach (var c in catalog.Categories.Where(c => category is null || c.Title.Contains(category, StringComparison.OrdinalIgnoreCase)))
             {
                 log.WriteLine($"== {c.Title}");
                 var items = c.Load().Where(i => only is null || i.Label.Contains(only, StringComparison.OrdinalIgnoreCase)).Take(limit).ToList();
                 var progress = new Progress<(int Index, string Message)>();
                 var reports = new List<string>();
-                var (d, f) = ExportRunner.Run(items, format, scale, folder, options, new SyncProgress(m => log.WriteLine(m)), CancellationToken.None);
-                done += d; failed += f;
+                var (d, f, k) = ExportRunner.Run(items, format, scale, folder, options, new SyncProgress(m => log.WriteLine(m)), CancellationToken.None);
+                done += d; failed += f; skipped += k;
             }
-            log.WriteLine($"done: {done} exported, {failed} failed");
+            log.WriteLine($"done: {done} exported, {failed} failed, {skipped} skipped (empty in the game's data)");
             return failed == 0 ? 0 : 1;
         }
         catch (Exception error)
